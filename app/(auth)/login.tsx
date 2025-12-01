@@ -22,8 +22,11 @@ import { useGoogleAuth } from '@/hooks/useGoogleAuth';
 
 export default function LoginScreen() {
   const { login, resetPassword, isLoginLoading, isAuthenticated } = useAuth();
-  const { signInWithGoogle, isLoading: isGoogleSignInLoading, isReady: isGoogleReady } = useGoogleAuth();
+  const { signInWithGoogle, isLoading: isGoogleSignInLoading, isConfigured: isGoogleConfigured } = useGoogleAuth();
   const { t } = useSettings();
+  
+  // Check if we're on a native platform (iOS/Android)
+  const isNativePlatform = Platform.OS === 'ios' || Platform.OS === 'android';
 
   // Navigate when authenticated
   useEffect(() => {
@@ -90,8 +93,12 @@ export default function LoginScreen() {
   };
 
   const handleGoogleSignIn = async () => {
-    if (!isGoogleReady) {
-      Alert.alert(t.common.error, 'Google sign-in is not ready. Please wait a moment.');
+    // On native platforms, show coming soon message
+    if (isNativePlatform && !isGoogleConfigured) {
+      Alert.alert(
+        t.common.comingSoon,
+        'Google Sign-In for mobile is coming soon! Please use email/password for now.'
+      );
       return;
     }
 
@@ -232,14 +239,23 @@ export default function LoginScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.googleButton, (isGoogleSignInLoading || !isGoogleReady) && styles.buttonDisabled]}
+              style={[
+                styles.googleButton, 
+                isGoogleSignInLoading && styles.buttonDisabled,
+                (isNativePlatform && !isGoogleConfigured) && styles.socialButtonComingSoon
+              ]}
               onPress={handleGoogleSignIn}
-              disabled={isGoogleSignInLoading || !isGoogleReady}
+              disabled={isGoogleSignInLoading}
             >
               {isGoogleSignInLoading ? (
                 <ActivityIndicator color={Colors.text} />
               ) : (
-                <Text style={styles.googleButtonText}>{t.auth.signInWithGoogle}</Text>
+                <>
+                  <Text style={styles.googleButtonText}>{t.auth.signInWithGoogle}</Text>
+                  {isNativePlatform && !isGoogleConfigured && (
+                    <Text style={styles.comingSoonText}>(Coming soon)</Text>
+                  )}
+                </>
               )}
             </TouchableOpacity>
 
@@ -409,6 +425,14 @@ const styles = StyleSheet.create({
   },
   appleComingSoon: {
     color: '#999',
+    fontSize: 12,
+    marginLeft: 8,
+  },
+  socialButtonComingSoon: {
+    opacity: 0.6,
+  },
+  comingSoonText: {
+    color: Colors.textLight,
     fontSize: 12,
     marginLeft: 8,
   },
