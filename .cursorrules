@@ -1,0 +1,125 @@
+# AIESS Mobile App - Cursor Rules
+
+## Project Overview
+This is the AIESS Mobile App v1.0 MVP - a React Native/Expo app for Battery Energy Storage System monitoring and control.
+
+## Documentation First
+Before implementing ANY feature:
+1. Read the relevant section in `docs/PRD.md`
+2. Check `docs/api/` for API specifications
+3. Use Supabase MCP to verify database schema
+
+## Required Tools - USE THESE!
+
+### Supabase MCP
+You have Supabase MCP access. USE IT for:
+- `mcp_supabase_list_tables` - Check schema before writing queries
+- `mcp_supabase_execute_sql` - Test queries
+- `mcp_supabase_search_docs` - Find Supabase documentation
+- Project ID: `fcfuuwmzwxltxsgmcqck`
+
+### Task Management
+Use the built-in TODO system to:
+- Break down features into small tasks
+- Track progress
+- Mark items complete as you go
+
+## Git Workflow
+
+### Commit Messages
+Use conventional commits:
+- `feat:` new feature
+- `fix:` bug fix
+- `docs:` documentation
+- `style:` formatting
+- `refactor:` code restructure
+- `test:` tests
+
+### Commit Frequency
+Commit after each logical unit of work. Good commits:
+- "feat: implement login screen with email/password"
+- "feat: add device list with Supabase query"
+
+### Version Tracking
+Update version in `app.json` for milestones:
+- v0.1.0 - Auth complete
+- v0.2.0 - Devices complete
+- v0.3.0 - Monitor complete
+- etc.
+
+## Code Style
+
+### TypeScript
+- Use TypeScript for all files
+- Define interfaces for all data structures
+- Use strict mode
+
+### React Native
+- Functional components only
+- Use hooks for state/effects
+- Extract reusable logic to custom hooks in `/hooks`
+
+### File Organization
+```
+app/           # Expo Router screens
+components/    # Reusable components
+hooks/         # Custom hooks (useAuth, useDevices, etc.)
+lib/           # API clients (supabase.ts, influxdb.ts, aws-schedules.ts)
+contexts/      # React contexts
+types/         # TypeScript interfaces
+constants/     # Colors, config values
+locales/       # i18n translations (en.json, pl.json)
+```
+
+## Key Implementation Details
+
+### Authentication
+- Use Supabase Auth
+- Store session in Expo SecureStore (NOT AsyncStorage)
+- Google sign-in via native SDK
+- Apple button visible but disabled (v1.1)
+
+### Live Monitor
+- InfluxDB via HTTP POST
+- 5-second refresh interval
+- Factory Load = max(0, grid + pv - battery)
+- Battery: + = charging, - = discharging
+
+### Schedule Rules
+- AWS API Gateway with x-api-key header
+- Rule schema in `docs/api/RULES_SCHEMA.md`
+- Priority P4-P8 for user rules
+- Time format: HHMM integer (1430 = 14:30)
+
+### i18n
+- Set up from start with i18next
+- All user-facing strings must use translation keys
+- Support EN (default) and PL
+
+## PRD Updates
+If you discover something needs to change in the spec:
+1. Update `docs/PRD.md`
+2. Commit: `docs: update PRD - [what changed]`
+
+## Testing Setup
+Primary testing device: **iPhone 17 via Expo Go**
+
+To test:
+```bash
+npx expo start
+# Scan QR code with iPhone camera
+```
+
+Make sure iPhone and dev machine are on same WiFi network.
+
+## Before Marking Feature Complete
+- [ ] Works on iPhone via Expo Go (PRIMARY)
+- [ ] Works on iOS simulator (optional)
+- [ ] Works on Android emulator (optional)
+- [ ] Loading states handled
+- [ ] Error states handled
+- [ ] Empty states handled
+- [ ] Uses i18n keys
+- [ ] Committed to git
+- [ ] Version bumped if milestone
+

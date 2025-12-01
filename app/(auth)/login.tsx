@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,37 +18,123 @@ import AiessLogo from '@/components/AiessLogo';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useGoogleAuth } from '@/hooks/useGoogleAuth';
 
 export default function LoginScreen() {
-  const { login, isLoginLoading } = useAuth();
+  const { login, resetPassword, isLoginLoading, isAuthenticated } = useAuth();
+  const { signInWithGoogle, isLoading: isGoogleSignInLoading, isReady: isGoogleReady } = useGoogleAuth();
   const { t } = useSettings();
+
+  // Navigate when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace('/(tabs)/devices');
+    }
+  }, [isAuthenticated]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
 
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert(t.common.error, 'Please fill in all fields');
+    // Validation
+    if (!email.trim()) {
+      Alert.alert(t.common.error, 'Please enter your email address');
+      return;
+    }
+
+    if (!validateEmail(email)) {
+      Alert.alert(t.common.error, 'Please enter a valid email address');
+      return;
+    }
+
+    if (!password) {
+      Alert.alert(t.common.error, 'Please enter your password');
+      return;
+    }
+
+    if (password.length < 6) {
+      Alert.alert(t.common.error, 'Password must be at least 6 characters');
       return;
     }
     
     try {
-      await login(email, password);
+      await login(email.trim(), password);
       console.log('[Login] Success, navigating to main app');
       router.replace('/(tabs)/devices');
-    } catch (error) {
+    } catch (error: any) {
       console.log('[Login] Error:', error);
-      Alert.alert(t.common.error, 'Login failed. Please try again.');
+      
+      // Handle specific Supabase errors
+      let errorMessage = 'Login failed. Please try again.';
+      
+      if (error?.message) {
+        if (error.message.includes('Invalid login credentials')) {
+          errorMessage = 'Invalid email or password. Please check your credentials.';
+        } else if (error.message.includes('Email not confirmed')) {
+          errorMessage = 'Please verify your email address before logging in.';
+        } else if (error.message.includes('Too many requests')) {
+          errorMessage = 'Too many login attempts. Please wait a moment and try again.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      Alert.alert(t.common.error, errorMessage);
     }
   };
 
-  const handleGoogleSignIn = () => {
-    Alert.alert(t.common.comingSoon, 'Google Sign-In will be available soon');
+  const handleGoogleSignIn = async () => {
+    if (!isGoogleReady) {
+      Alert.alert(t.common.error, 'Google sign-in is not ready. Please wait a moment.');
+      return;
+    }
+
+    try {
+      const result = await signInWithGoogle();
+      if (result?.type === 'cancel') {
+        console.log('[Login] Google sign-in cancelled');
+        return;
+      }
+      // Navigation is handled by the useEffect when isAuthenticated changes
+    } catch (error: any) {
+      console.log('[Login] Google sign-in error:', error);
+      Alert.alert(t.common.error, error?.message || 'Google sign-in failed. Please try again.');
+    }
   };
 
   const handleAppleSignIn = () => {
     Alert.alert(t.auth.comingInV11, 'Apple Sign-In coming in v1.1');
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      Alert.alert(
+        'Reset Password',
+        'Please enter your email address first, then tap "Forgot password" again.',
+      );
+      return;
+    }
+
+    if (!validateEmail(email)) {
+      Alert.alert(t.common.error, 'Please enter a valid email address');
+      return;
+    }
+
+    try {
+      await resetPassword(email.trim());
+      Alert.alert(
+        'Check Your Email',
+        'If an account exists with this email, you will receive a password reset link.',
+      );
+    } catch (error: any) {
+      Alert.alert(t.common.error, error?.message || 'Failed to send reset email.');
+    }
   };
 
   return (
@@ -71,13 +157,14 @@ export default function LoginScreen() {
               <Text style={styles.inputLabel}>{t.auth.email}</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Example@gmail.com"
-                placeholderTextColor={Colors.primary}
+                placeholder="example@gmail.com"
+                placeholderTextColor={Colors.textLight}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
+                autoCorrect={false}
                 testID="email-input"
               />
             </View>
@@ -88,7 +175,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={[styles.input, styles.passwordInput]}
                   placeholder="••••••••••"
-                  placeholderTextColor={Colors.text}
+                  placeholderTextColor={Colors.textLight}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
@@ -98,6 +185,7 @@ export default function LoginScreen() {
                 <TouchableOpacity
                   style={styles.eyeIcon}
                   onPress={() => setShowPassword(!showPassword)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   {showPassword ? (
                     <EyeOff size={20} color={Colors.textSecondary} />
@@ -119,13 +207,13 @@ export default function LoginScreen() {
                 <Text style={styles.rememberText}>{t.auth.rememberMe}</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity>
+              <TouchableOpacity onPress={handleForgotPassword}>
                 <Text style={styles.forgotText}>{t.auth.forgotPassword}</Text>
               </TouchableOpacity>
             </View>
 
             <TouchableOpacity
-              style={styles.signInButton}
+              style={[styles.signInButton, isLoginLoading && styles.buttonDisabled]}
               onPress={handleLogin}
               disabled={isLoginLoading}
               testID="login-button"
@@ -144,10 +232,15 @@ export default function LoginScreen() {
             </View>
 
             <TouchableOpacity
-              style={styles.googleButton}
+              style={[styles.googleButton, (isGoogleSignInLoading || !isGoogleReady) && styles.buttonDisabled]}
               onPress={handleGoogleSignIn}
+              disabled={isGoogleSignInLoading || !isGoogleReady}
             >
-              <Text style={styles.googleButtonText}>{t.auth.signInWithGoogle}</Text>
+              {isGoogleSignInLoading ? (
+                <ActivityIndicator color={Colors.text} />
+              ) : (
+                <Text style={styles.googleButtonText}>{t.auth.signInWithGoogle}</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -155,6 +248,7 @@ export default function LoginScreen() {
               onPress={handleAppleSignIn}
             >
               <Text style={styles.appleButtonText}>{t.auth.signInWithApple}</Text>
+              <Text style={styles.appleComingSoon}>(v1.1)</Text>
             </TouchableOpacity>
 
             <View style={styles.signUpContainer}>
@@ -260,6 +354,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
   signInButtonText: {
     color: '#fff',
     fontSize: 18,
@@ -287,6 +384,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
     marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   googleButtonText: {
     color: Colors.text,
@@ -299,11 +398,19 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
     marginBottom: 24,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    opacity: 0.6,
   },
   appleButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '500' as const,
+  },
+  appleComingSoon: {
+    color: '#999',
+    fontSize: 12,
+    marginLeft: 8,
   },
   signUpContainer: {
     flexDirection: 'row',

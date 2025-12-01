@@ -2,27 +2,29 @@
   "expo": {
     "name": "AIESS Mobile Energy App",
     "slug": "aiess-mobile-energy-app",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "rork-app",
+    "scheme": "aiess",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#008cff"
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.rork.aiess-mobile-energy-app"
+      "bundleIdentifier": "com.aiess.mobile",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#008cff"
       },
-      "package": "app.rork.aiess_mobile_energy_app"
+      "package": "com.aiess.mobile",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
@@ -31,14 +33,20 @@
       [
         "expo-router",
         {
-          "origin": "https://rork.com/"
+          "origin": "https://aiess.app/"
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "your-eas-project-id"
+      }
     }
   }
 }

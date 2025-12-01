@@ -28,14 +28,25 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showRetypePassword, setShowRetypePassword] = useState(false);
 
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handleSignup = async () => {
-    if (!email || !password || !retypePassword) {
-      Alert.alert(t.common.error, 'Please fill in all fields');
+    // Validation
+    if (!email.trim()) {
+      Alert.alert(t.common.error, 'Please enter your email address');
       return;
     }
 
-    if (password !== retypePassword) {
-      Alert.alert(t.common.error, 'Passwords do not match');
+    if (!validateEmail(email)) {
+      Alert.alert(t.common.error, 'Please enter a valid email address');
+      return;
+    }
+
+    if (!password) {
+      Alert.alert(t.common.error, 'Please enter a password');
       return;
     }
 
@@ -44,13 +55,59 @@ export default function SignupScreen() {
       return;
     }
 
+    if (!retypePassword) {
+      Alert.alert(t.common.error, 'Please confirm your password');
+      return;
+    }
+
+    if (password !== retypePassword) {
+      Alert.alert(t.common.error, 'Passwords do not match');
+      return;
+    }
+
     try {
-      await signup(email, password);
-      console.log('[Signup] Success, navigating to main app');
-      router.replace('/(tabs)/devices');
-    } catch (error) {
+      const result = await signup(email.trim(), password);
+      console.log('[Signup] Success:', result);
+      
+      // Check if email confirmation is required
+      if (result?.user && !result?.session) {
+        // Email confirmation required
+        Alert.alert(
+          'Check Your Email',
+          'We sent you a confirmation link. Please check your email to verify your account.',
+          [
+            {
+              text: 'OK',
+              onPress: () => router.replace('/(auth)/login'),
+            },
+          ]
+        );
+      } else {
+        // Auto-confirmed, go to main app
+        console.log('[Signup] Auto-confirmed, navigating to main app');
+        router.replace('/(tabs)/devices');
+      }
+    } catch (error: any) {
       console.log('[Signup] Error:', error);
-      Alert.alert(t.common.error, 'Signup failed. Please try again.');
+      
+      // Handle specific Supabase errors
+      let errorMessage = 'Signup failed. Please try again.';
+      
+      if (error?.message) {
+        if (error.message.includes('User already registered')) {
+          errorMessage = 'An account with this email already exists. Please sign in instead.';
+        } else if (error.message.includes('Password should be at least')) {
+          errorMessage = 'Password must be at least 6 characters long.';
+        } else if (error.message.includes('Unable to validate email')) {
+          errorMessage = 'Please enter a valid email address.';
+        } else if (error.message.includes('Signups not allowed')) {
+          errorMessage = 'Signups are currently disabled. Please contact support.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      Alert.alert(t.common.error, errorMessage);
     }
   };
 
@@ -69,18 +126,22 @@ export default function SignupScreen() {
             <AiessLogo size="large" />
           </View>
 
+          <Text style={styles.title}>Create Account</Text>
+          <Text style={styles.subtitle}>Sign up to get started with AIESS</Text>
+
           <View style={styles.form}>
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>{t.auth.email}</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Example@gmail.com"
-                placeholderTextColor={Colors.primary}
+                placeholder="example@gmail.com"
+                placeholderTextColor={Colors.textLight}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
+                autoCorrect={false}
                 testID="email-input"
               />
             </View>
@@ -91,7 +152,7 @@ export default function SignupScreen() {
                 <TextInput
                   style={[styles.input, styles.passwordInput]}
                   placeholder="••••••••••"
-                  placeholderTextColor={Colors.text}
+                  placeholderTextColor={Colors.textLight}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
@@ -101,6 +162,7 @@ export default function SignupScreen() {
                 <TouchableOpacity
                   style={styles.eyeIcon}
                   onPress={() => setShowPassword(!showPassword)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   {showPassword ? (
                     <EyeOff size={20} color={Colors.textSecondary} />
@@ -109,6 +171,7 @@ export default function SignupScreen() {
                   )}
                 </TouchableOpacity>
               </View>
+              <Text style={styles.passwordHint}>Minimum 6 characters</Text>
             </View>
 
             <View style={styles.inputContainer}>
@@ -117,7 +180,7 @@ export default function SignupScreen() {
                 <TextInput
                   style={[styles.input, styles.passwordInput]}
                   placeholder="••••••••••"
-                  placeholderTextColor={Colors.text}
+                  placeholderTextColor={Colors.textLight}
                   value={retypePassword}
                   onChangeText={setRetypePassword}
                   secureTextEntry={!showRetypePassword}
@@ -127,6 +190,7 @@ export default function SignupScreen() {
                 <TouchableOpacity
                   style={styles.eyeIcon}
                   onPress={() => setShowRetypePassword(!showRetypePassword)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   {showRetypePassword ? (
                     <EyeOff size={20} color={Colors.textSecondary} />
@@ -138,7 +202,7 @@ export default function SignupScreen() {
             </View>
 
             <TouchableOpacity
-              style={styles.signUpButton}
+              style={[styles.signUpButton, isSignupLoading && styles.buttonDisabled]}
               onPress={handleSignup}
               disabled={isSignupLoading}
               testID="signup-button"
@@ -179,7 +243,20 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 60,
+    marginBottom: 32,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.text,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 32,
   },
   form: {
     flex: 1,
@@ -215,13 +292,22 @@ const styles = StyleSheet.create({
     top: '50%',
     transform: [{ translateY: -10 }],
   },
+  passwordHint: {
+    fontSize: 12,
+    color: Colors.textLight,
+    marginTop: 6,
+    marginLeft: 4,
+  },
   signUpButton: {
     backgroundColor: Colors.primary,
     borderRadius: 30,
     paddingVertical: 18,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 12,
     marginBottom: 24,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   signUpButtonText: {
     color: '#fff',

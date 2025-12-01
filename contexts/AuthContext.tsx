@@ -1,96 +1,195 @@
 import createContextHook from '@nkzw/create-context-hook';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/lib/supabase';
+import type { Session, User } from '@supabase/supabase-js';
 import { UserProfile } from '@/types';
-
-const AUTH_STORAGE_KEY = '@aiess_auth';
 
 export const [AuthProvider, useAuth] = createContextHook(() => {
   const queryClient = useQueryClient();
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  const authQuery = useQuery({
-    queryKey: ['auth'],
-    queryFn: async () => {
-      console.log('[Auth] Loading auth state from storage');
-      const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        console.log('[Auth] Found stored user:', parsed.email);
-        return parsed as UserProfile;
-      }
-      console.log('[Auth] No stored user found');
-      return null;
-    },
-  });
-
+  // Initialize auth state and listen for changes
   useEffect(() => {
-    if (authQuery.data !== undefined) {
-      setUser(authQuery.data);
-    }
-  }, [authQuery.data]);
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('[Auth] Initial session:', session?.user?.email || 'none');
+      setSession(session);
+      setUser(session?.user ?? null);
+      setIsInitialized(true);
+    });
 
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('[Auth] Auth state changed:', event, session?.user?.email);
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          // Fetch or create user profile
+          await fetchOrCreateProfile(session.user.id, session.user.email);
+        } else {
+          setProfile(null);
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Fetch or create user profile
+  const fetchOrCreateProfile = async (userId: string, email?: string) => {
+    try {
+      // First try to fetch existing profile
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (existingProfile) {
+        console.log('[Auth] Found existing profile:', existingProfile.full_name);
+        setProfile({
+          id: existingProfile.id,
+          email: email || '',
+          full_name: existingProfile.full_name,
+          phone: existingProfile.phone,
+          avatar_url: existingProfile.avatar_url,
+        });
+        return;
+      }
+
+      // If no profile exists, create one
+      if (fetchError?.code === 'PGRST116') {
+        console.log('[Auth] Creating new profile for user');
+        const { data: newProfile, error: createError } = await supabase
+          .from('user_profiles')
+          .insert({
+            id: userId,
+            full_name: email?.split('@')[0] || null,
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.error('[Auth] Error creating profile:', createError);
+          return;
+        }
+
+        if (newProfile) {
+          setProfile({
+            id: newProfile.id,
+            email: email || '',
+            full_name: newProfile.full_name,
+            phone: newProfile.phone,
+            avatar_url: newProfile.avatar_url,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('[Auth] Error fetching/creating profile:', error);
+    }
+  };
+
+  // Login with email/password
   const loginMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
       console.log('[Auth] Attempting login for:', email);
-      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      const mockUser: UserProfile = {
-        id: '1',
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        full_name: 'Demo User',
-        phone: null,
-        avatar_url: null,
-      };
-      
-      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockUser));
+        password,
+      });
+
+      if (error) {
+        console.error('[Auth] Login error:', error.message);
+        throw error;
+      }
+
       console.log('[Auth] Login successful');
-      return mockUser;
-    },
-    onSuccess: (data) => {
-      setUser(data);
-      queryClient.invalidateQueries({ queryKey: ['auth'] });
+      return data;
     },
   });
 
+  // Signup with email/password
   const signupMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
       console.log('[Auth] Attempting signup for:', email);
-      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      const mockUser: UserProfile = {
-        id: '1',
+      const { data, error } = await supabase.auth.signUp({
         email,
-        full_name: null,
-        phone: null,
-        avatar_url: null,
-      };
-      
-      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockUser));
+        password,
+      });
+
+      if (error) {
+        console.error('[Auth] Signup error:', error.message);
+        throw error;
+      }
+
       console.log('[Auth] Signup successful');
-      return mockUser;
-    },
-    onSuccess: (data) => {
-      setUser(data);
-      queryClient.invalidateQueries({ queryKey: ['auth'] });
+      return data;
     },
   });
 
+  // Logout
   const logoutMutation = useMutation({
     mutationFn: async () => {
       console.log('[Auth] Logging out');
-      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
     },
     onSuccess: () => {
+      setSession(null);
       setUser(null);
-      queryClient.invalidateQueries({ queryKey: ['auth'] });
+      setProfile(null);
+      queryClient.clear();
+    },
+  });
+
+  // Google Sign-In
+  const googleSignInMutation = useMutation({
+    mutationFn: async () => {
+      console.log('[Auth] Attempting Google sign-in');
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (error) {
+        console.error('[Auth] Google sign-in error:', error.message);
+        throw error;
+      }
+
+      return data;
+    },
+  });
+
+  // Password reset
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (email: string) => {
+      console.log('[Auth] Sending password reset for:', email);
+      
+      const { error } = await supabase.auth.resetPasswordForEmail(email);
+
+      if (error) {
+        console.error('[Auth] Password reset error:', error.message);
+        throw error;
+      }
     },
   });
 
   const { mutateAsync: loginAsync } = loginMutation;
   const { mutateAsync: signupAsync } = signupMutation;
   const { mutateAsync: logoutAsync } = logoutMutation;
+  const { mutateAsync: googleSignInAsync } = googleSignInMutation;
+  const { mutateAsync: resetPasswordAsync } = resetPasswordMutation;
 
   const login = useCallback((email: string, password: string) => {
     return loginAsync({ email, password });
@@ -104,14 +203,29 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     return logoutAsync();
   }, [logoutAsync]);
 
+  const signInWithGoogle = useCallback(() => {
+    return googleSignInAsync();
+  }, [googleSignInAsync]);
+
+  const resetPassword = useCallback((email: string) => {
+    return resetPasswordAsync(email);
+  }, [resetPasswordAsync]);
+
   return {
+    session,
     user,
-    isAuthenticated: !!user,
-    isLoading: authQuery.isLoading,
+    profile,
+    isAuthenticated: !!session,
+    isLoading: !isInitialized,
     isLoginLoading: loginMutation.isPending,
     isSignupLoading: signupMutation.isPending,
+    isGoogleSignInLoading: googleSignInMutation.isPending,
+    loginError: loginMutation.error,
+    signupError: signupMutation.error,
     login,
     signup,
     logout,
+    signInWithGoogle,
+    resetPassword,
   };
 });
