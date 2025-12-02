@@ -1,20 +1,32 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import Colors from '@/constants/colors';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
+import { SvgXml } from 'react-native-svg';
 
 interface AiessLogoProps {
   size?: 'small' | 'medium' | 'large';
 }
 
+// SVG content from AIESS_Black_Logo.svg
+const logoSvg = `<svg xmlns="http://www.w3.org/2000/svg" role="img" viewBox="245.77 307.77 531.96 151.96"><g stroke-miterlimit="2" stroke-width="10" transform="translate(-86.703 -66.26) scale(1.1726)"><path fill="#008cff" stroke="#008cff" d="M353.79 333.6h-7.344l-46.368 100.8h7.92l42.048-92.736 42.192 92.736h7.92z"/><path fill="#008cff" stroke="#008cff" d="M422.45 333.6v100.8h7.344V333.6z"/><path stroke="#000" d="M534.15 379.97h-65.232v6.48h65.232zm0-46.368h-65.232v6.624h65.232zm-65.232 94.176v6.624h65.232v-6.624z"/><path stroke="#000" d="M574.72 431.38c6.624 2.592 13.68 3.744 21.168 3.744 7.92 0 14.688-1.152 20.16-3.6 5.472-2.304 9.504-5.616 12.096-9.648 2.592-4.032 4.032-8.496 4.032-13.392 0-5.904-1.584-10.656-4.752-14.112-3.168-3.456-6.912-6.192-11.232-7.92-4.464-1.728-10.368-3.456-17.712-5.328-6.624-1.584-11.952-3.168-15.696-4.608-3.888-1.44-7.056-3.456-9.648-6.192-2.592-2.592-3.888-6.192-3.888-10.8 0-5.904 2.304-10.8 7.2-14.544 4.752-3.744 11.808-5.616 21.168-5.616 4.608 0 9.36.72 14.256 2.16 4.896 1.44 9.36 3.6 13.392 6.336l2.736-5.904c-4.032-2.736-8.64-4.896-13.968-6.624-5.472-1.584-10.944-2.448-16.416-2.448-8.064 0-14.688 1.296-20.016 3.6-5.328 2.448-9.216 5.76-11.808 9.792-2.592 4.032-3.888 8.496-3.888 13.392 0 6.048 1.44 10.944 4.608 14.544 3.168 3.6 6.912 6.192 11.376 7.92 4.464 1.728 10.368 3.6 17.856 5.328 6.48 1.584 11.664 3.024 15.552 4.464 3.744 1.44 7.056 3.6 9.648 6.192 2.592 2.736 3.888 6.336 3.888 10.8 0 5.904-2.448 10.656-7.344 14.256-4.896 3.744-12.24 5.472-21.744 5.472-6.624 0-12.96-1.152-19.008-3.456-6.048-2.304-10.8-5.472-14.256-9.216l-3.312 5.472c3.744 4.032 8.928 7.344 15.552 9.936z"/><path stroke="#000" d="M666.47 431.38c6.624 2.592 13.68 3.744 21.168 3.744 7.92 0 14.688-1.152 20.16-3.6 5.472-2.304 9.504-5.616 12.096-9.648 2.592-4.032 4.032-8.496 4.032-13.392 0-5.904-1.584-10.656-4.752-14.112-3.168-3.456-6.912-6.192-11.232-7.92-4.464-1.728-10.368-3.456-17.712-5.328-6.624-1.584-11.952-3.168-15.696-4.608-3.888-1.44-7.056-3.456-9.648-6.192-2.592-2.592-3.888-6.192-3.888-10.8 0-5.904 2.304-10.8 7.2-14.544 4.752-3.744 11.808-5.616 21.168-5.616 4.608 0 9.36.72 14.256 2.16 4.896 1.44 9.36 3.6 13.392 6.336l2.736-5.904c-4.032-2.736-8.64-4.896-13.968-6.624-5.472-1.584-10.944-2.448-16.416-2.448-8.064 0-14.688 1.296-20.016 3.6-5.328 2.448-9.216 5.76-11.808 9.792-2.592 4.032-3.888 8.496-3.888 13.392 0 6.048 1.44 10.944 4.608 14.544 3.168 3.6 6.912 6.192 11.376 7.92 4.464 1.728 10.368 3.6 17.856 5.328 6.48 1.584 11.664 3.024 15.552 4.464 3.744 1.44 7.056 3.6 9.648 6.192 2.592 2.736 3.888 6.336 3.888 10.8 0 5.904-2.448 10.656-7.344 14.256-4.896 3.744-12.24 5.472-21.744 5.472-6.624 0-12.96-1.152-19.008-3.456-6.048-2.304-10.8-5.472-14.256-9.216l-3.312 5.472c3.744 4.032 8.928 7.344 15.552 9.936z"/></g></svg>`;
+
 export default function AiessLogo({ size = 'large' }: AiessLogoProps) {
-  const fontSize = size === 'large' ? 64 : size === 'medium' ? 48 : 32;
+  const { width: screenWidth } = useWindowDimensions();
+  
+  // Logo takes 70% of screen width with 15% padding on each side
+  const logoWidth = screenWidth * 0.7;
+  
+  // The SVG viewBox is 531.96 x 151.96, so we maintain aspect ratio
+  const aspectRatio = 531.96 / 151.96;
+  const logoHeight = logoWidth / aspectRatio;
+  
+  // Size multipliers for different sizes
+  const sizeMultiplier = size === 'large' ? 1 : size === 'medium' ? 0.75 : 0.5;
+  const finalWidth = logoWidth * sizeMultiplier;
+  const finalHeight = logoHeight * sizeMultiplier;
   
   return (
     <View style={styles.container}>
-      <Text style={[styles.logo, { fontSize }]}>
-        <Text style={styles.ai}>AI</Text>
-        <Text style={styles.ess}>ESS</Text>
-      </Text>
+      <SvgXml xml={logoSvg} width={finalWidth} height={finalHeight} />
     </View>
   );
 }
@@ -23,15 +35,7 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  logo: {
-    fontWeight: '700' as const,
-    letterSpacing: -2,
-  },
-  ai: {
-    color: Colors.primary,
-  },
-  ess: {
-    color: Colors.text,
+    width: '100%',
+    paddingHorizontal: '15%',
   },
 });

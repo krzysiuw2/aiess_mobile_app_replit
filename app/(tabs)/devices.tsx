@@ -70,7 +70,7 @@ function DeviceCard({ device, isSelected, onPress }: DeviceCardProps) {
 
 export default function DevicesScreen() {
   const { t } = useSettings();
-  const { devices, isLoading, selectedDeviceId, selectDevice } = useDevices();
+  const { devices, isLoading, selectedDeviceId, selectDevice, isError, error, refreshDevices } = useDevices();
 
   const handleDevicePress = async (device: Device) => {
     console.log('[Devices] Selected device:', device.id);
@@ -87,6 +87,52 @@ export default function DevicesScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>{t.common.loading}</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (isError) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.emptyContainer}>
+          <XCircle size={64} color={Colors.error} />
+          <Text style={styles.emptyTitle}>{t.common.error}</Text>
+          <Text style={styles.emptySubtitle}>
+            {error?.message || 'Failed to load devices'}
+          </Text>
+          <TouchableOpacity style={styles.retryButton} onPress={refreshDevices}>
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (devices.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.headerIcon} />
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>{t.devices.title}</Text>
+            <Text style={styles.headerSubtitle}>{t.devices.subtitle}</Text>
+          </View>
+          <View style={styles.headerIcon} />
+        </View>
+        <View style={styles.emptyContainer}>
+          <Search size={64} color={Colors.textLight} />
+          <Text style={styles.emptyTitle}>No Devices Found</Text>
+          <Text style={styles.emptySubtitle}>
+            You don't have access to any devices yet.{'\n'}
+            Contact your administrator to get access.
+          </Text>
+        </View>
+        <View style={styles.footer}>
+          <TouchableOpacity style={styles.addButton} onPress={handleAddDevice}>
+            <Text style={styles.addButtonText}>{t.devices.addNew}</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -140,6 +186,42 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: Colors.textSecondary,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    gap: 16,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '600' as const,
+    color: Colors.text,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 20,
+    marginTop: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600' as const,
   },
   header: {
     flexDirection: 'row',
