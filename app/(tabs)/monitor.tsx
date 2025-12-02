@@ -3,12 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   ActivityIndicator,
-  RefreshControl,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { CheckCircle, AlertCircle, WifiOff } from 'lucide-react-native';
+import { CheckCircle, AlertCircle, WifiOff, RefreshCw } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useDevices, useLiveData } from '@/contexts/DeviceContext';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -17,12 +16,7 @@ import EnergyFlowDiagram from '@/components/EnergyFlowDiagram';
 export default function MonitorScreen() {
   const { t } = useSettings();
   const { selectedDevice } = useDevices();
-  // Pass the site_id (device_id) to InfluxDB, not the UUID
-  const { data: liveData, isLoading, isError, error, refetch, isRefetching } = useLiveData(selectedDevice?.device_id ?? null);
-
-  const handleRefresh = () => {
-    refetch();
-  };
+  const { data: liveData, isLoading, isError, error, refetch } = useLiveData(selectedDevice?.device_id ?? null);
 
   if (!selectedDevice) {
     return (
@@ -38,58 +32,33 @@ export default function MonitorScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>{t.monitor.title}</Text>
       </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefetching}
-            onRefresh={handleRefresh}
-            tintColor={Colors.primary}
-          />
-        }
-      >
+      {/* Content */}
+      <View style={styles.content}>
         {/* Device Status Bar */}
         <View style={styles.statusBar}>
           <View style={styles.statusInfo}>
             <Text style={styles.statusDeviceName}>{selectedDevice.name}</Text>
             <Text style={styles.statusSiteId}>{selectedDevice.device_id}</Text>
           </View>
-          <View style={[
-            styles.statusBadge,
-            isError && styles.statusBadgeError
-          ]}>
+          <View style={[styles.statusBadge, isError && styles.statusBadgeError]}>
             {isError ? (
               <>
-                <WifiOff size={16} color={Colors.error} />
+                <WifiOff size={14} color={Colors.error} />
                 <Text style={styles.statusTextError}>Offline</Text>
               </>
             ) : (
               <>
-                <CheckCircle size={16} color={Colors.success} />
+                <CheckCircle size={14} color={Colors.success} />
                 <Text style={styles.statusText}>Online</Text>
               </>
             )}
           </View>
         </View>
-
-        {/* Last Update Indicator */}
-        {liveData?.lastUpdate && (
-          <View style={styles.lastUpdateContainer}>
-            <Text style={styles.lastUpdateText}>
-              Last update: {liveData.lastUpdate.toLocaleTimeString()}
-            </Text>
-            <View style={styles.autoRefreshBadge}>
-              <View style={styles.autoRefreshDot} />
-              <Text style={styles.autoRefreshText}>Auto-refresh 5s</Text>
-            </View>
-          </View>
-        )}
 
         {/* Main Content */}
         {isLoading && !liveData ? (
@@ -104,12 +73,15 @@ export default function MonitorScreen() {
             <Text style={styles.errorText}>
               {error?.message || 'Unable to fetch live data'}
             </Text>
-            <Text style={styles.errorHint}>Pull down to retry</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
+              <RefreshCw size={16} color="#fff" />
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <EnergyFlowDiagram liveData={liveData} t={t} />
         )}
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -121,13 +93,17 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 12,
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '600',
     color: Colors.text,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 16,
   },
   centered: {
     flex: 1,
@@ -147,32 +123,25 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
   },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 32,
-  },
   statusBar: {
     backgroundColor: Colors.card,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 12,
+    padding: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   statusInfo: {
     flex: 1,
   },
   statusDeviceName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: Colors.textOnDark,
   },
   statusSiteId: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.textOnDarkSecondary,
     marginTop: 2,
   },
@@ -180,52 +149,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(76, 175, 80, 0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 5,
   },
   statusBadgeError: {
     backgroundColor: 'rgba(244, 67, 54, 0.15)',
   },
   statusText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
     color: Colors.success,
   },
   statusTextError: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
     color: Colors.error,
   },
-  lastUpdateContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 4,
-  },
-  lastUpdateText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  autoRefreshBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  autoRefreshDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.success,
-  },
-  autoRefreshText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
   loadingContainer: {
-    height: 400,
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 16,
@@ -235,7 +178,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   errorContainer: {
-    height: 300,
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
@@ -251,9 +194,19 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
   },
-  errorHint: {
-    fontSize: 12,
-    color: Colors.textLight,
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 8,
     marginTop: 8,
+  },
+  retryText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
