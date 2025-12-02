@@ -5,76 +5,139 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { ArrowLeft, Search, CheckCircle, Pencil } from 'lucide-react-native';
+import { 
+  Plus, 
+  CheckCircle, 
+  XCircle, 
+  Pencil, 
+  Trash2,
+  Zap,
+  Battery,
+  Clock,
+  Calendar,
+} from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
-import { mockRules, getActionTypeLabel, formatTime, getDaysLabel } from '@/mocks/devices';
+import { useDevices } from '@/contexts/DeviceContext';
+import { useSchedules } from '@/hooks/useSchedules';
+import { 
+  getActionTypeLabel, 
+  formatTime, 
+  getDaysLabel,
+  getPriorityLabel,
+} from '@/lib/aws-schedules';
 import { Rule } from '@/types';
 
 interface RuleCardProps {
   rule: Rule;
   onEdit: () => void;
+  onDelete: () => void;
+  t: any;
 }
 
-function RuleCard({ rule, onEdit }: RuleCardProps) {
-  const { t } = useSettings();
+function RuleCard({ rule, onEdit, onDelete, t }: RuleCardProps) {
+  const isActive = rule.act !== false; // Default is true
   const actionLabel = getActionTypeLabel(rule.a.t);
-  const daysLabel = rule.c?.d ? getDaysLabel(rule.c.d) : t.schedules.everyday;
-  const timeRange = rule.c?.ts && rule.c?.te 
-    ? `${formatTime(rule.c.ts)}-${formatTime(rule.c.te)}`
-    : '-';
-  
-  const validFrom = rule.c?.vf 
-    ? new Date(rule.c.vf * 1000).toLocaleDateString('en-GB')
-    : '-';
+  const daysLabel = rule.c?.d ? getDaysLabel(rule.c.d) : 'Everyday';
+  const timeRange = rule.c?.ts !== undefined && rule.c?.te !== undefined
+    ? `${formatTime(rule.c.ts)} - ${formatTime(rule.c.te)}`
+    : 'Always';
+
+  // Build action details string
+  const getActionDetails = () => {
+    const parts: string[] = [];
+    
+    if (rule.a.soc !== undefined) {
+      parts.push(`${rule.a.soc}% SoC`);
+    }
+    if (rule.a.pw !== undefined) {
+      parts.push(`${rule.a.pw} kW`);
+    }
+    if (rule.a.maxp !== undefined) {
+      parts.push(`Max: ${rule.a.maxp} kW`);
+    }
+    if (rule.a.maxg !== undefined) {
+      parts.push(`Grid max: ${rule.a.maxg} kW`);
+    }
+    if (rule.a.hth !== undefined) {
+      parts.push(`High: ${rule.a.hth} kW`);
+    }
+    if (rule.a.lth !== undefined) {
+      parts.push(`Low: ${rule.a.lth} kW`);
+    }
+    
+    return parts.join(' • ') || '-';
+  };
 
   return (
-    <View style={styles.ruleCard}>
+    <View style={[styles.ruleCard, !isActive && styles.ruleCardInactive]}>
+      {/* Header */}
       <View style={styles.cardHeader}>
-        <Text style={styles.ruleId}>Rule ID: {rule.id}</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.ruleId}>{rule.id}</Text>
+          <Text style={styles.priorityBadge}>P{rule.p}</Text>
+        </View>
         <View style={styles.headerRight}>
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusText}>{t.devices.status}</Text>
-            <CheckCircle size={18} color={Colors.success} />
+          <View style={[styles.statusBadge, !isActive && styles.statusBadgeInactive]}>
+            {isActive ? (
+              <CheckCircle size={16} color={Colors.success} />
+            ) : (
+              <XCircle size={16} color={Colors.textSecondary} />
+            )}
+            <Text style={[styles.statusText, !isActive && styles.statusTextInactive]}>
+              {isActive ? 'Active' : 'Inactive'}
+            </Text>
           </View>
-          <TouchableOpacity style={styles.editButton} onPress={onEdit}>
-            <Pencil size={20} color={Colors.primary} />
-          </TouchableOpacity>
         </View>
       </View>
 
+      {/* Content */}
       <View style={styles.cardContent}>
-        <View style={styles.column}>
-          <Text style={styles.columnTitle}>{t.schedules.actions}:</Text>
-          <Text style={styles.columnText}>
-            {t.schedules.type}: {rule.a.soc ? `${actionLabel} ${rule.a.soc}% SoC` : actionLabel}
-          </Text>
-          {rule.a.maxp !== undefined && (
-            <Text style={styles.columnText}>
-              {t.schedules.maxPower}: {rule.a.maxp} kW
-            </Text>
-          )}
-          {rule.a.pw !== undefined && (
-            <Text style={styles.columnText}>
-              {t.schedules.maxPower}: {rule.a.pw} kW
-            </Text>
-          )}
-          {rule.a.maxg !== undefined && (
-            <Text style={styles.columnText}>
-              {t.schedules.maxGrid}: {rule.a.maxg} kW
-            </Text>
-          )}
+        {/* Action */}
+        <View style={styles.infoRow}>
+          <Zap size={16} color={Colors.primary} />
+          <Text style={styles.infoLabel}>Action:</Text>
+          <Text style={styles.infoValue}>{actionLabel}</Text>
+        </View>
+        
+        {/* Details */}
+        <View style={styles.infoRow}>
+          <Battery size={16} color={Colors.textSecondary} />
+          <Text style={styles.infoLabel}>Details:</Text>
+          <Text style={styles.infoValue} numberOfLines={1}>{getActionDetails()}</Text>
         </View>
 
-        <View style={styles.column}>
-          <Text style={styles.columnTitle}>{t.schedules.timeConditions}:</Text>
-          <Text style={styles.columnText}>{daysLabel}</Text>
-          <Text style={styles.columnText}>{timeRange}</Text>
-          <Text style={styles.columnText}>{t.schedules.from} {validFrom}-∞</Text>
+        {/* Time */}
+        <View style={styles.infoRow}>
+          <Clock size={16} color={Colors.textSecondary} />
+          <Text style={styles.infoLabel}>Time:</Text>
+          <Text style={styles.infoValue}>{timeRange}</Text>
         </View>
+
+        {/* Days */}
+        <View style={styles.infoRow}>
+          <Calendar size={16} color={Colors.textSecondary} />
+          <Text style={styles.infoLabel}>Days:</Text>
+          <Text style={styles.infoValue}>{daysLabel}</Text>
+        </View>
+      </View>
+
+      {/* Actions */}
+      <View style={styles.cardActions}>
+        <TouchableOpacity style={styles.actionButton} onPress={onEdit}>
+          <Pencil size={18} color={Colors.primary} />
+          <Text style={styles.actionButtonText}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionButton, styles.deleteButton]} onPress={onDelete}>
+          <Trash2 size={18} color={Colors.error} />
+          <Text style={[styles.actionButtonText, styles.deleteButtonText]}>Delete</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -82,49 +145,108 @@ function RuleCard({ rule, onEdit }: RuleCardProps) {
 
 export default function ScheduleListScreen() {
   const { t } = useSettings();
+  const { selectedDevice } = useDevices();
+  const { rules, isLoading, error, refetch, removeRule, shadowVersion } = useSchedules();
 
-  const handleEditRule = (ruleId: string) => {
-    router.push({ pathname: '/(tabs)/schedule/[ruleId]', params: { ruleId } });
+  const handleEditRule = (rule: Rule) => {
+    router.push({ 
+      pathname: '/(tabs)/schedule/[ruleId]', 
+      params: { ruleId: rule.id, priority: rule.p.toString() } 
+    });
+  };
+
+  const handleDeleteRule = (rule: Rule) => {
+    Alert.alert(
+      'Delete Rule',
+      `Are you sure you want to delete "${rule.id}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await removeRule(rule.id, rule.p);
+            } catch (err) {
+              Alert.alert('Error', 'Failed to delete rule');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleAddRule = () => {
     router.push({ pathname: '/(tabs)/schedule/[ruleId]', params: { ruleId: 'new' } });
   };
 
+  if (!selectedDevice) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centered}>
+          <Text style={styles.emptyTitle}>No Device Selected</Text>
+          <Text style={styles.emptySubtitle}>Please select a device from the Devices tab</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerIcon}>
-          <ArrowLeft size={24} color={Colors.text} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
+        <View>
           <Text style={styles.headerTitle}>{t.schedules.title}</Text>
-          <Text style={styles.headerSubtitle}>{t.schedules.subtitle}</Text>
+          <Text style={styles.headerSubtitle}>
+            {selectedDevice.name} • {rules.length} rules
+            {shadowVersion && ` • v${shadowVersion}`}
+          </Text>
         </View>
-        <TouchableOpacity style={styles.headerIcon}>
-          <Search size={24} color={Colors.text} />
-        </TouchableOpacity>
       </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {mockRules.map((rule) => (
-          <RuleCard
-            key={rule.id}
-            rule={rule}
-            onEdit={() => handleEditRule(rule.id)}
-          />
-        ))}
-      </ScrollView>
+      {/* Content */}
+      {isLoading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading schedules...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.centered}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={refetch}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : rules.length === 0 ? (
+        <View style={styles.centered}>
+          <Text style={styles.emptyTitle}>No Rules</Text>
+          <Text style={styles.emptySubtitle}>Create your first schedule rule</Text>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={isLoading} onRefresh={refetch} />
+          }
+        >
+          {rules.map((rule) => (
+            <RuleCard
+              key={`${rule.p}-${rule.id}`}
+              rule={rule}
+              onEdit={() => handleEditRule(rule)}
+              onDelete={() => handleDeleteRule(rule)}
+              t={t}
+            />
+          ))}
+        </ScrollView>
+      )}
 
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.addButton} onPress={handleAddRule}>
-          <Text style={styles.addButtonText}>{t.schedules.addRule}</Text>
-        </TouchableOpacity>
-      </View>
+      {/* FAB */}
+      <TouchableOpacity style={styles.fab} onPress={handleAddRule}>
+        <Plus size={28} color="#fff" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -135,42 +257,72 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  headerIcon: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
+    paddingVertical: 16,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: '600' as const,
+    fontSize: 28,
+    fontWeight: '700',
     color: Colors.text,
   },
   headerSubtitle: {
     fontSize: 14,
     color: Colors.textSecondary,
-    marginTop: 2,
+    marginTop: 4,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  loadingText: {
+    marginTop: 12,
+    color: Colors.textSecondary,
+  },
+  errorText: {
+    color: Colors.error,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     padding: 16,
+    paddingBottom: 100,
     gap: 12,
   },
   ruleCard: {
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surface,
     borderRadius: 16,
     padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  ruleCardInactive: {
+    opacity: 0.6,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -178,67 +330,112 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
   ruleId: {
     fontSize: 16,
-    fontWeight: '500' as const,
-    color: Colors.textOnDark,
+    fontWeight: '700',
+    color: Colors.text,
+    flexShrink: 1,
+  },
+  priorityBadge: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.primary,
+    backgroundColor: Colors.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 6,
+    gap: 4,
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusBadgeInactive: {
+    backgroundColor: Colors.surfaceSecondary,
   },
   statusText: {
-    fontSize: 14,
-    color: Colors.textOnDark,
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.success,
   },
-  editButton: {
-    width: 36,
-    height: 36,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
+  statusTextInactive: {
+    color: Colors.textSecondary,
   },
   cardContent: {
-    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
   },
-  column: {
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  infoLabel: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    width: 55,
+  },
+  infoValue: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Colors.text,
     flex: 1,
   },
-  columnTitle: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.textOnDark,
-    marginBottom: 8,
+  cardActions: {
+    flexDirection: 'row',
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 12,
   },
-  columnText: {
-    fontSize: 13,
-    color: Colors.textOnDarkSecondary,
-    marginBottom: 4,
-  },
-  footer: {
-    padding: 16,
-    paddingBottom: 8,
-  },
-  addButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 30,
-    paddingVertical: 16,
+  actionButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 8,
   },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600' as const,
+  actionButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  deleteButton: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+  },
+  deleteButtonText: {
+    color: Colors.error,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 16,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
 });
