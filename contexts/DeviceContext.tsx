@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { fetchLiveData, calculateFactoryLoad, getBatteryStatus } from '@/lib/influxdb';
 import { useAuth } from '@/contexts/AuthContext';
 import { Device, LiveData } from '@/types';
 
@@ -127,28 +128,50 @@ export const [DeviceProvider, useDevices] = createContextHook(() => {
   };
 });
 
-// Hook for live data (will be implemented with InfluxDB in Phase 3)
-export const useLiveData = (deviceId: string | null) => {
+// Hook for live data from InfluxDB
+export const useLiveData = (siteId: string | null) => {
   return useQuery({
-    queryKey: ['liveData', deviceId],
+    queryKey: ['liveData', siteId],
     queryFn: async (): Promise<LiveData> => {
-      console.log('[LiveData] Fetching live data for device:', deviceId);
+      if (!siteId) {
+        throw new Error('No site ID provided');
+      }
       
-      // TODO: Replace with InfluxDB query in Phase 3
-      // For now, return mock data
-      await new Promise(resolve => setTimeout(resolve, 300));
+      console.log('[LiveData] Fetching live data for site:', siteId);
       
-      return {
-        gridPower: Math.round((Math.random() - 0.3) * 50),
-        batteryPower: Math.round((Math.random() - 0.5) * 80),
-        batterySoc: Math.round(45 + Math.random() * 40),
-        batteryStatus: Math.random() > 0.5 ? 'Charging' : 'Discharging',
-        pvPower: Math.round(Math.random() * 60),
-        factoryLoad: Math.round(Math.random() * 100),
-        lastUpdate: new Date(),
-      };
+      try {
+        // Fetch real data from InfluxDB
+        const influxData = await fetchLiveData(siteId);
+        
+        // Calculate derived values
+        const factoryLoad = calculateFactoryLoad(
+          influxData.gridPower,
+          influxData.pvPower,
+          influxData.batteryPower
+        );
+        
+        const batteryStatus = getBatteryStatus(influxData.batteryPower);
+        
+        const liveData: LiveData = {
+          gridPower: Math.round(influxData.gridPower * 10) / 10,
+          batteryPower: Math.round(influxData.batteryPower * 10) / 10,
+          batterySoc: Math.round(influxData.batterySoc),
+          batteryStatus,
+          pvPower: Math.round(influxData.pvPower * 10) / 10,
+          factoryLoad: Math.round(factoryLoad * 10) / 10,
+          lastUpdate: influxData.timestamp,
+        };
+        
+        console.log('[LiveData] Data received:', liveData);
+        return liveData;
+      } catch (error) {
+        console.error('[LiveData] Error fetching data:', error);
+        throw error;
+      }
     },
-    enabled: !!deviceId,
-    refetchInterval: 5000, // 5 seconds
+    enabled: !!siteId,
+    refetchInterval: 5000, // 5 seconds auto-refresh
+    retry: 2,
+    retryDelay: 1000,
   });
 };

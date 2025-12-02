@@ -23,8 +23,9 @@ import { useSettings } from '@/contexts/SettingsContext';
 
 export default function MonitorScreen() {
   const { t } = useSettings();
-  const { selectedDevice, selectedDeviceId } = useDevices();
-  const { data: liveData, isLoading } = useLiveData(selectedDeviceId);
+  const { selectedDevice } = useDevices();
+  // Pass the site_id (device_id) to InfluxDB, not the UUID
+  const { data: liveData, isLoading, isError, error } = useLiveData(selectedDevice?.device_id ?? null);
 
   if (!selectedDevice) {
     return (

@@ -256,30 +256,31 @@ ORDER BY d.name;
 const INFLUX_CONFIG = {
   url: "https://eu-central-1-1.aws.cloud2.influxdata.com",
   org: "aiess",
-  bucket: "live", // or device.influxdb_bucket
-  token: "READ_ONLY_TOKEN" // from secure storage
+  bucket: "aiess_v1",
+  token: "READ_ONLY_TOKEN" // from .env
 };
 ```
 
 **InfluxDB Query (Flux):**
 ```flux
-from(bucket: "live")
+from(bucket: "aiess_v1")
   |> range(start: -1m)
-  |> filter(fn: (r) => r._measurement == "energy_data")
-  |> filter(fn: (r) => r.site_id == "${device_id}")
+  |> filter(fn: (r) => r._measurement == "energy_telemetry")
+  |> filter(fn: (r) => r.site_id == "${site_id}")
   |> last()
 ```
 
 **Live Data Fields:**
 
-| Field | Key | Unit | Calculation |
-|-------|-----|------|-------------|
-| Grid Power | `grid_power` | kW | Direct |
-| Battery Power | `battery_power` | kW | Direct (+ = charge, - = discharge) |
-| Battery SoC | `battery_soc` | % | Direct |
-| Battery Status | `battery_status` | enum | "Charging", "Discharging", "Standby" |
-| PV Power | `pv_power` | kW | Direct |
-| Factory Load | Calculated | kW | `max(0, grid_power + pv_power - battery_power)` |
+| Field | InfluxDB Key | Unit | Description |
+|-------|--------------|------|-------------|
+| Grid Power | `grid_power` | kW | + = importing, - = exporting |
+| Battery Power | `pcs_power` | kW | + = charging, - = discharging |
+| Battery SoC | `soc` | % | State of charge (0-100) |
+| Battery Status | Calculated | enum | Based on pcs_power sign |
+| PV Power | `total_pv_power` | kW | Solar generation |
+| Compensated Power | `compensated_power` | kW | Grid compensation |
+| Factory Load | Calculated | kW | `max(0, grid_power + total_pv_power - pcs_power)` |
 
 **Refresh Configuration:**
 - Interval: 5 seconds
