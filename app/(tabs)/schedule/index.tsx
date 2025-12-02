@@ -43,7 +43,7 @@ interface RuleCardProps {
 
 function RuleCard({ rule, onEdit, onDelete, t }: RuleCardProps) {
   const isActive = rule.act !== false; // Default is true
-  const actionLabel = getActionTypeLabel(rule.a.t);
+  const actionLabel = rule.a?.t ? getActionTypeLabel(rule.a.t) : 'Unknown';
   const daysLabel = rule.c?.d ? getDaysLabel(rule.c.d) : 'Everyday';
   const timeRange = rule.c?.ts !== undefined && rule.c?.te !== undefined
     ? `${formatTime(rule.c.ts)} - ${formatTime(rule.c.te)}`
@@ -51,6 +51,8 @@ function RuleCard({ rule, onEdit, onDelete, t }: RuleCardProps) {
 
   // Build action details string
   const getActionDetails = () => {
+    if (!rule.a) return '-';
+    
     const parts: string[] = [];
     
     if (rule.a.soc !== undefined) {
