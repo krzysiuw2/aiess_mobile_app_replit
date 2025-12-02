@@ -44,7 +44,11 @@ interface RuleCardProps {
 function RuleCard({ rule, onEdit, onDelete, t }: RuleCardProps) {
   const isActive = rule.act !== false; // Default is true
   const actionLabel = rule.a?.t ? getActionTypeLabel(rule.a.t) : 'Unknown';
-  const daysLabel = rule.c?.d ? getDaysLabel(rule.c.d) : 'Everyday';
+  
+  // Debug: log what days value we're getting
+  console.log(`[RuleCard] Rule ${rule.id} - conditions:`, JSON.stringify(rule.c), 'days field:', rule.c?.d);
+  
+  const daysLabel = rule.c?.d ? getDaysLabel(String(rule.c.d)) : 'Everyday';
   const timeRange = rule.c?.ts !== undefined && rule.c?.te !== undefined
     ? `${formatTime(rule.c.ts)} - ${formatTime(rule.c.te)}`
     : 'Always';

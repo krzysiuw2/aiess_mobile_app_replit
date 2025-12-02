@@ -208,10 +208,21 @@ export function parseTime(timeStr: string): number {
 }
 
 /**
- * Helper: Get weekday label from shorthand
+ * Helper: Get weekday label from shorthand, digit string, or array
  */
-export function getDaysLabel(days: string | undefined): string {
+export function getDaysLabel(days: string | string[] | undefined): string {
+  console.log('[getDaysLabel] Input:', days, 'type:', typeof days);
+  
   if (!days) return 'Everyday';
+  
+  // Handle array format (verbose) ["Mon", "Tue", ...]
+  if (Array.isArray(days)) {
+    if (days.length === 7) return 'Everyday';
+    if (days.length === 0) return 'Everyday';
+    return days.join(', ');
+  }
+  
+  const daysStr = String(days);
   
   const shorthandLabels: Record<string, string> = {
     weekdays: 'Mon-Fri',
@@ -223,18 +234,35 @@ export function getDaysLabel(days: string | undefined): string {
     all: 'Everyday',
   };
   
-  if (shorthandLabels[days.toLowerCase()]) {
-    return shorthandLabels[days.toLowerCase()];
+  if (shorthandLabels[daysStr.toLowerCase()]) {
+    return shorthandLabels[daysStr.toLowerCase()];
   }
   
-  // Handle digit string like "12345" (Mon-Fri)
-  if (/^\d+$/.test(days)) {
-    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const selectedDays = days.split('').map(d => dayNames[parseInt(d)] || d);
-    return selectedDays.join(', ');
+  // Handle digit string like "12345" (Mon-Fri) or "5" (Fri only)
+  // Schema: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 0 or 7=Sun
+  if (/^[0-7]+$/.test(daysStr)) {
+    const dayMap: Record<string, string> = {
+      '0': 'Sun',
+      '1': 'Mon',
+      '2': 'Tue',
+      '3': 'Wed',
+      '4': 'Thu',
+      '5': 'Fri',
+      '6': 'Sat',
+      '7': 'Sun',
+    };
+    const selectedDays = daysStr.split('').map(d => dayMap[d] || d);
+    // Remove duplicates and join
+    const uniqueDays = [...new Set(selectedDays)];
+    return uniqueDays.join(', ');
   }
   
-  return days;
+  // Handle range format like "mon-fri"
+  if (daysStr.includes('-')) {
+    return daysStr;
+  }
+  
+  return daysStr;
 }
 
 /**
