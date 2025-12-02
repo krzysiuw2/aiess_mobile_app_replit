@@ -1,13 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
-import Svg, { Line, Rect, G } from 'react-native-svg';
+import { View, Text, StyleSheet } from 'react-native';
 import {
   Battery,
   BatteryCharging,
-  Zap,
   Factory,
   Sun,
   Grid3X3,
+  Zap,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { LiveData } from '@/types';
@@ -27,33 +26,9 @@ interface EnergyFlowDiagramProps {
 }
 
 export default function EnergyFlowDiagram({ liveData, t }: EnergyFlowDiagramProps) {
-  const { width: screenWidth } = useWindowDimensions();
-  
-  // Calculate responsive dimensions
-  const diagramWidth = screenWidth - 32;
-  const centerX = diagramWidth / 2;
-  
-  // Card dimensions
-  const cardWidth = (diagramWidth - 16) / 3;
-  const gridCenterX = cardWidth / 2;
-  const factoryCenterX = centerX;
-  const pvCenterX = diagramWidth - cardWidth / 2;
-  
-  // SVG dimensions for flow lines
-  const svgHeight = 100;
-  const lineY1 = 0; // Top of SVG
-  const junctionY = 50; // Where horizontal line is
-  const lineY2 = svgHeight; // Bottom of SVG
-  
   const batteryPower = liveData?.batteryPower ?? 0;
   const gridPower = liveData?.gridPower ?? 0;
   const pvPower = liveData?.pvPower ?? 0;
-  
-  // Get line color based on activity
-  const getLineColor = (power: number) => {
-    if (Math.abs(power) > 0.5) return Colors.primary;
-    return Colors.border;
-  };
   
   // Get status color
   const getStatusColor = () => {
@@ -66,143 +41,75 @@ export default function EnergyFlowDiagram({ liveData, t }: EnergyFlowDiagramProp
 
   return (
     <View style={styles.container}>
-      {/* Battery Section - Compact */}
-      <View style={styles.batterySection}>
-        <View style={styles.batteryRow}>
-          <View style={styles.batteryIconWrapper}>
-            {liveData?.batteryStatus === 'Charging' ? (
-              <BatteryCharging size={40} color={Colors.success} />
-            ) : (
-              <Battery size={40} color={Colors.text} />
-            )}
-          </View>
-          
-          <View style={styles.batteryStats}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>{t.monitor.soc}</Text>
-              <Text style={styles.statValue}>{liveData?.batterySoc ?? 0}%</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>{t.monitor.status}</Text>
-              <Text style={[styles.statValue, { color: getStatusColor() }]}>
-                {liveData?.batteryStatus ?? '—'}
-              </Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>{t.monitor.power}</Text>
-              <Text style={styles.statValue}>{Math.abs(batteryPower)} kW</Text>
-            </View>
+      {/* Battery Card - Large */}
+      <View style={styles.batteryCard}>
+        <View style={styles.batteryHeader}>
+          {liveData?.batteryStatus === 'Charging' ? (
+            <BatteryCharging size={48} color={Colors.success} />
+          ) : (
+            <Battery size={48} color={Colors.text} />
+          )}
+          <View style={styles.batteryMainInfo}>
+            <Text style={styles.batteryLabel}>Battery</Text>
+            <Text style={styles.batterySoc}>{liveData?.batterySoc ?? 0}%</Text>
           </View>
         </View>
-      </View>
-
-      {/* Flow Lines SVG */}
-      <View style={styles.flowContainer}>
-        <Svg width={diagramWidth} height={svgHeight}>
-          {/* Vertical line from battery to junction */}
-          <Line
-            x1={centerX}
-            y1={lineY1}
-            x2={centerX}
-            y2={junctionY}
-            stroke={getLineColor(batteryPower)}
-            strokeWidth={2}
-          />
-          
-          {/* Inverter box */}
-          <G>
-            <Rect
-              x={centerX - 20}
-              y={junctionY - 14}
-              width={40}
-              height={28}
-              rx={6}
-              fill={Colors.card}
-              stroke={Colors.primary}
-              strokeWidth={2}
-            />
-          </G>
-          
-          {/* Junction to Grid */}
-          <Line
-            x1={centerX}
-            y1={junctionY + 14}
-            x2={centerX}
-            y2={junctionY + 20}
-            stroke={Colors.border}
-            strokeWidth={2}
-          />
-          <Line
-            x1={gridCenterX}
-            y1={junctionY + 20}
-            x2={pvCenterX}
-            y2={junctionY + 20}
-            stroke={Colors.border}
-            strokeWidth={2}
-          />
-          
-          {/* Grid vertical */}
-          <Line
-            x1={gridCenterX}
-            y1={junctionY + 20}
-            x2={gridCenterX}
-            y2={lineY2}
-            stroke={getLineColor(gridPower)}
-            strokeWidth={2}
-          />
-          
-          {/* Factory vertical */}
-          <Line
-            x1={factoryCenterX}
-            y1={junctionY + 20}
-            x2={factoryCenterX}
-            y2={lineY2}
-            stroke={Colors.border}
-            strokeWidth={2}
-          />
-          
-          {/* PV vertical */}
-          <Line
-            x1={pvCenterX}
-            y1={junctionY + 20}
-            x2={pvCenterX}
-            y2={lineY2}
-            stroke={getLineColor(pvPower)}
-            strokeWidth={2}
-          />
-        </Svg>
         
-        {/* Inverter Icon Overlay */}
-        <View style={[styles.inverterIcon, { left: centerX - 12, top: junctionY - 12 }]}>
-          <Zap size={20} color={Colors.primary} />
+        <View style={styles.batteryStats}>
+          <View style={styles.batteryStat}>
+            <Zap size={18} color={Colors.textSecondary} />
+            <Text style={styles.batteryStatLabel}>{t.monitor.power}</Text>
+            <Text style={styles.batteryStatValue}>{Math.abs(batteryPower)} kW</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.batteryStat}>
+            <Text style={styles.batteryStatLabel}>{t.monitor.status}</Text>
+            <Text style={[styles.batteryStatValue, { color: getStatusColor() }]}>
+              {liveData?.batteryStatus ?? '—'}
+            </Text>
+          </View>
         </View>
       </View>
 
-      {/* Bottom Cards */}
-      <View style={styles.bottomSection}>
-        <View style={[styles.bottomCard, gridPower > 0.5 && styles.activeCard]}>
-          <Grid3X3 size={24} color={gridPower > 0.5 ? Colors.primary : Colors.text} />
-          <Text style={styles.bottomCardLabel}>{t.monitor.grid}</Text>
-          <Text style={[styles.bottomCardValue, gridPower < -0.5 && styles.exportValue]}>
+      {/* Bottom Row - Grid, Factory, PV */}
+      <View style={styles.bottomRow}>
+        {/* Grid Card */}
+        <View style={[styles.card, gridPower > 0.5 && styles.cardActive]}>
+          <View style={[styles.cardIcon, gridPower > 0.5 && styles.cardIconActive]}>
+            <Grid3X3 size={28} color={gridPower > 0.5 ? Colors.primary : Colors.text} />
+          </View>
+          <Text style={styles.cardLabel}>{t.monitor.grid}</Text>
+          <Text style={[styles.cardValue, gridPower < -0.5 && styles.valueExport]}>
             {liveData?.gridPower ?? 0} kW
           </Text>
-        </View>
-
-        <View style={styles.bottomCard}>
-          <Factory size={24} color={Colors.text} />
-          <Text style={styles.bottomCardLabel}>{t.monitor.factory}</Text>
-          <Text style={styles.bottomCardValue}>
-            {liveData?.factoryLoad ?? 0} kW
+          <Text style={styles.cardHint}>
+            {gridPower > 0.5 ? 'Importing' : gridPower < -0.5 ? 'Exporting' : '—'}
           </Text>
         </View>
 
-        <View style={[styles.bottomCard, pvPower > 0.5 && styles.pvActiveCard]}>
-          <Sun size={24} color={pvPower > 0.5 ? Colors.warning : Colors.text} />
-          <Text style={styles.bottomCardLabel}>{t.monitor.pv}</Text>
-          <Text style={[styles.bottomCardValue, pvPower > 0.5 && styles.pvValue]}>
+        {/* Factory Card */}
+        <View style={styles.card}>
+          <View style={styles.cardIcon}>
+            <Factory size={28} color={Colors.text} />
+          </View>
+          <Text style={styles.cardLabel}>{t.monitor.factory}</Text>
+          <Text style={styles.cardValue}>
+            {liveData?.factoryLoad ?? 0} kW
+          </Text>
+          <Text style={styles.cardHint}>Load</Text>
+        </View>
+
+        {/* PV Card */}
+        <View style={[styles.card, pvPower > 0.5 && styles.cardPvActive]}>
+          <View style={[styles.cardIcon, pvPower > 0.5 && styles.cardIconPvActive]}>
+            <Sun size={28} color={pvPower > 0.5 ? Colors.warning : Colors.text} />
+          </View>
+          <Text style={styles.cardLabel}>{t.monitor.pv}</Text>
+          <Text style={[styles.cardValue, pvPower > 0.5 && styles.valuePv]}>
             {liveData?.pvPower ?? 0} kW
+          </Text>
+          <Text style={styles.cardHint}>
+            {pvPower > 0.5 ? 'Generating' : '—'}
           </Text>
         </View>
       </View>
@@ -212,97 +119,115 @@ export default function EnergyFlowDiagram({ liveData, t }: EnergyFlowDiagramProp
 
 const styles = StyleSheet.create({
   container: {
-    width: '100%',
     flex: 1,
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    gap: 20,
   },
-  batterySection: {
+  batteryCard: {
     backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 20,
+    padding: 20,
   },
-  batteryRow: {
+  batteryHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 20,
   },
-  batteryIconWrapper: {
-    marginRight: 16,
+  batteryMainInfo: {
+    marginLeft: 16,
   },
-  batteryStats: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: Colors.border,
-  },
-  statLabel: {
-    fontSize: 10,
+  batteryLabel: {
+    fontSize: 14,
     color: Colors.textSecondary,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    marginBottom: 2,
+    fontWeight: '500',
   },
-  statValue: {
-    fontSize: 16,
+  batterySoc: {
+    fontSize: 36,
     fontWeight: '700',
     color: Colors.text,
   },
-  flowContainer: {
-    position: 'relative',
-    width: '100%',
-    height: 100,
-    marginVertical: 16,
-  },
-  inverterIcon: {
-    position: 'absolute',
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  bottomSection: {
+  batteryStats: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+    borderRadius: 12,
+    padding: 16,
   },
-  bottomCard: {
+  batteryStat: {
     flex: 1,
     alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    gap: 6,
+    gap: 4,
   },
-  activeCard: {
-    borderWidth: 1,
-    borderColor: Colors.primary,
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: Colors.border,
+    marginHorizontal: 12,
   },
-  pvActiveCard: {
-    borderWidth: 1,
-    borderColor: Colors.warning,
-  },
-  bottomCardLabel: {
-    fontSize: 13,
-    fontWeight: '600',
+  batteryStatLabel: {
+    fontSize: 12,
     color: Colors.textSecondary,
+    fontWeight: '500',
   },
-  bottomCardValue: {
+  batteryStatValue: {
     fontSize: 18,
     fontWeight: '700',
     color: Colors.text,
   },
-  exportValue: {
+  bottomRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  card: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    padding: 16,
+    alignItems: 'center',
+  },
+  cardActive: {
+    borderWidth: 2,
+    borderColor: Colors.primary,
+  },
+  cardPvActive: {
+    borderWidth: 2,
+    borderColor: Colors.warning,
+  },
+  cardIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  cardIconActive: {
+    backgroundColor: Colors.primaryLight,
+  },
+  cardIconPvActive: {
+    backgroundColor: '#FFF8E1',
+  },
+  cardLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  cardValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  valueExport: {
     color: Colors.success,
   },
-  pvValue: {
+  valuePv: {
     color: Colors.warning,
+  },
+  cardHint: {
+    fontSize: 12,
+    color: Colors.textLight,
   },
 });
