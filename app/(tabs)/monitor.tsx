@@ -104,6 +104,8 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 16,
+    justifyContent: 'flex-start',
+    paddingTop: 8,
   },
   centered: {
     flex: 1,

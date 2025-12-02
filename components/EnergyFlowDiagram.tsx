@@ -40,9 +40,9 @@ export default function EnergyFlowDiagram({ liveData, t }: EnergyFlowDiagramProp
   const pvCenterX = diagramWidth - cardWidth / 2;
   
   // SVG dimensions for flow lines
-  const svgHeight = 80;
+  const svgHeight = 100;
   const lineY1 = 0; // Top of SVG
-  const junctionY = 40; // Where horizontal line is
+  const junctionY = 50; // Where horizontal line is
   const lineY2 = svgHeight; // Bottom of SVG
   
   const batteryPower = liveData?.batteryPower ?? 0;
@@ -213,12 +213,13 @@ export default function EnergyFlowDiagram({ liveData, t }: EnergyFlowDiagramProp
 const styles = StyleSheet.create({
   container: {
     width: '100%',
+    flex: 1,
+    justifyContent: 'space-between',
   },
   batterySection: {
     backgroundColor: Colors.surface,
     borderRadius: 16,
     padding: 16,
-    marginBottom: 0,
   },
   batteryRow: {
     flexDirection: 'row',
@@ -256,7 +257,8 @@ const styles = StyleSheet.create({
   flowContainer: {
     position: 'relative',
     width: '100%',
-    height: 80,
+    height: 100,
+    marginVertical: 16,
   },
   inverterIcon: {
     position: 'absolute',
@@ -268,6 +270,7 @@ const styles = StyleSheet.create({
   bottomSection: {
     flexDirection: 'row',
     gap: 8,
+    marginBottom: 16,
   },
   bottomCard: {
     flex: 1,
