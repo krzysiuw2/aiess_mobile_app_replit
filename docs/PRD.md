@@ -275,7 +275,7 @@ from(bucket: "aiess_v1")
 | Field | InfluxDB Key | Unit | Description |
 |-------|--------------|------|-------------|
 | Grid Power | `grid_power` | kW | + = importing, - = exporting |
-| Battery Power | `pcs_power` | kW | + = charging, - = discharging |
+| Battery Power | `pcs_power` | kW | - = charging, + = discharging |
 | Battery SoC | `soc` | % | State of charge (0-100) |
 | Battery Status | Calculated | enum | Based on pcs_power sign |
 | PV Power | `total_pv_power` | kW | Solar generation |

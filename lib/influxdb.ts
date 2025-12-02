@@ -157,10 +157,10 @@ export function calculateFactoryLoad(
 
 /**
  * Determine battery status from power value
- * pcs_power: + = charging, - = discharging
+ * pcs_power: - = charging (power going into battery), + = discharging (power coming out)
  */
 export function getBatteryStatus(batteryPower: number): 'Charging' | 'Discharging' | 'Standby' {
-  if (batteryPower > 0.5) return 'Charging';
-  if (batteryPower < -0.5) return 'Discharging';
+  if (batteryPower < -0.5) return 'Charging';
+  if (batteryPower > 0.5) return 'Discharging';
   return 'Standby';
 }
