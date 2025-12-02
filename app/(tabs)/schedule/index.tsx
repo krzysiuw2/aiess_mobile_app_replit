@@ -45,10 +45,10 @@ function RuleCard({ rule, onEdit, onDelete, t }: RuleCardProps) {
   const isActive = rule.act !== false; // Default is true
   const actionLabel = rule.a?.t ? getActionTypeLabel(rule.a.t) : 'Unknown';
   
-  // Debug: log what days value we're getting
-  console.log(`[RuleCard] Rule ${rule.id} - conditions:`, JSON.stringify(rule.c), 'days field:', rule.c?.d);
-  
-  const daysLabel = rule.c?.d ? getDaysLabel(String(rule.c.d)) : 'Everyday';
+  // Days field "d" is at top level of rule, NOT inside conditions "c"
+  // Also check for verbose format "weekdays" field
+  const daysValue = rule.d || rule.weekdays || rule.c?.d;
+  const daysLabel = daysValue ? getDaysLabel(daysValue) : 'Everyday';
   const timeRange = rule.c?.ts !== undefined && rule.c?.te !== undefined
     ? `${formatTime(rule.c.ts)} - ${formatTime(rule.c.te)}`
     : 'Always';

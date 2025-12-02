@@ -64,6 +64,10 @@ export interface Rule {
   a: RuleAction;
   c?: RuleConditions;
   act?: boolean;
+  d?: string;           // Weekdays at top level (optimized format)
+  weekdays?: string[];  // Weekdays at top level (verbose format)
+  vf?: number;          // Valid from timestamp
+  vu?: number;          // Valid until timestamp
 }
 
 export interface ChatMessage {
