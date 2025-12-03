@@ -82,6 +82,7 @@ export default {
   analytics: {
     title: 'Analityka',
     subtitle: 'Analiza przepływu energii',
+    hour: '1 Godzina',
     day: 'Dzień',
     week: 'Tydzień',
     month: 'Miesiąc',
@@ -89,6 +90,8 @@ export default {
     gridExport: 'Eksport do sieci',
     charged: 'Naładowano',
     discharged: 'Rozładowano',
+    avgSoc: 'Śr. SoC',
+    pvProduction: 'Produkcja PV',
   },
   settings: {
     title: 'Ustawienia',

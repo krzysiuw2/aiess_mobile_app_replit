@@ -7,6 +7,70 @@
 
 import { LiveData } from '@/types';
 
+// Analytics Types
+export interface ChartDataPoint {
+  time: Date;
+  gridPower: number;
+  batteryPower: number;
+  pvPower: number;
+  soc: number;
+  factoryLoad: number;
+}
+
+export interface EnergyStats {
+  gridImport: number;    // kWh imported from grid
+  gridExport: number;    // kWh exported to grid
+  charged: number;       // kWh charged into battery
+  discharged: number;    // kWh discharged from battery
+  avgSoc: number;        // Average SoC %
+  pvProduction: number;  // kWh PV production
+}
+
+export type TimeRange = 'hour' | 'day' | 'week' | 'month';
+
+// Bucket configuration for analytics
+const ANALYTICS_CONFIG: Record<TimeRange, {
+  bucket: string;
+  aggregation: string | null;
+  fieldSuffix: string;
+  rangeStart: string;
+  window: string;
+  hours: number;
+}> = {
+  hour: {
+    bucket: 'aiess_v1_1m',
+    aggregation: '1m',
+    fieldSuffix: '_mean',
+    rangeStart: '-1h',
+    window: '1m',
+    hours: 1,
+  },
+  day: {
+    bucket: 'aiess_v1_15m',
+    aggregation: '15m',
+    fieldSuffix: '_mean',
+    rangeStart: '-24h',
+    window: '15m',
+    hours: 24,
+  },
+  week: {
+    bucket: 'aiess_v1_1h',
+    aggregation: '1h',
+    fieldSuffix: '_mean',
+    rangeStart: '-7d',
+    window: '1h',
+    hours: 168,
+  },
+  month: {
+    bucket: 'aiess_v1_1h',
+    aggregation: '1h',
+    fieldSuffix: '_mean',
+    rangeStart: '-30d',
+    window: '3h',
+    hours: 720,
+  },
+};
+
 const INFLUX_URL = process.env.EXPO_PUBLIC_INFLUX_URL;
 const INFLUX_ORG = process.env.EXPO_PUBLIC_INFLUX_ORG;
 const INFLUX_TOKEN = process.env.EXPO_PUBLIC_INFLUX_TOKEN;
@@ -139,4 +203,164 @@ export async function fetchLiveData(siteId: string): Promise<LiveData | null> {
     console.error('[InfluxDB] Fetch error:', error);
     throw error;
   }
+}
+
+/**
+ * Execute a Flux query against InfluxDB
+ */
+async function queryInflux(query: string): Promise<string> {
+  if (!INFLUX_URL || !INFLUX_ORG || !INFLUX_TOKEN) {
+    throw new Error('InfluxDB configuration missing');
+  }
+
+  const response = await fetch(`${INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${INFLUX_TOKEN}`,
+      'Content-Type': 'application/vnd.flux',
+      'Accept': 'application/csv',
+    },
+    body: query,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[InfluxDB] API error:', response.status, errorText);
+    throw new Error(`InfluxDB error: ${response.status}`);
+  }
+
+  return response.text();
+}
+
+/**
+ * Fetch chart data for analytics
+ */
+export async function fetchChartData(
+  siteId: string,
+  timeRange: TimeRange,
+  startDate?: Date
+): Promise<ChartDataPoint[]> {
+  const config = ANALYTICS_CONFIG[timeRange];
+  
+  // Calculate range based on startDate or use relative
+  let rangeClause: string;
+  if (startDate) {
+    const endDate = new Date(startDate);
+    if (timeRange === 'hour') {
+      endDate.setHours(endDate.getHours() + 1);
+    } else if (timeRange === 'day') {
+      endDate.setDate(endDate.getDate() + 1);
+    } else if (timeRange === 'week') {
+      endDate.setDate(endDate.getDate() + 7);
+    } else {
+      endDate.setMonth(endDate.getMonth() + 1);
+    }
+    rangeClause = `range(start: ${startDate.toISOString()}, stop: ${endDate.toISOString()})`;
+  } else {
+    rangeClause = `range(start: ${config.rangeStart})`;
+  }
+
+  const aggFilter = config.aggregation 
+    ? `|> filter(fn: (r) => r.aggregation == "${config.aggregation}")` 
+    : '';
+
+  const query = `
+    from(bucket: "${config.bucket}")
+      |> ${rangeClause}
+      |> filter(fn: (r) => r._measurement == "energy_telemetry")
+      |> filter(fn: (r) => r.site_id == "${siteId}")
+      ${aggFilter}
+      |> filter(fn: (r) => 
+          r._field == "grid_power${config.fieldSuffix}" or 
+          r._field == "pcs_power${config.fieldSuffix}" or 
+          r._field == "total_pv_power${config.fieldSuffix}" or 
+          r._field == "soc${config.fieldSuffix}"
+      )
+      |> aggregateWindow(every: ${config.window}, fn: mean, createEmpty: false)
+      |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  `;
+
+  console.log('[Analytics] Fetching chart data for:', timeRange, siteId);
+
+  try {
+    const csv = await queryInflux(query);
+    const rows = parseInfluxCSV(csv);
+
+    console.log('[Analytics] Received', rows.length, 'data points');
+
+    return rows.map(row => {
+      const gridPower = parseFloat(row[`grid_power${config.fieldSuffix}`]) || 0;
+      const batteryPower = parseFloat(row[`pcs_power${config.fieldSuffix}`]) || 0;
+      const pvPower = parseFloat(row[`total_pv_power${config.fieldSuffix}`]) || 0;
+      const soc = parseFloat(row[`soc${config.fieldSuffix}`]) || 0;
+
+      return {
+        time: new Date(row['_time']),
+        gridPower: Math.round(gridPower * 10) / 10,
+        batteryPower: Math.round(batteryPower * 10) / 10,
+        pvPower: Math.round(pvPower * 10) / 10,
+        soc: Math.round(soc),
+        factoryLoad: Math.round(calculateFactoryLoad(gridPower, pvPower, batteryPower) * 10) / 10,
+      };
+    }).sort((a, b) => a.time.getTime() - b.time.getTime());
+  } catch (error) {
+    console.error('[Analytics] Error fetching chart data:', error);
+    throw error;
+  }
+}
+
+/**
+ * Calculate energy statistics from chart data
+ * Energy (kWh) = Average Power (kW) × Time (hours) / Data Points
+ */
+export function calculateEnergyStats(data: ChartDataPoint[], timeRange: TimeRange): EnergyStats {
+  if (data.length === 0) {
+    return {
+      gridImport: 0,
+      gridExport: 0,
+      charged: 0,
+      discharged: 0,
+      avgSoc: 0,
+      pvProduction: 0,
+    };
+  }
+
+  const config = ANALYTICS_CONFIG[timeRange];
+  const hoursPerPoint = config.hours / Math.max(data.length, 1);
+
+  let gridImportSum = 0;
+  let gridExportSum = 0;
+  let chargedSum = 0;
+  let dischargedSum = 0;
+  let socSum = 0;
+  let pvSum = 0;
+
+  for (const point of data) {
+    // Grid: positive = import, negative = export
+    if (point.gridPower > 0) {
+      gridImportSum += point.gridPower;
+    } else {
+      gridExportSum += Math.abs(point.gridPower);
+    }
+
+    // Battery: positive = discharge, negative = charge
+    if (point.batteryPower > 0) {
+      dischargedSum += point.batteryPower;
+    } else {
+      chargedSum += Math.abs(point.batteryPower);
+    }
+
+    socSum += point.soc;
+    pvSum += point.pvPower;
+  }
+
+  // Convert average power to energy (kWh)
+  return {
+    gridImport: Math.round(gridImportSum * hoursPerPoint * 10) / 10,
+    gridExport: Math.round(gridExportSum * hoursPerPoint * 10) / 10,
+    charged: Math.round(chargedSum * hoursPerPoint * 10) / 10,
+    discharged: Math.round(dischargedSum * hoursPerPoint * 10) / 10,
+    avgSoc: Math.round(socSum / data.length),
+    pvProduction: Math.round(pvSum * hoursPerPoint * 10) / 10,
+  };
 }
