@@ -64,6 +64,11 @@ const getValidityLabel = (vf: number | undefined, vu: number | undefined): strin
     return '∞'; // Always valid
   }
   
+  // If same day, show only one date
+  if (from !== '∞' && until !== '∞' && from === until) {
+    return from;
+  }
+  
   return `${from} → ${until}`;
 };
 
