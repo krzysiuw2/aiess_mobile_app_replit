@@ -9,10 +9,13 @@ import {
   Switch,
   Alert,
   ActivityIndicator,
+  Platform,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Save, X } from 'lucide-react-native';
+import { ArrowLeft, Save, X, Clock, Calendar } from 'lucide-react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useSchedules } from '@/hooks/useSchedules';
@@ -28,15 +31,69 @@ const ACTION_TYPES: { type: ActionType; label: string; description: string }[] =
   { type: 'sl', label: 'Site Limit', description: 'Grid power limits (P9)' },
 ];
 
+// Weekdays with API-compatible keys (Sun, Mon, Tue, etc.)
 const WEEKDAYS = [
-  { key: '0', label: 'Sun', short: 'S' },
-  { key: '1', label: 'Mon', short: 'M' },
-  { key: '2', label: 'Tue', short: 'T' },
-  { key: '3', label: 'Wed', short: 'W' },
-  { key: '4', label: 'Thu', short: 'T' },
-  { key: '5', label: 'Fri', short: 'F' },
-  { key: '6', label: 'Sat', short: 'S' },
+  { key: 'Sun', label: 'Sun', short: 'S' },
+  { key: 'Mon', label: 'Mon', short: 'M' },
+  { key: 'Tue', label: 'Tue', short: 'T' },
+  { key: 'Wed', label: 'Wed', short: 'W' },
+  { key: 'Thu', label: 'Thu', short: 'T' },
+  { key: 'Fri', label: 'Fri', short: 'F' },
+  { key: 'Sat', label: 'Sat', short: 'S' },
 ];
+
+// Helper to convert selected days to API format
+const daysToApiFormat = (selectedDays: string[]): string | undefined => {
+  if (selectedDays.length === 0 || selectedDays.length === 7) {
+    return undefined; // All days or no days = don't include
+  }
+  
+  // Check for shortcuts
+  const weekdaysSet = new Set(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
+  const weekendSet = new Set(['Sat', 'Sun']);
+  const selectedSet = new Set(selectedDays);
+  
+  // Check if exactly weekdays
+  if (selectedDays.length === 5 && 
+      [...weekdaysSet].every(d => selectedSet.has(d)) &&
+      !selectedSet.has('Sat') && !selectedSet.has('Sun')) {
+    return 'wd';
+  }
+  
+  // Check if exactly weekend
+  if (selectedDays.length === 2 && 
+      selectedSet.has('Sat') && selectedSet.has('Sun') &&
+      ![...weekdaysSet].some(d => selectedSet.has(d))) {
+    return 'we';
+  }
+  
+  // Check for consecutive days (range like Wed-Fri)
+  const dayOrder = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const sortedIndices = selectedDays.map(d => dayOrder.indexOf(d)).sort((a, b) => a - b);
+  
+  let isConsecutive = true;
+  for (let i = 1; i < sortedIndices.length; i++) {
+    if (sortedIndices[i] !== sortedIndices[i - 1] + 1) {
+      isConsecutive = false;
+      break;
+    }
+  }
+  
+  if (isConsecutive && selectedDays.length >= 2) {
+    const firstDay = dayOrder[sortedIndices[0]];
+    const lastDay = dayOrder[sortedIndices[sortedIndices.length - 1]];
+    return `${firstDay}-${lastDay}`;
+  }
+  
+  // Single day or non-consecutive: return first day or comma-separated
+  if (selectedDays.length === 1) {
+    return selectedDays[0];
+  }
+  
+  // Sort by day order and join
+  const sorted = selectedDays.sort((a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b));
+  return sorted.join(',');
+};
 
 interface FormData {
   id: string;
@@ -82,13 +139,39 @@ export default function RuleBuilderScreen() {
     hasTimeCondition: false,
     startTime: '',  // Empty - user must fill in
     endTime: '',    // Empty - user must fill in
-    selectedDays: ['1', '2', '3', '4', '5', '6', '0'], // All days
+    selectedDays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], // All days (using day names)
     validFrom: '',  // Empty = no start date limit
     validUntil: '', // Empty = no end date limit
   });
 
   const [isSaving, setIsSaving] = useState(false);
   const [originalPriority, setOriginalPriority] = useState<number | undefined>(undefined);
+  
+  // Picker states
+  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
+  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+  const [showValidFromPicker, setShowValidFromPicker] = useState(false);
+  const [showValidUntilPicker, setShowValidUntilPicker] = useState(false);
+  
+  // Helper to create Date from time string (HH:MM)
+  const timeToDate = (timeStr: string): Date => {
+    const date = new Date();
+    if (timeStr) {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      date.setHours(hours || 0, minutes || 0, 0, 0);
+    } else {
+      date.setHours(12, 0, 0, 0); // Default to noon
+    }
+    return date;
+  };
+  
+  // Helper to create Date from date string (YYYY-MM-DD)
+  const dateStrToDate = (dateStr: string): Date => {
+    if (dateStr) {
+      return new Date(dateStr + 'T12:00:00');
+    }
+    return new Date();
+  };
 
   // Load existing rule data
   useEffect(() => {
@@ -96,35 +179,49 @@ export default function RuleBuilderScreen() {
       const existingRule = rules.find(r => r.id === ruleId && r.p === parseInt(priority || '0'));
       if (existingRule) {
         // Days field "d" is at RULE level, not inside conditions!
-        // Also check conditions for backwards compatibility
         const daysValue = existingRule.d || existingRule.c?.d;
-        let days = ['1', '2', '3', '4', '5', '6', '0']; // Default all days
+        let days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; // Default all days (using names)
         
         if (daysValue) {
           if (typeof daysValue === 'string') {
-            // Handle string format: "12345" or "Fri" or "weekdays"
-            if (/^[0-7]+$/.test(daysValue)) {
-              days = daysValue.split('');
-            } else {
-              // Named shortcuts - convert to digit array
-              const shortcuts: Record<string, string[]> = {
-                'weekdays': ['1', '2', '3', '4', '5'],
-                'wd': ['1', '2', '3', '4', '5'],
-                'weekend': ['0', '6'],
-                'we': ['0', '6'],
-              };
-              const lowerValue = daysValue.toLowerCase();
-              if (shortcuts[lowerValue]) {
-                days = shortcuts[lowerValue];
-              } else {
-                // Single day like "Fri" - map to digit
-                const dayMap: Record<string, string> = {
-                  'sun': '0', 'mon': '1', 'tue': '2', 'wed': '3',
-                  'thu': '4', 'fri': '5', 'sat': '6',
-                };
-                const mapped = dayMap[lowerValue];
-                if (mapped) days = [mapped];
+            const lowerValue = daysValue.toLowerCase();
+            
+            // Named shortcuts
+            if (lowerValue === 'weekdays' || lowerValue === 'wd') {
+              days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+            } else if (lowerValue === 'weekend' || lowerValue === 'we') {
+              days = ['Sat', 'Sun'];
+            } else if (lowerValue === 'everyday' || lowerValue === 'ed' || lowerValue === 'all') {
+              days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            } else if (daysValue.includes('-')) {
+              // Range like "Wed-Fri"
+              const [start, end] = daysValue.split('-');
+              const dayOrder = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+              const startIdx = dayOrder.findIndex(d => d.toLowerCase() === start.toLowerCase());
+              const endIdx = dayOrder.findIndex(d => d.toLowerCase() === end.toLowerCase());
+              if (startIdx >= 0 && endIdx >= 0) {
+                days = [];
+                for (let i = startIdx; i <= endIdx; i++) {
+                  days.push(dayOrder[i]);
+                }
               }
+            } else if (daysValue.includes(',')) {
+              // Comma-separated
+              days = daysValue.split(',').map(d => {
+                const dayMap: Record<string, string> = {
+                  'sun': 'Sun', 'mon': 'Mon', 'tue': 'Tue', 'wed': 'Wed',
+                  'thu': 'Thu', 'fri': 'Fri', 'sat': 'Sat',
+                };
+                return dayMap[d.trim().toLowerCase()] || d.trim();
+              });
+            } else {
+              // Single day like "Thu"
+              const dayMap: Record<string, string> = {
+                'sun': 'Sun', 'mon': 'Mon', 'tue': 'Tue', 'wed': 'Wed',
+                'thu': 'Thu', 'fri': 'Fri', 'sat': 'Sat',
+              };
+              const mapped = dayMap[lowerValue];
+              if (mapped) days = [mapped];
             }
           } else if (Array.isArray(daysValue)) {
             days = daysValue;
@@ -174,15 +271,15 @@ export default function RuleBuilderScreen() {
   };
 
   const selectWeekdays = () => {
-    setFormData(prev => ({ ...prev, selectedDays: ['1', '2', '3', '4', '5'] }));
+    setFormData(prev => ({ ...prev, selectedDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] }));
   };
 
   const selectWeekend = () => {
-    setFormData(prev => ({ ...prev, selectedDays: ['0', '6'] }));
+    setFormData(prev => ({ ...prev, selectedDays: ['Sat', 'Sun'] }));
   };
 
   const selectEveryday = () => {
-    setFormData(prev => ({ ...prev, selectedDays: ['0', '1', '2', '3', '4', '5', '6'] }));
+    setFormData(prev => ({ ...prev, selectedDays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] }));
   };
 
   const buildRule = (): Rule => {
@@ -214,7 +311,8 @@ export default function RuleBuilderScreen() {
 
     const conditions: RuleConditions = {};
     
-    if (formData.hasTimeCondition) {
+    // Only add ts/te if BOTH are filled in (not empty, not null)
+    if (formData.hasTimeCondition && formData.startTime && formData.endTime) {
       conditions.ts = parseTime(formData.startTime);
       conditions.te = parseTime(formData.endTime);
     }
@@ -223,12 +321,17 @@ export default function RuleBuilderScreen() {
       id: formData.id.trim().toUpperCase(),
       p: formData.actionType === 'sl' ? 9 : formData.priority,
       a: action,
-      c: Object.keys(conditions).length > 0 ? conditions : undefined,
     };
 
-    // Days field goes at RULE level, not inside conditions!
-    if (formData.selectedDays.length < 7 && formData.selectedDays.length > 0) {
-      rule.d = formData.selectedDays.sort().join('');
+    // Only add conditions if there are any
+    if (Object.keys(conditions).length > 0) {
+      rule.c = conditions;
+    }
+
+    // Days field goes at RULE level - use smart format (Thu, wd, we, Wed-Fri, etc.)
+    const daysApiFormat = daysToApiFormat(formData.selectedDays);
+    if (daysApiFormat) {
+      rule.d = daysApiFormat;
     }
 
     if (!formData.active) {
@@ -558,21 +661,33 @@ export default function RuleBuilderScreen() {
                 <View style={styles.timeRow}>
                   <View style={[styles.inputGroup, { flex: 1 }]}>
                     <Text style={styles.inputLabel}>Start Time</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={formData.startTime}
-                      onChangeText={(text) => setFormData({ ...formData, startTime: text })}
-                    />
-                    <Text style={styles.inputHint}>Format: HH:MM</Text>
+                    <TouchableOpacity 
+                      style={styles.pickerButton}
+                      onPress={() => setShowStartTimePicker(true)}
+                    >
+                      <Clock size={18} color={Colors.textSecondary} />
+                      <Text style={[
+                        styles.pickerButtonText,
+                        !formData.startTime && styles.pickerButtonPlaceholder
+                      ]}>
+                        {formData.startTime || 'Select time'}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                   <View style={[styles.inputGroup, { flex: 1 }]}>
                     <Text style={styles.inputLabel}>End Time</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={formData.endTime}
-                      onChangeText={(text) => setFormData({ ...formData, endTime: text })}
-                    />
-                    <Text style={styles.inputHint}>Format: HH:MM</Text>
+                    <TouchableOpacity 
+                      style={styles.pickerButton}
+                      onPress={() => setShowEndTimePicker(true)}
+                    >
+                      <Clock size={18} color={Colors.textSecondary} />
+                      <Text style={[
+                        styles.pickerButtonText,
+                        !formData.endTime && styles.pickerButtonPlaceholder
+                      ]}>
+                        {formData.endTime || 'Select time'}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
 
@@ -622,21 +737,43 @@ export default function RuleBuilderScreen() {
           <View style={styles.timeRow}>
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <Text style={styles.inputLabel}>Valid From</Text>
-              <TextInput
-                style={styles.textInput}
-                value={formData.validFrom}
-                onChangeText={(text) => setFormData({ ...formData, validFrom: text })}
-              />
-              <Text style={styles.inputHint}>YYYY-MM-DD</Text>
+              <TouchableOpacity 
+                style={styles.pickerButton}
+                onPress={() => setShowValidFromPicker(true)}
+              >
+                <Calendar size={18} color={Colors.textSecondary} />
+                <Text style={[
+                  styles.pickerButtonText,
+                  !formData.validFrom && styles.pickerButtonPlaceholder
+                ]}>
+                  {formData.validFrom || 'Select date'}
+                </Text>
+              </TouchableOpacity>
+              {formData.validFrom && (
+                <TouchableOpacity onPress={() => setFormData({ ...formData, validFrom: '' })}>
+                  <Text style={styles.clearLink}>Clear</Text>
+                </TouchableOpacity>
+              )}
             </View>
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <Text style={styles.inputLabel}>Valid Until</Text>
-              <TextInput
-                style={styles.textInput}
-                value={formData.validUntil}
-                onChangeText={(text) => setFormData({ ...formData, validUntil: text })}
-              />
-              <Text style={styles.inputHint}>YYYY-MM-DD</Text>
+              <TouchableOpacity 
+                style={styles.pickerButton}
+                onPress={() => setShowValidUntilPicker(true)}
+              >
+                <Calendar size={18} color={Colors.textSecondary} />
+                <Text style={[
+                  styles.pickerButtonText,
+                  !formData.validUntil && styles.pickerButtonPlaceholder
+                ]}>
+                  {formData.validUntil || 'Select date'}
+                </Text>
+              </TouchableOpacity>
+              {formData.validUntil && (
+                <TouchableOpacity onPress={() => setFormData({ ...formData, validUntil: '' })}>
+                  <Text style={styles.clearLink}>Clear</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -651,6 +788,122 @@ export default function RuleBuilderScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Time Pickers */}
+      {showStartTimePicker && (
+        <Modal transparent animationType="slide">
+          <View style={styles.pickerModal}>
+            <View style={styles.pickerModalContent}>
+              <View style={styles.pickerModalHeader}>
+                <Text style={styles.pickerModalTitle}>Start Time</Text>
+                <TouchableOpacity onPress={() => setShowStartTimePicker(false)}>
+                  <Text style={styles.pickerModalDone}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={timeToDate(formData.startTime)}
+                mode="time"
+                display="spinner"
+                onChange={(event: DateTimePickerEvent, date?: Date) => {
+                  if (date) {
+                    const hours = date.getHours().toString().padStart(2, '0');
+                    const mins = date.getMinutes().toString().padStart(2, '0');
+                    setFormData({ ...formData, startTime: `${hours}:${mins}` });
+                  }
+                }}
+                style={styles.picker}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {showEndTimePicker && (
+        <Modal transparent animationType="slide">
+          <View style={styles.pickerModal}>
+            <View style={styles.pickerModalContent}>
+              <View style={styles.pickerModalHeader}>
+                <Text style={styles.pickerModalTitle}>End Time</Text>
+                <TouchableOpacity onPress={() => setShowEndTimePicker(false)}>
+                  <Text style={styles.pickerModalDone}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={timeToDate(formData.endTime)}
+                mode="time"
+                display="spinner"
+                onChange={(event: DateTimePickerEvent, date?: Date) => {
+                  if (date) {
+                    const hours = date.getHours().toString().padStart(2, '0');
+                    const mins = date.getMinutes().toString().padStart(2, '0');
+                    setFormData({ ...formData, endTime: `${hours}:${mins}` });
+                  }
+                }}
+                style={styles.picker}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Date Pickers */}
+      {showValidFromPicker && (
+        <Modal transparent animationType="slide">
+          <View style={styles.pickerModal}>
+            <View style={styles.pickerModalContent}>
+              <View style={styles.pickerModalHeader}>
+                <Text style={styles.pickerModalTitle}>Valid From</Text>
+                <TouchableOpacity onPress={() => setShowValidFromPicker(false)}>
+                  <Text style={styles.pickerModalDone}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={dateStrToDate(formData.validFrom)}
+                mode="date"
+                display="spinner"
+                onChange={(event: DateTimePickerEvent, date?: Date) => {
+                  if (date) {
+                    const yyyy = date.getFullYear();
+                    const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+                    const dd = date.getDate().toString().padStart(2, '0');
+                    setFormData({ ...formData, validFrom: `${yyyy}-${mm}-${dd}` });
+                  }
+                }}
+                style={styles.picker}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {showValidUntilPicker && (
+        <Modal transparent animationType="slide">
+          <View style={styles.pickerModal}>
+            <View style={styles.pickerModalContent}>
+              <View style={styles.pickerModalHeader}>
+                <Text style={styles.pickerModalTitle}>Valid Until</Text>
+                <TouchableOpacity onPress={() => setShowValidUntilPicker(false)}>
+                  <Text style={styles.pickerModalDone}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={dateStrToDate(formData.validUntil)}
+                mode="date"
+                display="spinner"
+                onChange={(event: DateTimePickerEvent, date?: Date) => {
+                  if (date) {
+                    const yyyy = date.getFullYear();
+                    const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+                    const dd = date.getDate().toString().padStart(2, '0');
+                    setFormData({ ...formData, validUntil: `${yyyy}-${mm}-${dd}` });
+                  }
+                }}
+                style={styles.picker}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* Footer */}
       <View style={styles.footer}>
@@ -899,6 +1152,62 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: 16,
     fontWeight: '600',
+  },
+  pickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: Colors.surface,
+  },
+  pickerButtonText: {
+    fontSize: 16,
+    color: Colors.text,
+  },
+  pickerButtonPlaceholder: {
+    color: Colors.textSecondary,
+  },
+  clearLink: {
+    color: Colors.primary,
+    fontSize: 12,
+    marginTop: 4,
+  },
+  pickerModal: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  pickerModalContent: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 30,
+  },
+  pickerModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  pickerModalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  pickerModalDone: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  picker: {
+    height: 200,
   },
 });
 
