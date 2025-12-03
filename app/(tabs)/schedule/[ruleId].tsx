@@ -56,6 +56,9 @@ interface FormData {
   startTime: string;
   endTime: string;
   selectedDays: string[];
+  // Validity period
+  validFrom: string;  // YYYY-MM-DD format or empty
+  validUntil: string; // YYYY-MM-DD format or empty
 }
 
 export default function RuleBuilderScreen() {
@@ -77,9 +80,11 @@ export default function RuleBuilderScreen() {
     highThreshold: '70',
     lowThreshold: '-40',
     hasTimeCondition: false,
-    startTime: '08:00',
-    endTime: '18:00',
+    startTime: '',  // Empty - user must fill in
+    endTime: '',    // Empty - user must fill in
     selectedDays: ['1', '2', '3', '4', '5', '6', '0'], // All days
+    validFrom: '',  // Empty = no start date limit
+    validUntil: '', // Empty = no end date limit
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -129,6 +134,13 @@ export default function RuleBuilderScreen() {
         // Store original priority for handling priority changes
         setOriginalPriority(existingRule.p);
         
+        // Format validity dates from Unix timestamp to YYYY-MM-DD
+        const formatDateFromTimestamp = (ts: number | undefined): string => {
+          if (!ts) return '';
+          const date = new Date(ts * 1000);
+          return date.toISOString().split('T')[0]; // YYYY-MM-DD
+        };
+        
         setFormData({
           id: existingRule.id,
           priority: existingRule.p,
@@ -142,9 +154,11 @@ export default function RuleBuilderScreen() {
           highThreshold: String(existingRule.a.hth || 70),
           lowThreshold: String(existingRule.a.lth || -40),
           hasTimeCondition: existingRule.c?.ts !== undefined,
-          startTime: existingRule.c?.ts ? formatTime(existingRule.c.ts) : '08:00',
-          endTime: existingRule.c?.te ? formatTime(existingRule.c.te) : '18:00',
+          startTime: existingRule.c?.ts ? formatTime(existingRule.c.ts) : '',
+          endTime: existingRule.c?.te ? formatTime(existingRule.c.te) : '',
           selectedDays: days,
+          validFrom: formatDateFromTimestamp(existingRule.vf),
+          validUntil: formatDateFromTimestamp(existingRule.vu),
         });
       }
     }
@@ -219,6 +233,21 @@ export default function RuleBuilderScreen() {
 
     if (!formData.active) {
       rule.act = false;
+    }
+
+    // Validity dates at RULE level (Unix timestamps)
+    // Parse YYYY-MM-DD to Unix timestamp (start of day for vf, end of day for vu)
+    if (formData.validFrom) {
+      const date = new Date(formData.validFrom + 'T00:00:00');
+      if (!isNaN(date.getTime())) {
+        rule.vf = Math.floor(date.getTime() / 1000);
+      }
+    }
+    if (formData.validUntil) {
+      const date = new Date(formData.validUntil + 'T23:59:59');
+      if (!isNaN(date.getTime())) {
+        rule.vu = Math.floor(date.getTime() / 1000);
+      }
     }
 
     return rule;
@@ -533,9 +562,8 @@ export default function RuleBuilderScreen() {
                       style={styles.textInput}
                       value={formData.startTime}
                       onChangeText={(text) => setFormData({ ...formData, startTime: text })}
-                      placeholder="08:00"
-                      placeholderTextColor={Colors.textSecondary}
                     />
+                    <Text style={styles.inputHint}>Format: HH:MM</Text>
                   </View>
                   <View style={[styles.inputGroup, { flex: 1 }]}>
                     <Text style={styles.inputLabel}>End Time</Text>
@@ -543,9 +571,8 @@ export default function RuleBuilderScreen() {
                       style={styles.textInput}
                       value={formData.endTime}
                       onChangeText={(text) => setFormData({ ...formData, endTime: text })}
-                      placeholder="18:00"
-                      placeholderTextColor={Colors.textSecondary}
                     />
+                    <Text style={styles.inputHint}>Format: HH:MM</Text>
                   </View>
                 </View>
 
@@ -586,6 +613,33 @@ export default function RuleBuilderScreen() {
             )}
           </View>
         )}
+
+        {/* Validity Period */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Validity Period (Optional)</Text>
+          <Text style={styles.inputHint}>Leave empty for permanent/immediate validity</Text>
+          
+          <View style={styles.timeRow}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>Valid From</Text>
+              <TextInput
+                style={styles.textInput}
+                value={formData.validFrom}
+                onChangeText={(text) => setFormData({ ...formData, validFrom: text })}
+              />
+              <Text style={styles.inputHint}>YYYY-MM-DD</Text>
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>Valid Until</Text>
+              <TextInput
+                style={styles.textInput}
+                value={formData.validUntil}
+                onChangeText={(text) => setFormData({ ...formData, validUntil: text })}
+              />
+              <Text style={styles.inputHint}>YYYY-MM-DD</Text>
+            </View>
+          </View>
+        </View>
 
         {/* Rule Preview */}
         <View style={styles.section}>
