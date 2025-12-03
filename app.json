@@ -16,7 +16,10 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.aiess.mobile",
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -39,7 +42,9 @@
       [
         "expo-asset",
         {
-          "assets": ["./assets/dashboard"]
+          "assets": [
+            "./assets/dashboard"
+          ]
         }
       ],
       "expo-font",
@@ -51,8 +56,12 @@
     },
     "extra": {
       "eas": {
-        "projectId": "your-eas-project-id"
+        "projectId": "db4e36fb-f053-42ad-bd91-3c3082773c35"
+      },
+      "router": {
+        "origin": "https://aiess.app/"
       }
-    }
+    },
+    "owner": "kdub49"
   }
 }
