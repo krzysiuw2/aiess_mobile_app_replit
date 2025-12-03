@@ -464,7 +464,7 @@ async function deleteRule(ruleId: string, priority: number, siteId: string) {
 
 **UI Elements:**
 - Header: "Analytics" with subtitle "Your energy flow analysis"
-- Time range selector (Day, Week, Month)
+- **Time range selector at top** (1 Hour, Day, Week, Month)
 - Date navigation (previous/next, date picker)
 - Charts section
 
@@ -485,22 +485,58 @@ async function deleteRule(ruleId: string, priority: number, siteId: string) {
    - Total Discharge Energy (kWh)
    - Average SoC (%)
 
-**Data Source:** InfluxDB with different bucket based on range
+**Data Source:** InfluxDB with different buckets based on timeframe
 
-| Time Range | Bucket | Aggregation |
-|------------|--------|-------------|
-| Day | `1m` | 1 minute |
-| Week | `15m` | 15 minute |
-| Month | `1h` | 1 hour |
+> **Important:** Never use `aiess_v1` (5-second data) for analytics - only for live dashboard!
 
-**InfluxDB Query (example for daily):**
+#### 5.5.2 InfluxDB Bucket Strategy
+
+| Bucket | Data Resolution | Retention | Use Case |
+|--------|-----------------|-----------|----------|
+| `aiess_v1` | 5 seconds | Short | **Live dashboard only** |
+| `aiess_v1_1m` | 1 minute | Medium | Hourly analytics |
+| `aiess_v1_15m` | 15 minutes | Long | Daily analytics |
+| `aiess_v1_1h` | 1 hour | Extended | Weekly/Monthly analytics |
+
+#### 5.5.3 Timeframe Configuration
+
+| Timeframe | Bucket | Query Range | Data Points (~) |
+|-----------|--------|-------------|-----------------|
+| **1 Hour** | `aiess_v1_1m` | `-1h` | 60 points |
+| **Day** | `aiess_v1_15m` | `-24h` | 96 points |
+| **Week** | `aiess_v1_1h` | `-7d` | 168 points |
+| **Month** | `aiess_v1_1h` | `-30d` | 720 points |
+
+**InfluxDB Query Examples:**
+
 ```flux
-from(bucket: "1m")
+// Hourly view (1-minute aggregates)
+from(bucket: "aiess_v1_1m")
+  |> range(start: -1h)
+  |> filter(fn: (r) => r._measurement == "energy_telemetry")
+  |> filter(fn: (r) => r.site_id == "${site_id}")
+  |> filter(fn: (r) => r._field == "grid_power" or r._field == "pcs_power" or r._field == "soc")
+
+// Daily view (15-minute aggregates)
+from(bucket: "aiess_v1_15m")
   |> range(start: -24h)
-  |> filter(fn: (r) => r._measurement == "energy_data")
-  |> filter(fn: (r) => r.site_id == "${device_id}")
-  |> filter(fn: (r) => r._field == "grid_power" or r._field == "battery_power" or r._field == "battery_soc")
-  |> aggregateWindow(every: 1m, fn: mean)
+  |> filter(fn: (r) => r._measurement == "energy_telemetry")
+  |> filter(fn: (r) => r.site_id == "${site_id}")
+  |> filter(fn: (r) => r._field == "grid_power" or r._field == "pcs_power" or r._field == "soc")
+
+// Weekly view (1-hour aggregates)
+from(bucket: "aiess_v1_1h")
+  |> range(start: -7d)
+  |> filter(fn: (r) => r._measurement == "energy_telemetry")
+  |> filter(fn: (r) => r.site_id == "${site_id}")
+  |> filter(fn: (r) => r._field == "grid_power" or r._field == "pcs_power" or r._field == "soc")
+
+// Monthly view (1-hour aggregates)
+from(bucket: "aiess_v1_1h")
+  |> range(start: -30d)
+  |> filter(fn: (r) => r._measurement == "energy_telemetry")
+  |> filter(fn: (r) => r.site_id == "${site_id}")
+  |> filter(fn: (r) => r._field == "grid_power" or r._field == "pcs_power" or r._field == "soc")
 ```
 
 **Chart Implementation (Victory Native XL):**
@@ -910,9 +946,15 @@ App
   "analytics": {
     "title": "Analytics",
     "subtitle": "Your energy flow analysis",
+    "hour": "1 Hour",
     "day": "Day",
     "week": "Week",
-    "month": "Month"
+    "month": "Month",
+    "gridImport": "Grid Import",
+    "gridExport": "Grid Export",
+    "charged": "Charged",
+    "discharged": "Discharged",
+    "avgSoc": "Avg SoC"
   },
   "settings": {
     "title": "Settings",
