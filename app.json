@@ -36,6 +36,12 @@
           "origin": "https://aiess.app/"
         }
       ],
+      [
+        "expo-asset",
+        {
+          "assets": ["./assets/dashboard"]
+        }
+      ],
       "expo-font",
       "expo-web-browser",
       "expo-secure-store"

@@ -11,7 +11,7 @@ import { CheckCircle, AlertCircle, WifiOff, RefreshCw } from 'lucide-react-nativ
 import Colors from '@/constants/colors';
 import { useDevices, useLiveData } from '@/contexts/DeviceContext';
 import { useSettings } from '@/contexts/SettingsContext';
-import EnergyFlowDiagram from '@/components/EnergyFlowDiagram';
+import EnergyFlowRive from '@/components/EnergyFlowRive';
 
 export default function MonitorScreen() {
   const { t } = useSettings();
@@ -79,7 +79,7 @@ export default function MonitorScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          <EnergyFlowDiagram liveData={liveData} t={t} />
+          <EnergyFlowRive liveData={liveData} t={t} />
         )}
       </View>
     </SafeAreaView>
