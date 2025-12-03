@@ -83,15 +83,51 @@ export default function RuleBuilderScreen() {
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [originalPriority, setOriginalPriority] = useState<number | undefined>(undefined);
 
   // Load existing rule data
   useEffect(() => {
     if (!isNew && ruleId && rules.length > 0) {
       const existingRule = rules.find(r => r.id === ruleId && r.p === parseInt(priority || '0'));
       if (existingRule) {
-        const days = existingRule.c?.d 
-          ? existingRule.c.d.split('') 
-          : ['1', '2', '3', '4', '5', '6', '0'];
+        // Days field "d" is at RULE level, not inside conditions!
+        // Also check conditions for backwards compatibility
+        const daysValue = existingRule.d || existingRule.c?.d;
+        let days = ['1', '2', '3', '4', '5', '6', '0']; // Default all days
+        
+        if (daysValue) {
+          if (typeof daysValue === 'string') {
+            // Handle string format: "12345" or "Fri" or "weekdays"
+            if (/^[0-7]+$/.test(daysValue)) {
+              days = daysValue.split('');
+            } else {
+              // Named shortcuts - convert to digit array
+              const shortcuts: Record<string, string[]> = {
+                'weekdays': ['1', '2', '3', '4', '5'],
+                'wd': ['1', '2', '3', '4', '5'],
+                'weekend': ['0', '6'],
+                'we': ['0', '6'],
+              };
+              const lowerValue = daysValue.toLowerCase();
+              if (shortcuts[lowerValue]) {
+                days = shortcuts[lowerValue];
+              } else {
+                // Single day like "Fri" - map to digit
+                const dayMap: Record<string, string> = {
+                  'sun': '0', 'mon': '1', 'tue': '2', 'wed': '3',
+                  'thu': '4', 'fri': '5', 'sat': '6',
+                };
+                const mapped = dayMap[lowerValue];
+                if (mapped) days = [mapped];
+              }
+            }
+          } else if (Array.isArray(daysValue)) {
+            days = daysValue;
+          }
+        }
+        
+        // Store original priority for handling priority changes
+        setOriginalPriority(existingRule.p);
         
         setFormData({
           id: existingRule.id,
@@ -168,10 +204,6 @@ export default function RuleBuilderScreen() {
       conditions.ts = parseTime(formData.startTime);
       conditions.te = parseTime(formData.endTime);
     }
-    
-    if (formData.selectedDays.length < 7 && formData.selectedDays.length > 0) {
-      conditions.d = formData.selectedDays.sort().join('');
-    }
 
     const rule: Rule = {
       id: formData.id.trim().toUpperCase(),
@@ -179,6 +211,11 @@ export default function RuleBuilderScreen() {
       a: action,
       c: Object.keys(conditions).length > 0 ? conditions : undefined,
     };
+
+    // Days field goes at RULE level, not inside conditions!
+    if (formData.selectedDays.length < 7 && formData.selectedDays.length > 0) {
+      rule.d = formData.selectedDays.sort().join('');
+    }
 
     if (!formData.active) {
       rule.act = false;
@@ -207,7 +244,9 @@ export default function RuleBuilderScreen() {
       if (isNew) {
         await addRule(rule);
       } else {
-        await updateRule(rule);
+        // Pass original priority if it changed (for cross-priority moves)
+        const priorityChanged = originalPriority !== undefined && originalPriority !== rule.p;
+        await updateRule(rule, priorityChanged ? originalPriority : undefined);
       }
       
       Alert.alert('Success', `Rule ${isNew ? 'created' : 'updated'} successfully`, [

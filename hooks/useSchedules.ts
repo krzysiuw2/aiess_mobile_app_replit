@@ -23,7 +23,7 @@ interface UseSchedulesReturn {
   error: string | null;
   refetch: () => Promise<void>;
   addRule: (rule: Rule) => Promise<void>;
-  updateRule: (rule: Rule) => Promise<void>;
+  updateRule: (rule: Rule, oldPriority?: number) => Promise<void>;
   removeRule: (ruleId: string, priority: number) => Promise<void>;
 }
 
@@ -76,12 +76,13 @@ export function useSchedules(): UseSchedulesReturn {
     await fetchSchedules(); // Refetch to get updated shadow version
   }, [selectedDevice, rawSchedules, fetchSchedules]);
 
-  const updateRule = useCallback(async (rule: Rule) => {
+  const updateRule = useCallback(async (rule: Rule, oldPriority?: number) => {
     if (!selectedDevice || !rawSchedules) {
       throw new Error('No device selected');
     }
 
-    await saveRule(selectedDevice.device_id, rule, rawSchedules);
+    // Pass old priority if provided (for priority changes)
+    await saveRule(selectedDevice.device_id, rule, rawSchedules, oldPriority);
     await fetchSchedules();
   }, [selectedDevice, rawSchedules, fetchSchedules]);
 

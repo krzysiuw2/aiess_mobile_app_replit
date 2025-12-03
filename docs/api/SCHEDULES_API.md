@@ -2,7 +2,64 @@
 
 Quick reference for reading and writing schedules via AWS API Gateway.
 
-> **Rule Schema Reference**: See `v1.4.1_schedules_and_rules_guide.md` for complete rule structure and field definitions.
+> **Rule Schema Reference**: See `RULES_SCHEMA.md` for complete rule structure and field definitions.
+
+---
+
+## ⚠️ Critical: Mobile App Implementation Notes
+
+### 1. Rule Merging - Always GET → Merge → POST!
+
+**Problem:** When sending rules to a priority, the API **replaces ALL rules** in that priority.
+
+```javascript
+// ❌ WRONG - Sending just one rule DELETES all others in P7!
+POST { "schedules": { "priority_7": [newRule] } }
+
+// ✅ CORRECT - Merge with existing rules
+const current = await GET(`/schedules/${siteId}`);
+const existing = current.schedules.priority_7 || [];
+const filtered = existing.filter(r => (r.id || r.rule_id) !== newRule.id);
+const merged = [...filtered, newRule];
+POST { "schedules": { "priority_7": merged } }
+```
+
+### 2. `vf`/`vu` Fields - At RULE Level!
+
+**Problem:** `valid_from` and `valid_until` go at the **rule level**, NOT inside conditions.
+
+```json
+// ❌ WRONG - Lambda ignores vf/vu inside conditions
+{ "id": "MY-RULE", "c": { "vf": 1733270400, "vu": 1735775999 } }
+
+// ✅ CORRECT - At rule level
+{ "id": "MY-RULE", "c": {}, "vf": 1733270400, "vu": 1735775999 }
+```
+
+### 3. Priority Changes During Edit
+
+When user changes priority, update **BOTH** old and new priorities:
+
+```javascript
+if (newPriority !== oldPriority) {
+  const oldRules = schedules[`priority_${oldPriority}`].filter(r => r.id !== ruleId);
+  const newRules = [...(schedules[`priority_${newPriority}`] || []), updatedRule];
+  
+  POST { "schedules": { 
+    [`priority_${oldPriority}`]: oldRules,
+    [`priority_${newPriority}`]: newRules 
+  }}
+}
+```
+
+### 4. Weekdays Field - At RULE Level!
+
+The `d` (weekdays) field is also at the **rule level**, not inside conditions:
+
+```json
+// ✅ CORRECT
+{ "id": "MY-RULE", "c": { "ts": 900, "te": 1800 }, "d": "Fri" }
+```
 
 ---
 
@@ -216,33 +273,37 @@ $shadow.state.desired.schedules | ConvertTo-Json -Depth 10
 ## 5. Format Reference (Quick)
 
 ### Optimized Format (Recommended)
-| Field | Description | Example |
-|-------|-------------|---------|
-| `id` | Rule ID (1-63 chars) | `"CHARGE-DAY"` |
-| `p` | Priority (5-9) | `7` |
-| `a` | Action object | `{ "t": "ch", "pw": 30 }` |
-| `c` | Conditions object | `{ "ts": 800, "te": 1600 }` |
+| Field | Description | Example | Location |
+|-------|-------------|---------|----------|
+| `id` | Rule ID (1-63 chars) | `"CHARGE-DAY"` | Rule level |
+| `p` | Priority (4-9 for cloud) | `7` | Rule level |
+| `a` | Action object | `{ "t": "ch", "pw": 30 }` | Rule level |
+| `c` | Conditions object | `{ "ts": 800, "te": 1600 }` | Rule level |
+| `act` | Active (only if false) | `false` | Rule level |
+| `d` | Weekdays | `"Fri"`, `"weekdays"`, `"12345"` | **Rule level!** |
+| `vf` | Valid from (Unix timestamp) | `1733270400` | **Rule level!** |
+| `vu` | Valid until (Unix timestamp) | `1735775999` | **Rule level!** |
 
 ### Action Types
 | Key | Type | Fields |
 |-----|------|--------|
 | `ch` | Charge | `pw`, `pid` |
 | `dis` | Discharge | `pw`, `pid` |
-| `sb` | Standby | - |
-| `sl` | Site Limit | `hth`, `lth` |
+| `sb` | Standby | `pw` (always 0) |
+| `sl` | Site Limit (P9 only) | `hth`, `lth` |
 | `ct` | Charge to Target | `soc`, `maxp`, `maxg`, `str`, `pid` |
 | `dt` | Discharge to Target | `soc`, `maxp`, `ming`, `str`, `pid` |
 
-### Condition Keys
+### Condition Keys (inside `c` object)
 | Key | Description | Format |
 |-----|-------------|--------|
 | `ts` | Time start | `830` = 08:30 |
 | `te` | Time end | `1630` = 16:30 |
 | `sm` | SoC min | `10` = 10% |
 | `sx` | SoC max | `90` = 90% |
-| `gpo` | Grid operator | `gt`, `lt`, `bt` |
-| `gpv` | Grid value | kW |
-| `d` | Weekdays | `12345` = Mon-Fri |
+| `gpo` | Grid power operator | `gt`, `lt`, `bt` |
+| `gpv` | Grid power value | kW |
+| `gpx` | Grid power max (for `bt`) | kW |
 
 ---
 

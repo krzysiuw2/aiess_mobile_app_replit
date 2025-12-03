@@ -83,28 +83,52 @@ export function flattenRules(schedules: SchedulesResponse['schedules']): Rule[] 
 
 /**
  * Save a rule (create or update)
+ * 
+ * IMPORTANT: When priority changes, we must update BOTH old and new priorities!
+ * The API replaces ALL rules in a priority - we must merge properly.
+ * 
+ * @param siteId - Device/site ID
+ * @param rule - The rule to save (with new priority in rule.p)
+ * @param existingSchedules - Current schedules from last GET
+ * @param oldPriority - If editing and priority changed, pass the old priority to remove from
  */
 export async function saveRule(
   siteId: string, 
   rule: Rule, 
-  existingSchedules: SchedulesResponse['schedules']
+  existingSchedules: SchedulesResponse['schedules'],
+  oldPriority?: number
 ): Promise<SaveScheduleResponse> {
   if (!API_ENDPOINT || !API_KEY) {
     throw new Error('AWS Schedules API configuration missing');
   }
 
-  const priorityKey = `priority_${rule.p}` as keyof typeof existingSchedules;
-  const existingRules = [...(existingSchedules[priorityKey] || [])];
+  const newPriorityKey = `priority_${rule.p}` as keyof typeof existingSchedules;
+  const schedulesToUpdate: Record<string, Rule[]> = {};
   
-  // Find and update or add new rule
-  const existingIndex = existingRules.findIndex(r => r.id === rule.id);
-  if (existingIndex >= 0) {
-    existingRules[existingIndex] = rule;
-  } else {
-    existingRules.push(rule);
+  // Handle priority change - remove from old priority
+  if (oldPriority !== undefined && oldPriority !== rule.p) {
+    const oldPriorityKey = `priority_${oldPriority}` as keyof typeof existingSchedules;
+    const oldRules = existingSchedules[oldPriorityKey] || [];
+    // Filter out the rule being moved
+    const filteredOldRules = oldRules.filter(r => (r.id || (r as any).rule_id) !== rule.id);
+    schedulesToUpdate[oldPriorityKey] = filteredOldRules;
+    console.log('[Schedules] Removing rule from old priority:', oldPriority);
   }
 
+  // Add/update rule in new priority
+  const existingRulesInNewPriority = [...(existingSchedules[newPriorityKey] || [])];
+  
+  // Filter out any existing rule with same ID (handles both same-priority update and cross-priority move)
+  const filteredNewRules = existingRulesInNewPriority.filter(
+    r => (r.id || (r as any).rule_id) !== rule.id
+  );
+  
+  // Add the updated rule
+  filteredNewRules.push(rule);
+  schedulesToUpdate[newPriorityKey] = filteredNewRules;
+
   console.log('[Schedules] Saving rule:', rule.id, 'to priority', rule.p);
+  console.log('[Schedules] Updating priorities:', Object.keys(schedulesToUpdate));
 
   const response = await fetch(`${API_ENDPOINT}/schedules/${siteId}`, {
     method: 'POST',
@@ -114,9 +138,7 @@ export async function saveRule(
     },
     body: JSON.stringify({
       site_id: siteId,
-      schedules: {
-        [priorityKey]: existingRules,
-      },
+      schedules: schedulesToUpdate,
     }),
   });
 
