@@ -21,6 +21,7 @@ import {
   Battery,
   Clock,
   Calendar,
+  CalendarCheck,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -41,6 +42,31 @@ interface RuleCardProps {
   t: any;
 }
 
+// Format timestamp to readable date
+const formatDate = (timestamp: number | undefined): string => {
+  if (timestamp === undefined || timestamp === null) return '∞';
+  // Timestamp could be Unix seconds or milliseconds
+  const ms = timestamp > 1e12 ? timestamp : timestamp * 1000;
+  const date = new Date(ms);
+  return date.toLocaleDateString('en-GB', { 
+    day: '2-digit', 
+    month: 'short', 
+    year: 'numeric' 
+  });
+};
+
+// Get validity label
+const getValidityLabel = (vf: number | undefined, vu: number | undefined): string => {
+  const from = formatDate(vf);
+  const until = formatDate(vu);
+  
+  if (from === '∞' && until === '∞') {
+    return '∞'; // Always valid
+  }
+  
+  return `${from} → ${until}`;
+};
+
 function RuleCard({ rule, onEdit, onDelete, t }: RuleCardProps) {
   const isActive = rule.act !== false; // Default is true
   const actionLabel = rule.a?.t ? getActionTypeLabel(rule.a.t) : 'Unknown';
@@ -52,6 +78,11 @@ function RuleCard({ rule, onEdit, onDelete, t }: RuleCardProps) {
   const timeRange = rule.c?.ts !== undefined && rule.c?.te !== undefined
     ? `${formatTime(rule.c.ts)} - ${formatTime(rule.c.te)}`
     : 'Always';
+  
+  // Validity - check top level vf/vu or inside conditions
+  const validFrom = rule.vf ?? rule.c?.vf;
+  const validUntil = rule.vu ?? rule.c?.vu;
+  const validityLabel = getValidityLabel(validFrom, validUntil);
 
   // Build action details string
   const getActionDetails = () => {
@@ -131,6 +162,13 @@ function RuleCard({ rule, onEdit, onDelete, t }: RuleCardProps) {
           <Calendar size={16} color={Colors.textSecondary} />
           <Text style={styles.infoLabel}>Days:</Text>
           <Text style={styles.infoValue}>{daysLabel}</Text>
+        </View>
+
+        {/* Validity */}
+        <View style={styles.infoRow}>
+          <CalendarCheck size={16} color={Colors.textSecondary} />
+          <Text style={styles.infoLabel}>Valid:</Text>
+          <Text style={styles.infoValue}>{validityLabel}</Text>
         </View>
       </View>
 
