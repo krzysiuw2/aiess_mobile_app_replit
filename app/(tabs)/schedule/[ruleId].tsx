@@ -9,18 +9,260 @@ import {
   Switch,
   Alert,
   ActivityIndicator,
-  Platform,
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Save, X, Clock, Calendar } from 'lucide-react-native';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useSchedules } from '@/hooks/useSchedules';
 import { ActionType, Rule, RuleAction, RuleConditions } from '@/types';
 import { formatTime, parseTime } from '@/lib/aws-schedules';
+
+// Simple Time Picker Component (pure JS, works in Expo Go)
+interface TimePickerProps {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (time: string) => void;
+  initialTime?: string;
+  title: string;
+}
+
+const HOURS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
+const MINUTES = Array.from({ length: 12 }, (_, i) => (i * 5).toString().padStart(2, '0'));
+
+function TimePicker({ visible, onClose, onSelect, initialTime, title }: TimePickerProps) {
+  const [hour, setHour] = useState(initialTime?.split(':')[0] || '12');
+  const [minute, setMinute] = useState(initialTime?.split(':')[1] || '00');
+
+  const handleConfirm = () => {
+    onSelect(`${hour}:${minute}`);
+    onClose();
+  };
+
+  if (!visible) return null;
+
+  return (
+    <Modal transparent animationType="slide">
+      <View style={pickerStyles.overlay}>
+        <View style={pickerStyles.container}>
+          <View style={pickerStyles.header}>
+            <Text style={pickerStyles.title}>{title}</Text>
+            <TouchableOpacity onPress={handleConfirm}>
+              <Text style={pickerStyles.doneButton}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={pickerStyles.pickerRow}>
+            <View style={pickerStyles.column}>
+              <Text style={pickerStyles.columnLabel}>Hour</Text>
+              <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
+                {HOURS.map((h) => (
+                  <TouchableOpacity
+                    key={h}
+                    style={[pickerStyles.item, hour === h && pickerStyles.itemSelected]}
+                    onPress={() => setHour(h)}
+                  >
+                    <Text style={[pickerStyles.itemText, hour === h && pickerStyles.itemTextSelected]}>
+                      {h}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+            <Text style={pickerStyles.separator}>:</Text>
+            <View style={pickerStyles.column}>
+              <Text style={pickerStyles.columnLabel}>Min</Text>
+              <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
+                {MINUTES.map((m) => (
+                  <TouchableOpacity
+                    key={m}
+                    style={[pickerStyles.item, minute === m && pickerStyles.itemSelected]}
+                    onPress={() => setMinute(m)}
+                  >
+                    <Text style={[pickerStyles.itemText, minute === m && pickerStyles.itemTextSelected]}>
+                      {m}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// Simple Date Picker Component
+interface DatePickerProps {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (date: string) => void;
+  initialDate?: string;
+  title: string;
+}
+
+function DatePicker({ visible, onClose, onSelect, initialDate, title }: DatePickerProps) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const YEARS = Array.from({ length: 5 }, (_, i) => (currentYear + i).toString());
+  const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+  const DAYS = Array.from({ length: 31 }, (_, i) => (i + 1).toString().padStart(2, '0'));
+
+  const parts = initialDate?.split('-') || [];
+  const [year, setYear] = useState(parts[0] || currentYear.toString());
+  const [month, setMonth] = useState(parts[1] || '01');
+  const [day, setDay] = useState(parts[2] || '01');
+
+  const handleConfirm = () => {
+    onSelect(`${year}-${month}-${day}`);
+    onClose();
+  };
+
+  if (!visible) return null;
+
+  return (
+    <Modal transparent animationType="slide">
+      <View style={pickerStyles.overlay}>
+        <View style={pickerStyles.container}>
+          <View style={pickerStyles.header}>
+            <Text style={pickerStyles.title}>{title}</Text>
+            <TouchableOpacity onPress={handleConfirm}>
+              <Text style={pickerStyles.doneButton}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={pickerStyles.pickerRow}>
+            <View style={pickerStyles.column}>
+              <Text style={pickerStyles.columnLabel}>Year</Text>
+              <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
+                {YEARS.map((y) => (
+                  <TouchableOpacity
+                    key={y}
+                    style={[pickerStyles.item, year === y && pickerStyles.itemSelected]}
+                    onPress={() => setYear(y)}
+                  >
+                    <Text style={[pickerStyles.itemText, year === y && pickerStyles.itemTextSelected]}>
+                      {y}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+            <View style={pickerStyles.column}>
+              <Text style={pickerStyles.columnLabel}>Month</Text>
+              <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
+                {MONTHS.map((m) => (
+                  <TouchableOpacity
+                    key={m}
+                    style={[pickerStyles.item, month === m && pickerStyles.itemSelected]}
+                    onPress={() => setMonth(m)}
+                  >
+                    <Text style={[pickerStyles.itemText, month === m && pickerStyles.itemTextSelected]}>
+                      {m}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+            <View style={pickerStyles.column}>
+              <Text style={pickerStyles.columnLabel}>Day</Text>
+              <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
+                {DAYS.map((d) => (
+                  <TouchableOpacity
+                    key={d}
+                    style={[pickerStyles.item, day === d && pickerStyles.itemSelected]}
+                    onPress={() => setDay(d)}
+                  >
+                    <Text style={[pickerStyles.itemText, day === d && pickerStyles.itemTextSelected]}>
+                      {d}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const pickerStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  container: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 30,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  doneButton: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  column: {
+    alignItems: 'center',
+    marginHorizontal: 8,
+  },
+  columnLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginBottom: 8,
+  },
+  scrollView: {
+    height: 180,
+    width: 70,
+  },
+  item: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  itemSelected: {
+    backgroundColor: Colors.primaryLight,
+  },
+  itemText: {
+    fontSize: 20,
+    color: Colors.text,
+  },
+  itemTextSelected: {
+    color: Colors.primary,
+    fontWeight: '700',
+  },
+  separator: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.text,
+    marginHorizontal: 4,
+  },
+});
 
 const ACTION_TYPES: { type: ActionType; label: string; description: string }[] = [
   { type: 'ch', label: 'Charge', description: 'Fixed power charging' },
@@ -153,25 +395,6 @@ export default function RuleBuilderScreen() {
   const [showValidFromPicker, setShowValidFromPicker] = useState(false);
   const [showValidUntilPicker, setShowValidUntilPicker] = useState(false);
   
-  // Helper to create Date from time string (HH:MM)
-  const timeToDate = (timeStr: string): Date => {
-    const date = new Date();
-    if (timeStr) {
-      const [hours, minutes] = timeStr.split(':').map(Number);
-      date.setHours(hours || 0, minutes || 0, 0, 0);
-    } else {
-      date.setHours(12, 0, 0, 0); // Default to noon
-    }
-    return date;
-  };
-  
-  // Helper to create Date from date string (YYYY-MM-DD)
-  const dateStrToDate = (dateStr: string): Date => {
-    if (dateStr) {
-      return new Date(dateStr + 'T12:00:00');
-    }
-    return new Date();
-  };
 
   // Load existing rule data
   useEffect(() => {
@@ -461,8 +684,8 @@ export default function RuleBuilderScreen() {
                   onPress={() => setFormData({ ...formData, priority: p })}
                 >
                   <Text style={[
-                    styles.priorityText,
-                    formData.priority === p && styles.priorityTextActive,
+                      styles.priorityText,
+                      formData.priority === p && styles.priorityTextActive,
                   ]}>
                     P{p}
                   </Text>
@@ -505,8 +728,8 @@ export default function RuleBuilderScreen() {
                 onPress={() => setFormData({ ...formData, actionType: action.type })}
               >
                 <Text style={[
-                  styles.actionText,
-                  formData.actionType === action.type && styles.actionTextActive,
+                    styles.actionText,
+                    formData.actionType === action.type && styles.actionTextActive,
                 ]}>
                   {action.label}
                 </Text>
@@ -566,21 +789,21 @@ export default function RuleBuilderScreen() {
               {formData.actionType === 'ct' && (
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Max Grid Import (kW)</Text>
-                  <TextInput
-                    style={styles.textInput}
+                <TextInput
+                  style={styles.textInput}
                     value={formData.maxGrid}
                     onChangeText={(text) => setFormData({ ...formData, maxGrid: text.replace(/[^0-9.]/g, '') })}
                     keyboardType="decimal-pad"
                     placeholder="100"
                     placeholderTextColor={Colors.textSecondary}
-                  />
-                </View>
+                />
+              </View>
               )}
               {formData.actionType === 'dt' && (
-                <View style={styles.inputGroup}>
+              <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Min Grid Power (kW)</Text>
-                  <TextInput
-                    style={styles.textInput}
+                <TextInput
+                  style={styles.textInput}
                     value={formData.minGrid}
                     onChangeText={(text) => setFormData({ ...formData, minGrid: text.replace(/[^0-9.-]/g, '') })}
                     keyboardType="decimal-pad"
@@ -682,9 +905,9 @@ export default function RuleBuilderScreen() {
                       </TouchableOpacity>
                     ))}
                   </View>
-                </View>
-              </>
-            )}
+              </View>
+            </>
+          )}
           </View>
 
         {/* Validity Period */}
@@ -747,121 +970,37 @@ export default function RuleBuilderScreen() {
         </View>
       </ScrollView>
 
-      {/* Time Pickers */}
-      {showStartTimePicker && (
-        <Modal transparent animationType="slide">
-          <View style={styles.pickerModal}>
-            <View style={styles.pickerModalContent}>
-              <View style={styles.pickerModalHeader}>
-                <Text style={styles.pickerModalTitle}>Start Time</Text>
-                <TouchableOpacity onPress={() => setShowStartTimePicker(false)}>
-                  <Text style={styles.pickerModalDone}>Done</Text>
-                </TouchableOpacity>
-              </View>
-              <DateTimePicker
-                value={timeToDate(formData.startTime)}
-                mode="time"
-                display="spinner"
-                onChange={(event: DateTimePickerEvent, date?: Date) => {
-                  if (date) {
-                    const hours = date.getHours().toString().padStart(2, '0');
-                    const mins = date.getMinutes().toString().padStart(2, '0');
-                    setFormData({ ...formData, startTime: `${hours}:${mins}` });
-                  }
-                }}
-                style={styles.picker}
-              />
-            </View>
-          </View>
-        </Modal>
-      )}
+      {/* Time Pickers (Pure JS - works in Expo Go) */}
+      <TimePicker
+        visible={showStartTimePicker}
+        onClose={() => setShowStartTimePicker(false)}
+        onSelect={(time) => setFormData({ ...formData, startTime: time })}
+        initialTime={formData.startTime}
+        title="Start Time"
+      />
+      <TimePicker
+        visible={showEndTimePicker}
+        onClose={() => setShowEndTimePicker(false)}
+        onSelect={(time) => setFormData({ ...formData, endTime: time })}
+        initialTime={formData.endTime}
+        title="End Time"
+      />
 
-      {showEndTimePicker && (
-        <Modal transparent animationType="slide">
-          <View style={styles.pickerModal}>
-            <View style={styles.pickerModalContent}>
-              <View style={styles.pickerModalHeader}>
-                <Text style={styles.pickerModalTitle}>End Time</Text>
-                <TouchableOpacity onPress={() => setShowEndTimePicker(false)}>
-                  <Text style={styles.pickerModalDone}>Done</Text>
-                </TouchableOpacity>
-              </View>
-              <DateTimePicker
-                value={timeToDate(formData.endTime)}
-                mode="time"
-                display="spinner"
-                onChange={(event: DateTimePickerEvent, date?: Date) => {
-                  if (date) {
-                    const hours = date.getHours().toString().padStart(2, '0');
-                    const mins = date.getMinutes().toString().padStart(2, '0');
-                    setFormData({ ...formData, endTime: `${hours}:${mins}` });
-                  }
-                }}
-                style={styles.picker}
-              />
-            </View>
-          </View>
-        </Modal>
-      )}
-
-      {/* Date Pickers */}
-      {showValidFromPicker && (
-        <Modal transparent animationType="slide">
-          <View style={styles.pickerModal}>
-            <View style={styles.pickerModalContent}>
-              <View style={styles.pickerModalHeader}>
-                <Text style={styles.pickerModalTitle}>Valid From</Text>
-                <TouchableOpacity onPress={() => setShowValidFromPicker(false)}>
-                  <Text style={styles.pickerModalDone}>Done</Text>
-                </TouchableOpacity>
-              </View>
-              <DateTimePicker
-                value={dateStrToDate(formData.validFrom)}
-                mode="date"
-                display="spinner"
-                onChange={(event: DateTimePickerEvent, date?: Date) => {
-                  if (date) {
-                    const yyyy = date.getFullYear();
-                    const mm = (date.getMonth() + 1).toString().padStart(2, '0');
-                    const dd = date.getDate().toString().padStart(2, '0');
-                    setFormData({ ...formData, validFrom: `${yyyy}-${mm}-${dd}` });
-                  }
-                }}
-                style={styles.picker}
-              />
-            </View>
-          </View>
-        </Modal>
-      )}
-
-      {showValidUntilPicker && (
-        <Modal transparent animationType="slide">
-          <View style={styles.pickerModal}>
-            <View style={styles.pickerModalContent}>
-              <View style={styles.pickerModalHeader}>
-                <Text style={styles.pickerModalTitle}>Valid Until</Text>
-                <TouchableOpacity onPress={() => setShowValidUntilPicker(false)}>
-                  <Text style={styles.pickerModalDone}>Done</Text>
-                </TouchableOpacity>
-              </View>
-              <DateTimePicker
-                value={dateStrToDate(formData.validUntil)}
-                mode="date"
-                display="spinner"
-                onChange={(event: DateTimePickerEvent, date?: Date) => {
-                  if (date) {
-                    const yyyy = date.getFullYear();
-                    const mm = (date.getMonth() + 1).toString().padStart(2, '0');
-                    const dd = date.getDate().toString().padStart(2, '0');
-                    setFormData({ ...formData, validUntil: `${yyyy}-${mm}-${dd}` });
-                  }
-                }}
-                style={styles.picker}
-              />
-            </View>
-          </View>
-        </Modal>
-      )}
+      {/* Date Pickers (Pure JS - works in Expo Go) */}
+      <DatePicker
+        visible={showValidFromPicker}
+        onClose={() => setShowValidFromPicker(false)}
+        onSelect={(date) => setFormData({ ...formData, validFrom: date })}
+        initialDate={formData.validFrom}
+        title="Valid From"
+      />
+      <DatePicker
+        visible={showValidUntilPicker}
+        onClose={() => setShowValidUntilPicker(false)}
+        onSelect={(date) => setFormData({ ...formData, validUntil: date })}
+        initialDate={formData.validUntil}
+        title="Valid Until"
+      />
 
       {/* Footer */}
       <View style={styles.footer}>
@@ -1133,39 +1272,6 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontSize: 12,
     marginTop: 4,
-  },
-  pickerModal: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  pickerModalContent: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 30,
-  },
-  pickerModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  pickerModalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  pickerModalDone: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  picker: {
-    height: 200,
   },
 });
 
