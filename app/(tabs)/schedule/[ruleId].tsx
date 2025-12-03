@@ -28,7 +28,7 @@ const ACTION_TYPES: { type: ActionType; label: string; description: string }[] =
   { type: 'sb', label: 'Standby', description: 'No power flow' },
   { type: 'ct', label: 'Charge to SoC', description: 'Charge to target %' },
   { type: 'dt', label: 'Discharge to SoC', description: 'Discharge to target %' },
-  { type: 'sl', label: 'Site Limit', description: 'Grid power limits (P9)' },
+  // Site Limit (sl) removed - will be in Settings screen
 ];
 
 // Weekdays with API-compatible keys (Sun, Mon, Tue, etc.)
@@ -303,10 +303,6 @@ export default function RuleBuilderScreen() {
         action.maxp = parseFloat(formData.maxPower) || 50;
         action.ming = parseFloat(formData.minGrid) || 0;
         break;
-      case 'sl':
-        action.hth = parseFloat(formData.highThreshold) || 70;
-        action.lth = parseFloat(formData.lowThreshold) || -40;
-        break;
     }
 
     const conditions: RuleConditions = {};
@@ -319,7 +315,7 @@ export default function RuleBuilderScreen() {
 
     const rule: Rule = {
       id: formData.id.trim().toUpperCase(),
-      p: formData.actionType === 'sl' ? 9 : formData.priority,
+      p: formData.priority,
       a: action,
     };
 
@@ -403,12 +399,6 @@ export default function RuleBuilderScreen() {
     );
   };
 
-  // Force P9 for Site Limit
-  useEffect(() => {
-    if (formData.actionType === 'sl' && formData.priority !== 9) {
-      setFormData(prev => ({ ...prev, priority: 9 }));
-    }
-  }, [formData.actionType]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -458,36 +448,34 @@ export default function RuleBuilderScreen() {
             <Text style={styles.inputHint}>1-63 chars, uppercase letters, numbers, dashes</Text>
           </View>
 
-          {formData.actionType !== 'sl' && (
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Priority</Text>
-              <View style={styles.priorityRow}>
-                {[5, 6, 7, 8].map((p) => (
-                  <TouchableOpacity
-                    key={p}
-                    style={[
-                      styles.priorityButton,
-                      formData.priority === p && styles.priorityButtonActive,
-                    ]}
-                    onPress={() => setFormData({ ...formData, priority: p })}
-                  >
-                    <Text style={[
-                      styles.priorityText,
-                      formData.priority === p && styles.priorityTextActive,
-                    ]}>
-                      P{p}
-                    </Text>
-                    <Text style={[
-                      styles.prioritySubtext,
-                      formData.priority === p && styles.priorityTextActive,
-                    ]}>
-                      {p === 5 ? 'Low' : p === 6 ? 'Med' : p === 7 ? 'Norm' : 'High'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Priority</Text>
+            <View style={styles.priorityRow}>
+              {[5, 6, 7, 8].map((p) => (
+                <TouchableOpacity
+                  key={p}
+                  style={[
+                    styles.priorityButton,
+                    formData.priority === p && styles.priorityButtonActive,
+                  ]}
+                  onPress={() => setFormData({ ...formData, priority: p })}
+                >
+                  <Text style={[
+                    styles.priorityText,
+                    formData.priority === p && styles.priorityTextActive,
+                  ]}>
+                    P{p}
+                  </Text>
+                  <Text style={[
+                    styles.prioritySubtext,
+                    formData.priority === p && styles.priorityTextActive,
+                  ]}>
+                    {p === 5 ? 'Low' : p === 6 ? 'Med' : p === 7 ? 'Norm' : 'High'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          )}
+          </View>
 
           <View style={styles.switchRow}>
             <View>
@@ -604,34 +592,6 @@ export default function RuleBuilderScreen() {
             </>
           )}
 
-          {formData.actionType === 'sl' && (
-            <>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>High Threshold (kW)</Text>
-                <Text style={styles.inputHint}>Max grid import - discharge battery if exceeded</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={formData.highThreshold}
-                  onChangeText={(text) => setFormData({ ...formData, highThreshold: text.replace(/[^0-9.-]/g, '') })}
-                  keyboardType="decimal-pad"
-                  placeholder="70"
-                  placeholderTextColor={Colors.textSecondary}
-                />
-              </View>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Low Threshold (kW)</Text>
-                <Text style={styles.inputHint}>Max grid export (negative) - charge battery if exceeded</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={formData.lowThreshold}
-                  onChangeText={(text) => setFormData({ ...formData, lowThreshold: text.replace(/[^0-9.-]/g, '') })}
-                  keyboardType="decimal-pad"
-                  placeholder="-40"
-                  placeholderTextColor={Colors.textSecondary}
-                />
-              </View>
-            </>
-          )}
 
           {formData.actionType === 'sb' && (
             <Text style={styles.noParamsText}>No parameters needed for Standby</Text>
@@ -639,9 +599,8 @@ export default function RuleBuilderScreen() {
         </View>
 
         {/* Time Conditions */}
-        {formData.actionType !== 'sl' && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Time Conditions (Optional)</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Time Conditions (Optional)</Text>
             
             <View style={styles.switchRow}>
               <View>
@@ -727,7 +686,6 @@ export default function RuleBuilderScreen() {
               </>
             )}
           </View>
-        )}
 
         {/* Validity Period */}
         <View style={styles.section}>

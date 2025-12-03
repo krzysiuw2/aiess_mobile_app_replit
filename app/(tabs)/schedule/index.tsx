@@ -196,6 +196,9 @@ export default function ScheduleListScreen() {
   const { t } = useSettings();
   const { selectedDevice } = useDevices();
   const { rules, isLoading, error, refetch, removeRule, shadowVersion } = useSchedules();
+  
+  // Filter out P9 rules (Site Limit is a settings-type rule, not a schedule)
+  const scheduleRules = rules.filter(rule => rule.p !== 9);
 
   const handleEditRule = (rule: Rule) => {
     router.push({ 
@@ -247,7 +250,7 @@ export default function ScheduleListScreen() {
         <View>
           <Text style={styles.headerTitle}>{t.schedules.title}</Text>
           <Text style={styles.headerSubtitle}>
-            {selectedDevice.name} • {rules.length} rules
+            {selectedDevice.name} • {scheduleRules.length} rules
             {shadowVersion && ` • v${shadowVersion}`}
           </Text>
         </View>
@@ -266,7 +269,7 @@ export default function ScheduleListScreen() {
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
-      ) : rules.length === 0 ? (
+      ) : scheduleRules.length === 0 ? (
         <View style={styles.centered}>
           <Text style={styles.emptyTitle}>No Rules</Text>
           <Text style={styles.emptySubtitle}>Create your first schedule rule</Text>
@@ -280,7 +283,7 @@ export default function ScheduleListScreen() {
             <RefreshControl refreshing={isLoading} onRefresh={refetch} />
           }
         >
-          {rules.map((rule) => (
+          {scheduleRules.map((rule) => (
             <RuleCard
               key={`${rule.p}-${rule.id}`}
               rule={rule}
