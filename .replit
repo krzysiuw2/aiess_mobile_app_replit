@@ -1,0 +1,13 @@
+run = "npm run start:tunnel"
+entrypoint = "package.json"
+hidden = [".config", "node_modules"]
+
+[nix]
+channel = "stable-23_11"
+
+[deployment]
+run = ["sh", "-c", "npm run start:tunnel"]
+
+[env]
+EXPO_TUNNEL_SUBDOMAIN = "aiess-mobile-app"
+
