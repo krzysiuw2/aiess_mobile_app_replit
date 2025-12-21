@@ -24,6 +24,7 @@
     "expo-asset": "^12.0.10",
     "expo-auth-session": "^7.0.9",
     "expo-blur": "~15.0.7",
+    "expo-build-properties": "^1.0.10",
     "expo-constants": "~18.0.10",
     "expo-crypto": "^15.0.7",
     "expo-dev-client": "^6.0.18",
