@@ -45,11 +45,18 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
   useEffect(() => {
     // Delay to ensure Rive is fully loaded
     const timer = setTimeout(() => {
-      if (!riveRef.current) return;
+      if (!riveRef.current) {
+        console.log('[Rive] Ref not ready during mount');
+        return;
+      }
+      
+      console.log('[Rive] Starting state machines...', STATE_MACHINES);
+      console.log('[Rive] Available methods:', Object.keys(riveRef.current).filter(k => typeof riveRef.current[k] === 'function'));
       
       // Play all state machines
       STATE_MACHINES.forEach((sm) => {
         riveRef.current?.play(sm, undefined, undefined, true);
+        console.log('[Rive] Started:', sm);
       });
     }, 100);
     
@@ -58,7 +65,12 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
 
   // Update Rive state machine inputs and text values when data changes
   useEffect(() => {
-    if (!riveRef.current || !liveData) return;
+    if (!riveRef.current || !liveData) {
+      console.log('[Rive] Skipping update - ref or data missing', { hasRef: !!riveRef.current, hasData: !!liveData });
+      return;
+    }
+
+    console.log('[Rive] Updating values...', { gridPower, factoryLoad, pvPower, batteryPower, batterySoc, batteryStatus });
 
     // === Update State Machine Inputs for Animations ===
     
@@ -100,8 +112,16 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
     };
     
     // Battery Status and SoC (we need to add units)
-    riveRef.current.setTextRunValue('Status Value Text', batteryStatus);
-    riveRef.current.setTextRunValue('SoC Value Text', `${formatValue(batterySoc)} %`);
+    try {
+      const statusValue = batteryStatus;
+      const socValue = `${formatValue(batterySoc)} %`;
+      console.log('[Rive] Setting Status:', statusValue);
+      console.log('[Rive] Setting SoC:', socValue);
+      riveRef.current.setTextRunValue('Status Value Text', statusValue);
+      riveRef.current.setTextRunValue('SoC Value Text', socValue);
+    } catch (error) {
+      console.error('[Rive] Error setting battery text:', error);
+    }
     
     // Battery Power (add kW unit)
     riveRef.current.setTextRunValue('Power Value Text', `${formatValue(Math.abs(batteryPower))} kW`);
