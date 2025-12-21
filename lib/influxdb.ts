@@ -113,7 +113,10 @@ function parseInfluxCSV(csv: string): Record<string, string>[] {
  * Formula: max(0, grid_power + pv_power - battery_power)
  */
 export function calculateFactoryLoad(gridPower: number, pvPower: number, batteryPower: number): number {
-  return Math.max(0, gridPower + pvPower - batteryPower);
+  // Energy balance: Grid + PV = Factory + Battery(charging)
+  // When battery charges (negative), it's a load like factory
+  // When battery discharges (positive), it's a source like PV
+  return Math.max(0, gridPower + pvPower + batteryPower);
 }
 
 /**

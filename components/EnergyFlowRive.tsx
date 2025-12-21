@@ -1,7 +1,6 @@
 import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { View, StyleSheet, Dimensions } from 'react-native';
 import Rive, { RiveRef } from 'rive-react-native';
-import Colors from '@/constants/colors';
 import { LiveData } from '@/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -57,10 +56,12 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
     return () => clearTimeout(timer);
   }, []);
 
-  // Update Rive state machine inputs when data changes
+  // Update Rive state machine inputs and text values when data changes
   useEffect(() => {
     if (!riveRef.current || !liveData) return;
 
+    // === Update State Machine Inputs for Animations ===
+    
     // Grid: positive = importing from grid (grid → cabinet)
     riveRef.current.setInputState(
       'sm_cabinet_grid',
@@ -77,7 +78,7 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
 
     // PV: positive = generating (pv → cabinet)
     riveRef.current.setInputState(
-      'sm_pv_cabinet',
+      'sm_cabinet_pv',
       'pv_cabinet_power_kw',
       pvPower
     );
@@ -90,88 +91,46 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
       'cabinet_battery_power_kw',
       -batteryPower
     );
-  }, [gridPower, factoryLoad, pvPower, batteryPower, liveData]);
 
-  // Get status color for battery
-  const getStatusColor = () => {
-    switch (batteryStatus) {
-      case 'Charging':
-        return Colors.success;
-      case 'Discharging':
-        return Colors.warning;
-      default:
-        return Colors.textSecondary;
-    }
-  };
-
-  // Get grid status text
-  const getGridHint = () => {
-    if (gridPower > 0.5) return 'Importing';
-    if (gridPower < -0.5) return 'Exporting';
-    return '—';
-  };
+    // === Update Text Run Values ===
+    
+    // Battery Status and SoC
+    riveRef.current.setTextRunValue('Status Value Text', batteryStatus);
+    riveRef.current.setTextRunValue('SoC Value Text', `${batterySoc}%`);
+    
+    // Battery Power
+    riveRef.current.setTextRunValue('Power Value Text', `${Math.abs(batteryPower).toFixed(1)} kW`);
+    
+    // Grid Power (with import/export indication)
+    const gridStatus = gridPower > 0.5 ? 'Importing' : gridPower < -0.5 ? 'Exporting' : '—';
+    riveRef.current.setTextRunValue('Grid Value Text', `${gridPower.toFixed(1)} kW`);
+    riveRef.current.setTextRunValue('Grid Text', `${t.monitor.grid} (${gridStatus})`);
+    
+    // Factory Load
+    riveRef.current.setTextRunValue('Factory Value Text', `${factoryLoad.toFixed(1)} kW`);
+    riveRef.current.setTextRunValue('Factory Text', t.monitor.factory);
+    
+    // PV Power (with generation status)
+    const pvStatus = pvPower > 0.5 ? 'Generating' : '—';
+    riveRef.current.setTextRunValue('PV Power Text', `${pvPower.toFixed(1)} kW`);
+    riveRef.current.setTextRunValue('PV Text', `${t.monitor.pv} (${pvStatus})`);
+    
+    // Status labels
+    riveRef.current.setTextRunValue('Status Text', t.monitor.status);
+    riveRef.current.setTextRunValue('SoC Text', t.monitor.soc);
+    riveRef.current.setTextRunValue('Power Text', t.monitor.power);
+  }, [gridPower, factoryLoad, pvPower, batteryPower, batterySoc, batteryStatus, liveData, t]);
 
   return (
     <View style={styles.container}>
-      {/* Rive Animation Canvas */}
+      {/* Rive Animation Canvas with embedded text */}
       <View style={styles.riveContainer}>
         <Rive
           ref={riveRef}
-          resourceName="energy_dashboard_v3"
+          resourceName="energy_dashboard_v4"
           autoplay={true}
           style={styles.rive}
         />
-
-        {/* Overlay: Battery Values (top-left area) */}
-        <View style={[styles.overlay, styles.batteryOverlay]}>
-          <Text style={styles.overlayLabel}>Battery</Text>
-          <Text style={styles.batteryValue}>{batterySoc}%</Text>
-          <Text style={[styles.statusText, { color: getStatusColor() }]}>
-            {batteryStatus}
-          </Text>
-        </View>
-
-        {/* Overlay: Battery Power (top area with battery icon) */}
-        <View style={[styles.overlay, styles.batteryPowerOverlay]}>
-          <Text style={styles.powerValue}>{Math.abs(batteryPower).toFixed(1)} kW</Text>
-        </View>
-
-        {/* Overlay: SoC Circle (top-center) */}
-        <View style={[styles.overlay, styles.socOverlay]}>
-          <Text style={styles.socValue}>{batterySoc}%</Text>
-          <Text style={styles.socLabel}>SoC</Text>
-        </View>
-
-        {/* Overlay: Total Power (right side with lightning) */}
-        <View style={[styles.overlay, styles.totalPowerOverlay]}>
-          <Text style={styles.powerValue}>{(factoryLoad + pvPower).toFixed(1)} kW</Text>
-          <Text style={styles.powerLabel}>Total</Text>
-        </View>
-
-        {/* Overlay: Grid Values (bottom-left) */}
-        <View style={[styles.overlay, styles.gridOverlay]}>
-          <Text style={styles.overlayLabel}>{t.monitor.grid}</Text>
-          <Text style={[styles.powerValue, gridPower < -0.5 && styles.exportValue]}>
-            {gridPower.toFixed(1)} kW
-          </Text>
-          <Text style={styles.hintText}>{getGridHint()}</Text>
-        </View>
-
-        {/* Overlay: Factory Values (bottom-center) */}
-        <View style={[styles.overlay, styles.factoryOverlay]}>
-          <Text style={styles.overlayLabel}>{t.monitor.factory}</Text>
-          <Text style={styles.powerValue}>{factoryLoad.toFixed(1)} kW</Text>
-          <Text style={styles.hintText}>Load</Text>
-        </View>
-
-        {/* Overlay: PV Values (bottom-right) */}
-        <View style={[styles.overlay, styles.pvOverlay]}>
-          <Text style={styles.overlayLabel}>{t.monitor.pv}</Text>
-          <Text style={[styles.powerValue, pvPower > 0.5 && styles.pvValue]}>
-            {pvPower.toFixed(1)} kW
-          </Text>
-          <Text style={styles.hintText}>{pvPower > 0.5 ? 'Generating' : '—'}</Text>
-        </View>
       </View>
     </View>
   );
@@ -186,137 +145,10 @@ const styles = StyleSheet.create({
   riveContainer: {
     width: DIAGRAM_WIDTH,
     height: DIAGRAM_HEIGHT,
-    position: 'relative',
   },
   rive: {
     width: '100%',
     height: '100%',
-  },
-  overlay: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  overlayLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: Colors.textSecondary,
-    marginBottom: 2,
-  },
-  
-  // Battery overlay (main battery card area - top left)
-  batteryOverlay: {
-    top: '3%',
-    left: '3%',
-    width: '22%',
-    height: '15%',
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 8,
-    padding: 6,
-  },
-  batteryValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.text,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-
-  // Battery power overlay (next to battery icon)
-  batteryPowerOverlay: {
-    top: '3%',
-    left: '28%',
-    width: '25%',
-    height: '12%',
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 8,
-    padding: 4,
-  },
-
-  // SoC circle overlay (top center)
-  socOverlay: {
-    top: '5%',
-    left: '55%',
-    width: '20%',
-    height: '10%',
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 20,
-    padding: 4,
-  },
-  socValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.text,
-  },
-  socLabel: {
-    fontSize: 9,
-    color: Colors.textSecondary,
-  },
-
-  // Total power overlay (right side with lightning)
-  totalPowerOverlay: {
-    top: '20%',
-    right: '3%',
-    width: '28%',
-    height: '12%',
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 8,
-    padding: 4,
-  },
-  powerLabel: {
-    fontSize: 9,
-    color: Colors.textSecondary,
-  },
-
-  // Grid overlay (bottom left)
-  gridOverlay: {
-    bottom: '3%',
-    left: '3%',
-    width: '28%',
-    height: '14%',
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 8,
-    padding: 6,
-  },
-
-  // Factory overlay (bottom center)
-  factoryOverlay: {
-    bottom: '3%',
-    left: '36%',
-    width: '28%',
-    height: '14%',
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 8,
-    padding: 6,
-  },
-
-  // PV overlay (bottom right)
-  pvOverlay: {
-    bottom: '3%',
-    right: '3%',
-    width: '28%',
-    height: '14%',
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 8,
-    padding: 6,
-  },
-
-  powerValue: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.text,
-  },
-  exportValue: {
-    color: Colors.success,
-  },
-  pvValue: {
-    color: Colors.warning,
-  },
-  hintText: {
-    fontSize: 9,
-    color: Colors.textLight,
   },
 });
 
