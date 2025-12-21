@@ -12,7 +12,7 @@ const DIAGRAM_HEIGHT = DIAGRAM_WIDTH / RIVE_ASPECT_RATIO;
 const STATE_MACHINES = [
   'sm_cabinet_grid',
   'sm_cabinet_factory',
-  'sm_pv_cabinet',
+  'sm_cabinet_pv',
   'sm_cabinet_battery',
 ] as const;
 
@@ -74,35 +74,44 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
 
     // === Update State Machine Inputs for Animations ===
     
-    // Grid: positive = importing from grid (grid → cabinet)
-    riveRef.current.setInputState(
-      'sm_cabinet_grid',
-      'grid_cabinet_power_kw',
-      gridPower
-    );
+    try {
+      // Grid: positive = importing from grid (grid → cabinet)
+      console.log('[Rive] Setting Grid:', gridPower);
+      riveRef.current.setInputState(
+        'sm_cabinet_grid',
+        'grid_cabinet_power_kw',
+        gridPower
+      );
 
-    // Factory: always positive (cabinet → factory)
-    riveRef.current.setInputState(
-      'sm_cabinet_factory',
-      'cabinet_factory_power_kw',
-      factoryLoad
-    );
+      // Factory: always positive (cabinet → factory)
+      console.log('[Rive] Setting Factory:', factoryLoad);
+      riveRef.current.setInputState(
+        'sm_cabinet_factory',
+        'cabinet_factory_power_kw',
+        factoryLoad
+      );
 
-    // PV: positive = generating (pv → cabinet)
-    riveRef.current.setInputState(
-      'sm_cabinet_pv',
-      'pv_cabinet_power_kw',
-      pvPower
-    );
+      // PV: positive = generating (pv → cabinet)
+      console.log('[Rive] Setting PV:', pvPower);
+      riveRef.current.setInputState(
+        'sm_cabinet_pv',
+        'pv_cabinet_power_kw',
+        pvPower
+      );
 
-    // Battery: Rive expects positive = charging, negative = discharging
-    // Our data: negative = charging, positive = discharging
-    // So we invert the sign
-    riveRef.current.setInputState(
-      'sm_cabinet_battery',
-      'cabinet_battery_power_kw',
-      -batteryPower
-    );
+      // Battery: Rive expects positive = charging, negative = discharging
+      // Our data: negative = charging, positive = discharging
+      // So we invert the sign
+      const batteryInputValue = -batteryPower;
+      console.log('[Rive] Setting Battery:', batteryInputValue, '(original:', batteryPower, ')');
+      riveRef.current.setInputState(
+        'sm_cabinet_battery',
+        'cabinet_battery_power_kw',
+        batteryInputValue
+      );
+    } catch (error) {
+      console.error('[Rive] Error setting state machine inputs:', error);
+    }
 
     // === Update Text Run Values ===
     
