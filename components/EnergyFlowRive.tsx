@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
 import Rive, { RiveRef } from 'rive-react-native';
 import { LiveData } from '@/types';
@@ -41,26 +41,24 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
   const pvPower = liveData?.pvPower ?? 0;
   const factoryLoad = liveData?.factoryLoad ?? 0;
 
-  // Start all state machines after mount
-  useEffect(() => {
-    // Delay to ensure Rive is fully loaded
-    const timer = setTimeout(() => {
-      if (!riveRef.current) {
-        console.log('[Rive] Ref not ready during mount');
-        return;
-      }
-      
-      console.log('[Rive] Starting state machines...', STATE_MACHINES);
-      console.log('[Rive] Available methods:', Object.keys(riveRef.current).filter(k => typeof riveRef.current[k] === 'function'));
-      
-      // Play all state machines
-      STATE_MACHINES.forEach((sm) => {
-        riveRef.current?.play(sm, undefined, undefined, true);
-        console.log('[Rive] Started:', sm);
-      });
-    }, 100);
+  // Callback when Rive file is loaded and ready
+  const handleRiveLoad = useCallback(() => {
+    console.log('[Rive] File loaded, starting state machines...');
     
-    return () => clearTimeout(timer);
+    if (!riveRef.current) {
+      console.error('[Rive] Ref not available in onLoad');
+      return;
+    }
+    
+    // Start all state machines
+    STATE_MACHINES.forEach((sm) => {
+      try {
+        console.log(`[Rive] Starting state machine: ${sm}`);
+        riveRef.current?.play(sm, undefined, undefined, true);
+      } catch (error) {
+        console.error(`[Rive] Error starting ${sm}:`, error);
+      }
+    });
   }, []);
 
   // Update Rive state machine inputs and text values when data changes
@@ -160,7 +158,8 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
         <Rive
           ref={riveRef}
           resourceName="energy_dashboard_v4"
-          autoplay={true}
+          autoplay={false}
+          onLoad={handleRiveLoad}
           style={styles.rive}
         />
       </View>
