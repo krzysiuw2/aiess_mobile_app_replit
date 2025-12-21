@@ -94,26 +94,29 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
 
     // === Update Text Run Values ===
     
-    // Battery Status and SoC
+    // Helper function to format numbers: 1 decimal if < 100, no decimals if >= 100
+    const formatValue = (value: number): string => {
+      return Math.abs(value) < 100 ? value.toFixed(1) : Math.round(value).toString();
+    };
+    
+    // Battery Status and SoC (Rive text already includes "%" and "kW" units)
     riveRef.current.setTextRunValue('Status Value Text', batteryStatus);
-    riveRef.current.setTextRunValue('SoC Value Text', `${batterySoc}%`);
+    riveRef.current.setTextRunValue('SoC Value Text', formatValue(batterySoc));
     
     // Battery Power
-    riveRef.current.setTextRunValue('Power Value Text', `${Math.abs(batteryPower).toFixed(1)} kW`);
+    riveRef.current.setTextRunValue('Power Value Text', formatValue(Math.abs(batteryPower)));
     
-    // Grid Power (with import/export indication)
-    const gridStatus = gridPower > 0.5 ? 'Importing' : gridPower < -0.5 ? 'Exporting' : '—';
-    riveRef.current.setTextRunValue('Grid Value Text', `${gridPower.toFixed(1)} kW`);
-    riveRef.current.setTextRunValue('Grid Text', `${t.monitor.grid} (${gridStatus})`);
+    // Grid Power
+    riveRef.current.setTextRunValue('Grid Value Text', formatValue(gridPower));
+    riveRef.current.setTextRunValue('Grid Text', t.monitor.grid);
     
     // Factory Load
-    riveRef.current.setTextRunValue('Factory Value Text', `${factoryLoad.toFixed(1)} kW`);
+    riveRef.current.setTextRunValue('Factory Value Text', formatValue(factoryLoad));
     riveRef.current.setTextRunValue('Factory Text', t.monitor.factory);
     
-    // PV Power (with generation status)
-    const pvStatus = pvPower > 0.5 ? 'Generating' : '—';
-    riveRef.current.setTextRunValue('PV Power Text', `${pvPower.toFixed(1)} kW`);
-    riveRef.current.setTextRunValue('PV Text', `${t.monitor.pv} (${pvStatus})`);
+    // PV Power
+    riveRef.current.setTextRunValue('PV Power Text', formatValue(pvPower));
+    riveRef.current.setTextRunValue('PV Text', t.monitor.pv);
     
     // Status labels
     riveRef.current.setTextRunValue('Status Text', t.monitor.status);
