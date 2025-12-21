@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
 import Rive, { RiveRef } from 'rive-react-native';
 import { LiveData } from '@/types';
@@ -41,24 +41,38 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
   const pvPower = liveData?.pvPower ?? 0;
   const factoryLoad = liveData?.factoryLoad ?? 0;
 
-  // Callback when Rive file is loaded and ready
-  const handleRiveLoad = useCallback(() => {
-    console.log('[Rive] File loaded, starting state machines...');
+  // Start all state machines after mount
+  useEffect(() => {
+    console.log('[Rive] Component mounted, will start state machines...');
     
-    if (!riveRef.current) {
-      console.error('[Rive] Ref not available in onLoad');
-      return;
-    }
+    // Use multiple retry attempts with increasing delays
+    const timers: NodeJS.Timeout[] = [];
+    const delays = [100, 500, 1000]; // Try at 100ms, 500ms, and 1000ms
     
-    // Start all state machines
-    STATE_MACHINES.forEach((sm) => {
-      try {
-        console.log(`[Rive] Starting state machine: ${sm}`);
-        riveRef.current?.play(sm, undefined, undefined, true);
-      } catch (error) {
-        console.error(`[Rive] Error starting ${sm}:`, error);
-      }
+    delays.forEach((delay, index) => {
+      const timer = setTimeout(() => {
+        if (!riveRef.current) {
+          console.log(`[Rive] Attempt ${index + 1}: Ref not ready yet`);
+          return;
+        }
+        
+        console.log(`[Rive] Attempt ${index + 1}: Starting state machines...`);
+        
+        // Start all state machines
+        STATE_MACHINES.forEach((sm) => {
+          try {
+            console.log(`[Rive] Starting state machine: ${sm}`);
+            riveRef.current?.play(sm, undefined, undefined, true);
+          } catch (error) {
+            console.error(`[Rive] Error starting ${sm}:`, error);
+          }
+        });
+      }, delay);
+      
+      timers.push(timer);
     });
+    
+    return () => timers.forEach(t => clearTimeout(t));
   }, []);
 
   // Update Rive state machine inputs and text values when data changes
@@ -158,8 +172,7 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
         <Rive
           ref={riveRef}
           resourceName="energy_dashboard_v4"
-          autoplay={false}
-          onLoad={handleRiveLoad}
+          autoplay={true}
           style={styles.rive}
         />
       </View>
