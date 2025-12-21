@@ -99,23 +99,23 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
       return Math.abs(value) < 100 ? value.toFixed(1) : Math.round(value).toString();
     };
     
-    // Battery Status and SoC (Rive text already includes "%" and "kW" units)
+    // Battery Status and SoC (we need to add units)
     riveRef.current.setTextRunValue('Status Value Text', batteryStatus);
-    riveRef.current.setTextRunValue('SoC Value Text', formatValue(batterySoc));
+    riveRef.current.setTextRunValue('SoC Value Text', `${formatValue(batterySoc)} %`);
     
-    // Battery Power
-    riveRef.current.setTextRunValue('Power Value Text', formatValue(Math.abs(batteryPower)));
+    // Battery Power (add kW unit)
+    riveRef.current.setTextRunValue('Power Value Text', `${formatValue(Math.abs(batteryPower))} kW`);
     
-    // Grid Power
-    riveRef.current.setTextRunValue('Grid Value Text', formatValue(gridPower));
+    // Grid Power (add kW unit)
+    riveRef.current.setTextRunValue('Grid Value Text', `${formatValue(gridPower)} kW`);
     riveRef.current.setTextRunValue('Grid Text', t.monitor.grid);
     
-    // Factory Load
-    riveRef.current.setTextRunValue('Factory Value Text', formatValue(factoryLoad));
+    // Factory Load (add kW unit)
+    riveRef.current.setTextRunValue('Factory Value Text', `${formatValue(factoryLoad)} kW`);
     riveRef.current.setTextRunValue('Factory Text', t.monitor.factory);
     
-    // PV Power
-    riveRef.current.setTextRunValue('PV Power Text', formatValue(pvPower));
+    // PV Power (add kW unit)
+    riveRef.current.setTextRunValue('PV Power Text', `${formatValue(pvPower)} kW`);
     riveRef.current.setTextRunValue('PV Text', t.monitor.pv);
     
     // Status labels
