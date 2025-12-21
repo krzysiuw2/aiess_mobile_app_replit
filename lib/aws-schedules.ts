@@ -7,8 +7,8 @@
 
 import { Rule } from '@/types';
 
-const API_ENDPOINT = process.env.EXPO_PUBLIC_AWS_ENDPOINT;
-const API_KEY = process.env.EXPO_PUBLIC_AWS_API_KEY;
+const API_ENDPOINT = process.env.EXPO_PUBLIC_AWS_ENDPOINT || '';
+const API_KEY = process.env.EXPO_PUBLIC_AWS_API_KEY || '';
 
 export interface SchedulesResponse {
   site_id: string;

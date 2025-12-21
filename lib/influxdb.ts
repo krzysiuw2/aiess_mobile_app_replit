@@ -71,9 +71,9 @@ const ANALYTICS_CONFIG: Record<TimeRange, {
   },
 };
 
-const INFLUX_URL = process.env.EXPO_PUBLIC_INFLUX_URL;
-const INFLUX_ORG = process.env.EXPO_PUBLIC_INFLUX_ORG;
-const INFLUX_TOKEN = process.env.EXPO_PUBLIC_INFLUX_TOKEN;
+const INFLUX_URL = process.env.EXPO_PUBLIC_INFLUX_URL || '';
+const INFLUX_ORG = process.env.EXPO_PUBLIC_INFLUX_ORG || '';
+const INFLUX_TOKEN = process.env.EXPO_PUBLIC_INFLUX_TOKEN || '';
 
 /**
  * Parse InfluxDB CSV response into key-value pairs
