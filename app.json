@@ -49,8 +49,7 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-secure-store",
-      "rive-react-native"
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
