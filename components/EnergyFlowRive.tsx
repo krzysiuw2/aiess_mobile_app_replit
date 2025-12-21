@@ -8,13 +8,8 @@ const RIVE_ASPECT_RATIO = 368 / 510; // Width / Height from artboard
 const DIAGRAM_WIDTH = SCREEN_WIDTH - 32; // 16px padding on each side
 const DIAGRAM_HEIGHT = DIAGRAM_WIDTH / RIVE_ASPECT_RATIO;
 
-// State machine names from the Rive file
-const STATE_MACHINES = [
-  'sm_cabinet_grid',
-  'sm_cabinet_factory',
-  'sm_cabinet_pv',
-  'sm_cabinet_battery',
-] as const;
+// Single state machine name that controls all flows
+const STATE_MACHINE_NAME = 'sm_energy_flow';
 
 interface EnergyFlowRiveProps {
   liveData: LiveData | null | undefined;
@@ -41,38 +36,9 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
   const pvPower = liveData?.pvPower ?? 0;
   const factoryLoad = liveData?.factoryLoad ?? 0;
 
-  // Start all state machines after mount
+  // Log when component mounts
   useEffect(() => {
-    console.log('[Rive] Component mounted, will start state machines...');
-    
-    // Use multiple retry attempts with increasing delays
-    const timers: NodeJS.Timeout[] = [];
-    const delays = [100, 500, 1000]; // Try at 100ms, 500ms, and 1000ms
-    
-    delays.forEach((delay, index) => {
-      const timer = setTimeout(() => {
-        if (!riveRef.current) {
-          console.log(`[Rive] Attempt ${index + 1}: Ref not ready yet`);
-          return;
-        }
-        
-        console.log(`[Rive] Attempt ${index + 1}: Starting state machines...`);
-        
-        // Start all state machines
-        STATE_MACHINES.forEach((sm) => {
-          try {
-            console.log(`[Rive] Starting state machine: ${sm}`);
-            riveRef.current?.play(sm, undefined, undefined, true);
-          } catch (error) {
-            console.error(`[Rive] Error starting ${sm}:`, error);
-          }
-        });
-      }, delay);
-      
-      timers.push(timer);
-    });
-    
-    return () => timers.forEach(t => clearTimeout(t));
+    console.log('[Rive] Component mounted, state machine will autoplay via stateMachineName prop');
   }, []);
 
   // Update Rive state machine inputs and text values when data changes
@@ -85,12 +51,13 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
     console.log('[Rive] Updating values...', { gridPower, factoryLoad, pvPower, batteryPower, batterySoc, batteryStatus });
 
     // === Update State Machine Inputs for Animations ===
+    // All inputs are on the same state machine now
     
     try {
       // Grid: positive = importing from grid (grid → cabinet)
       console.log('[Rive] Setting Grid:', gridPower);
       riveRef.current.setInputState(
-        'sm_cabinet_grid',
+        STATE_MACHINE_NAME,
         'grid_cabinet_power_kw',
         gridPower
       );
@@ -98,7 +65,7 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
       // Factory: always positive (cabinet → factory)
       console.log('[Rive] Setting Factory:', factoryLoad);
       riveRef.current.setInputState(
-        'sm_cabinet_factory',
+        STATE_MACHINE_NAME,
         'cabinet_factory_power_kw',
         factoryLoad
       );
@@ -106,7 +73,7 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
       // PV: positive = generating (pv → cabinet)
       console.log('[Rive] Setting PV:', pvPower);
       riveRef.current.setInputState(
-        'sm_cabinet_pv',
+        STATE_MACHINE_NAME,
         'pv_cabinet_power_kw',
         pvPower
       );
@@ -117,7 +84,7 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
       const batteryInputValue = -batteryPower;
       console.log('[Rive] Setting Battery:', batteryInputValue, '(original:', batteryPower, ')');
       riveRef.current.setInputState(
-        'sm_cabinet_battery',
+        STATE_MACHINE_NAME,
         'cabinet_battery_power_kw',
         batteryInputValue
       );
@@ -172,6 +139,7 @@ export default function EnergyFlowRive({ liveData, t }: EnergyFlowRiveProps) {
         <Rive
           ref={riveRef}
           resourceName="energy_dashboard_v4"
+          stateMachineName={STATE_MACHINE_NAME}
           autoplay={true}
           style={styles.rive}
         />
