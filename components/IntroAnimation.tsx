@@ -70,7 +70,7 @@ export default function IntroAnimation({ onComplete }: IntroAnimationProps) {
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#008cff', // AIESS brand blue
+    // No background - Rive animation has its own background that becomes transparent
     zIndex: 9999,
   },
   rive: {
