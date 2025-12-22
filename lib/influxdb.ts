@@ -26,10 +26,10 @@ export interface EnergyStats {
   pvProduction: number;  // kWh PV production
 }
 
-export type TimeRange = 'hour' | 'day' | 'week' | 'month';
+export type TimeRange = 'hour' | 'day' | 'week' | 'month' | '24h' | '7d' | '30d' | '365d';
 
 // Bucket configuration for analytics
-const ANALYTICS_CONFIG: Record<TimeRange, {
+const ANALYTICS_CONFIG: Record<string, {
   bucket: string;
   aggregation: string | null;
   fieldSuffix: string;
@@ -37,6 +37,7 @@ const ANALYTICS_CONFIG: Record<TimeRange, {
   window: string;
   hours: number;
 }> = {
+  // Legacy format (hour/day/week/month)
   hour: {
     bucket: 'aiess_v1_1m',
     aggregation: '1m',
@@ -46,16 +47,16 @@ const ANALYTICS_CONFIG: Record<TimeRange, {
     hours: 1,
   },
   day: {
-    bucket: 'aiess_v1_15m',
-    aggregation: '15m',
+    bucket: 'aiess_v1_1m',
+    aggregation: '1m',
     fieldSuffix: '_mean',
     rangeStart: '-24h',
-    window: '15m',
+    window: '5m',
     hours: 24,
   },
   week: {
-    bucket: 'aiess_v1_1h',
-    aggregation: '1h',
+    bucket: 'aiess_v1_15m',
+    aggregation: '15m',
     fieldSuffix: '_mean',
     rangeStart: '-7d',
     window: '1h',
@@ -66,8 +67,41 @@ const ANALYTICS_CONFIG: Record<TimeRange, {
     aggregation: '1h',
     fieldSuffix: '_mean',
     rangeStart: '-30d',
-    window: '3h',
+    window: '6h',
     hours: 720,
+  },
+  // New format (24h/7d/30d/365d)
+  '24h': {
+    bucket: 'aiess_v1_1m',
+    aggregation: '1m',
+    fieldSuffix: '_mean',
+    rangeStart: '-24h',
+    window: '5m',
+    hours: 24,
+  },
+  '7d': {
+    bucket: 'aiess_v1_15m',
+    aggregation: '15m',
+    fieldSuffix: '_mean',
+    rangeStart: '-7d',
+    window: '1h',
+    hours: 168,
+  },
+  '30d': {
+    bucket: 'aiess_v1_1h',
+    aggregation: '1h',
+    fieldSuffix: '_mean',
+    rangeStart: '-30d',
+    window: '6h',
+    hours: 720,
+  },
+  '365d': {
+    bucket: 'aiess_v1_1h',
+    aggregation: '1h',
+    fieldSuffix: '_mean',
+    rangeStart: '-365d',
+    window: '1d',
+    hours: 8760,
   },
 };
 
