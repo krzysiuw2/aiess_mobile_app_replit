@@ -42,7 +42,8 @@ function AppContent() {
       </SettingsProvider>
       
       {/* Intro animation overlay - shows on every app startup */}
-      {isIntroPlaying && (
+      {/* TEMPORARILY DISABLED FOR TESTING */}
+      {false && isIntroPlaying && (
         <IntroAnimation onComplete={markIntroComplete} />
       )}
     </>
