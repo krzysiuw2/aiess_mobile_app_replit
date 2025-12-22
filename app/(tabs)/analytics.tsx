@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, ChevronRight, Calendar, Eye, EyeOff, Zap, Battery, BarChart2, TrendingUp, RefreshCw, Sun, Shield } from 'lucide-react-native';
-import { useFonts, Inter_500Medium, Inter_700Bold } from '@expo-google-fonts/inter';
 import Colors from '@/constants/colors';
 import { FIELD_COLORS, FieldKey, CHART_COLORS } from '@/constants/chartColors';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -139,12 +138,6 @@ export default function AnalyticsScreen() {
   const { t } = useSettings();
   const { selectedDevice } = useDevices();
   
-  // Load fonts
-  const [fontsLoaded] = useFonts({
-    Inter_500Medium,
-    Inter_700Bold,
-  });
-  
   const [timeRange, setTimeRange] = useState<string>('24h');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -192,10 +185,8 @@ export default function AnalyticsScreen() {
       }
     }
 
-    if (fontsLoaded) {
-      loadData();
-    }
-  }, [timeRange, selectedDate, selectedDevice?.device_id, fontsLoaded]);
+    loadData();
+  }, [timeRange, selectedDate, selectedDevice?.device_id]);
   
   // Map new time range format to API format
   function timeRangeToApiFormat(range: string): TimeRange {

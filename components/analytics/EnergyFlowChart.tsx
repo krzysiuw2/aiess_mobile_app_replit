@@ -1,8 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { CartesianChart, Line, Area, useChartPressState } from 'victory-native';
-import { Circle, useFont } from '@shopify/react-native-skia';
-import { Inter_500Medium } from '@expo-google-fonts/inter';
+import { LineChart } from 'react-native-gifted-charts';
 import Colors from '@/constants/colors';
 import { CHART_COLORS, FieldKey, FIELD_COLORS } from '@/constants/chartColors';
 import { ChartDataPoint } from '@/lib/influxdb';
@@ -21,26 +19,8 @@ export function EnergyFlowChart({
   visibleFields,
   loading = false 
 }: EnergyFlowChartProps) {
-  // Load Inter font for chart labels
-  const font = useFont(Inter_500Medium, 12);
-  
-  // Set up chart press state for tooltips
-  const { state, isActive } = useChartPressState({
-    x: 0,
-    y: {
-      gridPower: 0,
-      batteryPower: 0,
-      pvPower: 0,
-      factoryLoad: 0,
-      soc: 0,
-    },
-  });
-  
-  // Determine if we should use area charts (for 30d and 365d views)
-  const useAreaChart = timeRange === '30d' || timeRange === '365d';
-  
   // Show loading state
-  if (loading || !font) {
+  if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.primary} />
@@ -59,138 +39,259 @@ export function EnergyFlowChart({
     );
   }
   
+  // Prepare chart data - convert to Gifted Charts format
+  const chartData = data.map((point, index) => {
+    const obj: any = {
+      value: 0, // Will be overridden by dataPointText
+      label: index % Math.floor(data.length / 6) === 0 ? formatTimeLabel(point.time, timeRange) : '',
+      hideDataPoint: index % 5 !== 0, // Show fewer dots for performance
+    };
+    
+    return obj;
+  });
+  
+  // Build line datasets
+  const lineDatasets: any[] = [];
+  
+  // Grid Power
+  if (visibleFields.gridPower) {
+    lineDatasets.push({
+      data: data.map((point, index) => ({
+        value: point.gridPower,
+        hideDataPoint: index % 5 !== 0,
+        dataPointColor: CHART_COLORS.grid.line,
+      })),
+      color: CHART_COLORS.grid.line,
+      thickness: 2,
+      curved: true,
+      areaChart: timeRange === '30d' || timeRange === '365d',
+      startFillColor: CHART_COLORS.grid.line,
+      endFillColor: CHART_COLORS.grid.line,
+      startOpacity: 0.3,
+      endOpacity: 0.05,
+    });
+  }
+  
+  // Battery Power
+  if (visibleFields.batteryPower) {
+    lineDatasets.push({
+      data: data.map((point, index) => ({
+        value: point.batteryPower,
+        hideDataPoint: index % 5 !== 0,
+        dataPointColor: CHART_COLORS.battery.line,
+      })),
+      color: CHART_COLORS.battery.line,
+      thickness: 2,
+      curved: true,
+      areaChart: timeRange === '30d' || timeRange === '365d',
+      startFillColor: CHART_COLORS.battery.line,
+      endFillColor: CHART_COLORS.battery.line,
+      startOpacity: 0.3,
+      endOpacity: 0.05,
+    });
+  }
+  
+  // PV Power
+  if (visibleFields.pvPower) {
+    lineDatasets.push({
+      data: data.map((point, index) => ({
+        value: point.pvPower,
+        hideDataPoint: index % 5 !== 0,
+        dataPointColor: CHART_COLORS.pv.production,
+      })),
+      color: CHART_COLORS.pv.production,
+      thickness: 2,
+      curved: true,
+      areaChart: timeRange === '30d' || timeRange === '365d',
+      startFillColor: CHART_COLORS.pv.production,
+      endFillColor: CHART_COLORS.pv.production,
+      startOpacity: 0.3,
+      endOpacity: 0.05,
+    });
+  }
+  
+  // Factory Load
+  if (visibleFields.factoryLoad) {
+    lineDatasets.push({
+      data: data.map((point, index) => ({
+        value: point.factoryLoad,
+        hideDataPoint: index % 5 !== 0,
+        dataPointColor: CHART_COLORS.factory.load,
+      })),
+      color: CHART_COLORS.factory.load,
+      thickness: 2,
+      curved: true,
+    });
+  }
+  
+  // SoC (scaled to match power range for visualization)
+  if (visibleFields.soc) {
+    const maxPower = Math.max(...data.flatMap(p => [
+      Math.abs(p.gridPower),
+      Math.abs(p.batteryPower),
+      p.pvPower,
+      p.factoryLoad
+    ]));
+    const scaleFactor = maxPower > 0 ? maxPower / 100 : 1;
+    
+    lineDatasets.push({
+      data: data.map((point, index) => ({
+        value: point.soc * scaleFactor,
+        hideDataPoint: index % 5 !== 0,
+        dataPointColor: CHART_COLORS.soc.line,
+      })),
+      color: CHART_COLORS.soc.line,
+      thickness: 2,
+      curved: true,
+    });
+  }
+  
+  // Use first dataset as primary, others as additional datasets
+  const primaryData = lineDatasets[0]?.data || chartData;
+  const dataSet2 = lineDatasets[1]?.data;
+  const dataSet3 = lineDatasets[2]?.data;
+  const dataSet4 = lineDatasets[3]?.data;
+  const dataSet5 = lineDatasets[4]?.data;
+  
   return (
     <View style={styles.container}>
       <View style={styles.chartWrapper}>
-        <CartesianChart
-          data={data}
-          xKey="time"
-          yKeys={['gridPower', 'batteryPower', 'pvPower', 'factoryLoad', 'soc']}
-          padding={{ left: 10, right: 10, top: 10, bottom: 10 }}
-          domainPadding={{ top: 20, bottom: 10 }}
-          axisOptions={{
-            font,
-            lineColor: CHART_COLORS.grid,
-            labelColor: Colors.textSecondary,
-            formatXLabel: (value) => formatTimeLabel(value, timeRange),
-            formatYLabel: (value) => {
-              if (typeof value === 'number') {
-                return value.toFixed(0);
-              }
-              return String(value);
+        <LineChart
+          data={primaryData}
+          data2={dataSet2}
+          data3={dataSet3}
+          data4={dataSet4}
+          data5={dataSet5}
+          height={250}
+          spacing={data.length > 50 ? 8 : 15}
+          initialSpacing={10}
+          endSpacing={10}
+          color1={lineDatasets[0]?.color || CHART_COLORS.grid.line}
+          color2={lineDatasets[1]?.color}
+          color3={lineDatasets[2]?.color}
+          color4={lineDatasets[3]?.color}
+          color5={lineDatasets[4]?.color}
+          thickness1={lineDatasets[0]?.thickness}
+          thickness2={lineDatasets[1]?.thickness}
+          thickness3={lineDatasets[2]?.thickness}
+          thickness4={lineDatasets[3]?.thickness}
+          thickness5={lineDatasets[4]?.thickness}
+          curved={true}
+          areaChart={lineDatasets[0]?.areaChart}
+          areaChart2={lineDatasets[1]?.areaChart}
+          areaChart3={lineDatasets[2]?.areaChart}
+          areaChart4={lineDatasets[3]?.areaChart}
+          areaChart5={lineDatasets[4]?.areaChart}
+          startFillColor1={lineDatasets[0]?.startFillColor}
+          startFillColor2={lineDatasets[1]?.startFillColor}
+          startFillColor3={lineDatasets[2]?.startFillColor}
+          startFillColor4={lineDatasets[3]?.startFillColor}
+          startFillColor5={lineDatasets[4]?.startFillColor}
+          endFillColor1={lineDatasets[0]?.endFillColor}
+          endFillColor2={lineDatasets[1]?.endFillColor}
+          endFillColor3={lineDatasets[2]?.endFillColor}
+          endFillColor4={lineDatasets[3]?.endFillColor}
+          endFillColor5={lineDatasets[4]?.endFillColor}
+          startOpacity1={lineDatasets[0]?.startOpacity}
+          startOpacity2={lineDatasets[1]?.startOpacity}
+          startOpacity3={lineDatasets[2]?.startOpacity}
+          startOpacity4={lineDatasets[3]?.startOpacity}
+          startOpacity5={lineDatasets[4]?.startOpacity}
+          endOpacity1={lineDatasets[0]?.endOpacity}
+          endOpacity2={lineDatasets[1]?.endOpacity}
+          endOpacity3={lineDatasets[2]?.endOpacity}
+          endOpacity4={lineDatasets[3]?.endOpacity}
+          endOpacity5={lineDatasets[4]?.endOpacity}
+          xAxisColor={CHART_COLORS.grid}
+          yAxisColor={CHART_COLORS.grid}
+          xAxisLabelTextStyle={{
+            color: Colors.textSecondary,
+            fontSize: 10,
+          }}
+          yAxisTextStyle={{
+            color: Colors.textSecondary,
+            fontSize: 10,
+          }}
+          backgroundColor={Colors.surface}
+          rulesColor={CHART_COLORS.grid}
+          rulesType="solid"
+          yAxisThickness={0}
+          xAxisThickness={0}
+          hideDataPoints={data.length > 100}
+          showVerticalLines={false}
+          verticalLinesColor={CHART_COLORS.grid}
+          isAnimated
+          animationDuration={400}
+          animateOnDataChange
+          onDataChangeAnimationDuration={300}
+          pointerConfig={{
+            pointerStripHeight: 240,
+            pointerStripColor: Colors.textLight,
+            pointerStripWidth: 1,
+            pointerColor: Colors.primary,
+            radius: 6,
+            pointerLabelWidth: 120,
+            pointerLabelHeight: 90,
+            activatePointersOnLongPress: false,
+            autoAdjustPointerLabelPosition: true,
+            pointerLabelComponent: (items: any) => {
+              const item = items[0];
+              if (!item) return null;
+              
+              const pointIndex = Math.round(item.index || 0);
+              const pointData = data[pointIndex];
+              
+              if (!pointData) return null;
+              
+              return (
+                <View style={styles.tooltipCard}>
+                  <Text style={styles.tooltipTime}>
+                    {new Date(pointData.time).toLocaleTimeString('en-US', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                  {visibleFields.gridPower && (
+                    <Text style={styles.tooltipValue}>
+                      <Text style={{ color: CHART_COLORS.grid.line }}>● </Text>
+                      Grid: {pointData.gridPower.toFixed(1)} kW
+                    </Text>
+                  )}
+                  {visibleFields.batteryPower && (
+                    <Text style={styles.tooltipValue}>
+                      <Text style={{ color: CHART_COLORS.battery.line }}>● </Text>
+                      Battery: {pointData.batteryPower.toFixed(1)} kW
+                    </Text>
+                  )}
+                  {visibleFields.pvPower && (
+                    <Text style={styles.tooltipValue}>
+                      <Text style={{ color: CHART_COLORS.pv.production }}>● </Text>
+                      PV: {pointData.pvPower.toFixed(1)} kW
+                    </Text>
+                  )}
+                  {visibleFields.factoryLoad && (
+                    <Text style={styles.tooltipValue}>
+                      <Text style={{ color: CHART_COLORS.factory.load }}>● </Text>
+                      Factory: {pointData.factoryLoad.toFixed(1)} kW
+                    </Text>
+                  )}
+                  {visibleFields.soc && (
+                    <Text style={styles.tooltipValue}>
+                      <Text style={{ color: CHART_COLORS.soc.line }}>● </Text>
+                      SoC: {pointData.soc.toFixed(0)}%
+                    </Text>
+                  )}
+                </View>
+              );
             },
           }}
-          chartPressState={state}
-        >
-          {({ points, chartBounds }) => (
-            <>
-              {/* Grid Power */}
-              {visibleFields.gridPower && (
-                useAreaChart ? (
-                  <Area
-                    points={points.gridPower}
-                    y0={chartBounds.bottom}
-                    color={CHART_COLORS.grid.line}
-                    opacity={0.3}
-                    curveType="natural"
-                    animate={{ type: 'timing', duration: 300 }}
-                  />
-                ) : (
-                  <Line
-                    points={points.gridPower}
-                    color={CHART_COLORS.grid.line}
-                    strokeWidth={2}
-                    curveType="natural"
-                    animate={{ type: 'timing', duration: 300 }}
-                  />
-                )
-              )}
-              
-              {/* Battery Power */}
-              {visibleFields.batteryPower && (
-                useAreaChart ? (
-                  <Area
-                    points={points.batteryPower}
-                    y0={chartBounds.bottom}
-                    color={CHART_COLORS.battery.line}
-                    opacity={0.3}
-                    curveType="natural"
-                    animate={{ type: 'timing', duration: 300 }}
-                  />
-                ) : (
-                  <Line
-                    points={points.batteryPower}
-                    color={CHART_COLORS.battery.line}
-                    strokeWidth={2}
-                    curveType="natural"
-                    animate={{ type: 'timing', duration: 300 }}
-                  />
-                )
-              )}
-              
-              {/* PV Power */}
-              {visibleFields.pvPower && (
-                useAreaChart ? (
-                  <Area
-                    points={points.pvPower}
-                    y0={chartBounds.bottom}
-                    color={CHART_COLORS.pv.production}
-                    opacity={0.3}
-                    curveType="natural"
-                    animate={{ type: 'timing', duration: 300 }}
-                  />
-                ) : (
-                  <Line
-                    points={points.pvPower}
-                    color={CHART_COLORS.pv.production}
-                    strokeWidth={2}
-                    curveType="natural"
-                    animate={{ type: 'timing', duration: 300 }}
-                  />
-                )
-              )}
-              
-              {/* Factory Load */}
-              {visibleFields.factoryLoad && (
-                <Line
-                  points={points.factoryLoad}
-                  color={CHART_COLORS.factory.load}
-                  strokeWidth={2}
-                  curveType="natural"
-                  animate={{ type: 'timing', duration: 300 }}
-                />
-              )}
-              
-              {/* SoC - scaled to fit with power values */}
-              {visibleFields.soc && (
-                <Line
-                  points={points.soc}
-                  color={CHART_COLORS.soc.line}
-                  strokeWidth={2}
-                  curveType="natural"
-                  animate={{ type: 'timing', duration: 300 }}
-                />
-              )}
-              
-              {/* Tooltip indicator */}
-              {isActive && (
-                <Circle 
-                  cx={state.x.position} 
-                  cy={state.y.gridPower.position} 
-                  r={6} 
-                  color={CHART_COLORS.tooltip} 
-                  opacity={0.8}
-                />
-              )}
-            </>
-          )}
-        </CartesianChart>
+        />
       </View>
       
       {/* Y-axis label */}
       <Text style={styles.axisLabel}>Power (kW)</Text>
       {visibleFields.soc && (
-        <Text style={styles.axisNote}>SoC shown as % for comparison</Text>
+        <Text style={styles.axisNote}>SoC shown as scaled % for comparison</Text>
       )}
     </View>
   );
@@ -201,10 +302,10 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   chartWrapper: {
-    height: 280,
     backgroundColor: Colors.surface,
     borderRadius: 16,
-    padding: 8,
+    padding: 16,
+    paddingTop: 20,
   },
   loadingContainer: {
     height: 280,
@@ -248,5 +349,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 2,
   },
+  tooltipCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  tooltipTime: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 6,
+  },
+  tooltipValue: {
+    fontSize: 11,
+    color: Colors.text,
+    marginVertical: 2,
+  },
 });
-
