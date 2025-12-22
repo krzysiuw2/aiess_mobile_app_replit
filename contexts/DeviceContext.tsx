@@ -165,7 +165,13 @@ export const useLiveData = (siteId: string | null) => {
         console.log('[LiveData] Data received:', liveData);
         return liveData;
       } catch (error) {
-        console.error('[LiveData] Error fetching data:', error);
+        // Log transient network errors as warnings instead of errors
+        // React Query will handle retries automatically
+        if (error instanceof Error && error.message.includes('503')) {
+          console.warn('[LiveData] Transient network error (will retry):', error.message);
+        } else {
+          console.error('[LiveData] Error fetching data:', error);
+        }
         throw error;
       }
     },

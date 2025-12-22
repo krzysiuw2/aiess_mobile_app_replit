@@ -160,7 +160,12 @@ export async function fetchLiveData(siteId: string): Promise<LiveData | null> {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[InfluxDB] API error:', response.status, errorText);
+      // Log 503 errors as warnings (transient network issues)
+      if (response.status === 503) {
+        console.warn('[InfluxDB] Temporary service unavailable (will retry):', response.status);
+      } else {
+        console.error('[InfluxDB] API error:', response.status, errorText);
+      }
       throw new Error(`InfluxDB error: ${response.status}`);
     }
 
@@ -203,7 +208,12 @@ export async function fetchLiveData(siteId: string): Promise<LiveData | null> {
     console.log('[LiveData] Data received:', JSON.stringify(liveData));
     return liveData;
   } catch (error) {
-    console.error('[InfluxDB] Fetch error:', error);
+    // Log 503 errors as warnings (transient), others as errors
+    if (error instanceof Error && error.message.includes('503')) {
+      console.warn('[InfluxDB] Transient error (auto-retry enabled):', error.message);
+    } else {
+      console.error('[InfluxDB] Fetch error:', error);
+    }
     throw error;
   }
 }
@@ -228,7 +238,12 @@ async function queryInflux(query: string): Promise<string> {
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('[InfluxDB] API error:', response.status, errorText);
+    // Log 503 errors as warnings (transient network issues)
+    if (response.status === 503) {
+      console.warn('[InfluxDB] Temporary service unavailable (will retry):', response.status);
+    } else {
+      console.error('[InfluxDB] API error:', response.status, errorText);
+    }
     throw new Error(`InfluxDB error: ${response.status}`);
   }
 
