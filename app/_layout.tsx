@@ -6,6 +6,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { DeviceProvider } from '@/contexts/DeviceContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
+import { AppLoadingProvider, useAppLoading } from '@/contexts/AppLoadingContext';
+import IntroAnimation from '@/components/IntroAnimation';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -14,27 +16,46 @@ const queryClient = new QueryClient();
 function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerBackTitle: 'Back' }}>
+      <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
   );
 }
 
-export default function RootLayout() {
+function AppContent() {
+  const { isIntroPlaying, markIntroComplete } = useAppLoading();
+
   useEffect(() => {
+    // Hide native splash screen once React is ready
     SplashScreen.hideAsync();
   }, []);
 
   return (
+    <>
+      <SettingsProvider>
+        <AuthProvider>
+          <DeviceProvider>
+            <RootLayoutNav />
+          </DeviceProvider>
+        </AuthProvider>
+      </SettingsProvider>
+      
+      {/* Intro animation overlay - shows on every app startup */}
+      {isIntroPlaying && (
+        <IntroAnimation onComplete={markIntroComplete} />
+      )}
+    </>
+  );
+}
+
+export default function RootLayout() {
+  return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <SettingsProvider>
-          <AuthProvider>
-            <DeviceProvider>
-              <RootLayoutNav />
-            </DeviceProvider>
-          </AuthProvider>
-        </SettingsProvider>
+        <AppLoadingProvider>
+          <AppContent />
+        </AppLoadingProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>
   );
