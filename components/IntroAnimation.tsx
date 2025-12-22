@@ -3,7 +3,9 @@
  * 
  * Displays AIESS branded intro animation on app startup.
  * Uses Rive animation with sm_intro_animation state machine.
- * Duration: ~2 seconds
+ * Duration: 2 seconds (one-shot animation)
+ * 
+ * Animation plays once and stops, revealing the app beneath.
  */
 
 import React, { useRef, useCallback } from 'react';
@@ -17,19 +19,8 @@ interface IntroAnimationProps {
 export default function IntroAnimation({ onComplete }: IntroAnimationProps) {
   const riveRef = useRef<RiveRef>(null);
 
-  // Handle animation loop/completion
-  const handleRiveEvent = useCallback((eventName: string, data?: any) => {
-    console.log('[IntroAnimation] Rive event:', eventName, data);
-    
-    // Check if animation completed (state machine reached end)
-    if (eventName === 'stateChange' || eventName === 'loop') {
-      // Animation has looped/completed - trigger completion after 2 seconds
-      setTimeout(() => {
-        console.log('[IntroAnimation] Animation complete, revealing app');
-        onComplete();
-      }, 2000);
-    }
-  }, [onComplete]);
+  // Animation is now one-shot (plays once and stops)
+  // No need for loop handling anymore
 
   // Fallback: always complete after 2.5 seconds even if events don't fire
   React.useEffect(() => {
