@@ -49,7 +49,6 @@ export default function IntroAnimation({ onComplete }: IntroAnimationProps) {
         ref={riveRef}
         resourceName="intro_animation_v1"
         stateMachineName="sm_intro_animation"
-        artboardName="Artboard"
         autoplay={true}
         style={styles.rive}
         onPlay={() => console.log('[IntroAnimation] Animation playing')}
@@ -60,6 +59,12 @@ export default function IntroAnimation({ onComplete }: IntroAnimationProps) {
         }}
         onLoopEnd={() => {
           console.log('[IntroAnimation] Loop ended');
+          onComplete();
+        }}
+        onError={(error) => {
+          console.error('[IntroAnimation] Rive error:', error);
+          console.log('[IntroAnimation] Skipping intro due to error');
+          // Skip intro animation on error
           onComplete();
         }}
       />
