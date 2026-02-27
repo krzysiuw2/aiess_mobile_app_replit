@@ -79,7 +79,7 @@ export default function DevicesScreen() {
   };
 
   const handleAddDevice = () => {
-    Alert.alert(t.common.comingSoon, 'Add new device feature will be available soon');
+    Alert.alert(t.common.comingSoon, t.devices.addDeviceComingSoon);
   };
 
   if (isLoading) {
@@ -100,10 +100,10 @@ export default function DevicesScreen() {
           <XCircle size={64} color={Colors.error} />
           <Text style={styles.emptyTitle}>{t.common.error}</Text>
           <Text style={styles.emptySubtitle}>
-            {error?.message || 'Failed to load devices'}
+            {error?.message || t.devices.failedToLoadDevices}
           </Text>
           <TouchableOpacity style={styles.retryButton} onPress={refreshDevices}>
-            <Text style={styles.retryButtonText}>Try Again</Text>
+            <Text style={styles.retryButtonText}>{t.common.tryAgain}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -123,11 +123,8 @@ export default function DevicesScreen() {
         </View>
         <View style={styles.emptyContainer}>
           <Search size={64} color={Colors.textLight} />
-          <Text style={styles.emptyTitle}>No Devices Found</Text>
-          <Text style={styles.emptySubtitle}>
-            You don't have access to any devices yet.{'\n'}
-            Contact your administrator to get access.
-          </Text>
+          <Text style={styles.emptyTitle}>{t.devices.noDevicesFound}</Text>
+          <Text style={styles.emptySubtitle}>{t.devices.noAccessHint}</Text>
         </View>
         <View style={styles.footer}>
           <TouchableOpacity style={styles.addButton} onPress={handleAddDevice}>

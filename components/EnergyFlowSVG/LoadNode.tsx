@@ -9,12 +9,15 @@ interface LoadNodeProps {
   smoke3Ref: React.RefObject<any>;
   avg1m: string | null;
   avg5m: string | null;
+  avg1mLabel: string;
+  avg5mLabel: string;
 }
 
 export default function LoadNode({
   label, value,
   smoke1Ref, smoke2Ref, smoke3Ref,
   avg1m, avg5m,
+  avg1mLabel, avg5mLabel,
 }: LoadNodeProps) {
   return (
     <G transform="translate(122, 420)">
@@ -51,10 +54,10 @@ export default function LoadNode({
         {value}
       </SvgText>
       <SvgText x={12} y={54} fill="#94a3b8" fontSize={9}>
-        {avg1m ? `${avg1m} (1 min)` : '— (1 min)'}
+        {avg1m ? `${avg1m} (${avg1mLabel})` : `— (${avg1mLabel})`}
       </SvgText>
       <SvgText x={12} y={66} fill="#94a3b8" fontSize={9}>
-        {avg5m ? `${avg5m} (5 min)` : '— (5 min)'}
+        {avg5m ? `${avg5m} (${avg5mLabel})` : `— (${avg5mLabel})`}
       </SvgText>
     </G>
   );

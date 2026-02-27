@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { BarChart } from 'react-native-gifted-charts';
+import { useSettings } from '@/contexts/SettingsContext';
 import Colors from '@/constants/colors';
 import { CHART_COLORS } from '@/constants/chartColors';
 import { ChartDataPoint } from '@/lib/influxdb';
@@ -63,13 +64,14 @@ function groupLoadData(stackedData: StackedAreaData[], timeRange: string): Group
 }
 
 export function LoadCompositionChart({ data, timeRange }: LoadCompositionChartProps) {
+  const { t } = useSettings();
   const stackedData = useMemo(() => prepareStackedAreaData(data), [data]);
   const grouped = useMemo(() => groupLoadData(stackedData, timeRange), [stackedData, timeRange]);
 
   if (grouped.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No load data available</Text>
+        <Text style={styles.emptyText}>{t.analytics.noLoadData}</Text>
       </View>
     );
   }
@@ -120,18 +122,18 @@ export function LoadCompositionChart({ data, timeRange }: LoadCompositionChartPr
       <View style={styles.legend}>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: CHART_COLORS.donut.grid }]} />
-          <Text style={styles.legendLabel}>From Grid</Text>
+          <Text style={styles.legendLabel}>{t.analytics.fromGrid}</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: CHART_COLORS.donut.pv }]} />
-          <Text style={styles.legendLabel}>From PV</Text>
+          <Text style={styles.legendLabel}>{t.analytics.fromPV}</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: CHART_COLORS.donut.battery }]} />
-          <Text style={styles.legendLabel}>From Battery</Text>
+          <Text style={styles.legendLabel}>{t.analytics.fromBattery}</Text>
         </View>
       </View>
-      <Text style={styles.axisLabel}>Average Power (kW)</Text>
+      <Text style={styles.axisLabel}>{t.analytics.averagePowerKw}</Text>
     </View>
   );
 }

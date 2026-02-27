@@ -54,26 +54,26 @@ export default function SettingsMenuScreen() {
       >
         <MenuCard
           icon={<Building2 size={24} color={Colors.primary} />}
-          title="Site Settings"
-          description="Device info, safety limits, site limits"
+          title={t.settings.siteSettings}
+          description={t.settings.siteSettingsDesc}
           onPress={() => router.push('/(tabs)/settings/site')}
         />
         <MenuCard
           icon={<SlidersHorizontal size={24} color={Colors.primary} />}
-          title="System Settings"
-          description="Operating mode"
+          title={t.settings.systemSettings}
+          description={t.settings.systemSettingsDesc}
           onPress={() => router.push('/(tabs)/settings/system')}
         />
         <MenuCard
           icon={<User size={24} color={Colors.primary} />}
-          title="Account Settings"
-          description="Profile, sign out"
+          title={t.settings.accountSettings}
+          description={t.settings.accountSettingsDesc}
           onPress={() => router.push('/(tabs)/settings/account')}
         />
         <MenuCard
           icon={<Smartphone size={24} color={Colors.primary} />}
-          title="App Settings"
-          description="Language, preferences"
+          title={t.settings.appSettings}
+          description={t.settings.appSettingsDesc}
           onPress={() => router.push('/(tabs)/settings/app-settings')}
         />
       </ScrollView>

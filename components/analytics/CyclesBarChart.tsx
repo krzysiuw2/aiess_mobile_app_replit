@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { BarChart } from 'react-native-gifted-charts';
+import { useSettings } from '@/contexts/SettingsContext';
 import Colors from '@/constants/colors';
 import { CHART_COLORS } from '@/constants/chartColors';
 import { ChartDataPoint } from '@/lib/influxdb';
@@ -61,13 +62,14 @@ function groupCyclesData(data: ChartDataPoint[], timeRange: string): CycleGroup[
 }
 
 export function CyclesBarChart({ data, timeRange }: CyclesBarChartProps) {
+  const { t } = useSettings();
   const groups = useMemo(() => groupCyclesData(data, timeRange), [data, timeRange]);
   const totalCycles = useMemo(() => calculateBatteryCycles(data), [data]);
 
   if (groups.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No cycle data available</Text>
+        <Text style={styles.emptyText}>{t.analytics.noCycleData}</Text>
       </View>
     );
   }
@@ -85,7 +87,7 @@ export function CyclesBarChart({ data, timeRange }: CyclesBarChartProps) {
   return (
     <View style={styles.container}>
       <View style={styles.summaryRow}>
-        <Text style={styles.summaryLabel}>Total Cycles</Text>
+        <Text style={styles.summaryLabel}>{t.analytics.totalCycles}</Text>
         <Text style={[styles.summaryValue, { color: CHART_COLORS.battery.line }]}>
           {totalCycles.toFixed(2)}
         </Text>

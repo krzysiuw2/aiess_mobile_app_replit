@@ -12,29 +12,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ArrowLeft, CheckCircle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useSettings } from '@/contexts/SettingsContext';
 import { useSchedules } from '@/hooks/useSchedules';
 import type { SystemMode } from '@/types';
 
-const MODES: { value: SystemMode; label: string; description: string }[] = [
-  {
-    value: 'automatic',
-    label: 'Automatic',
-    description: 'Full autonomous operation. AI and manual rules are active.',
-  },
-  {
-    value: 'semi-automatic',
-    label: 'Semi-Automatic',
-    description: 'Assisted operation. User confirmation may be required.',
-  },
-  {
-    value: 'manual',
-    label: 'Manual',
-    description: 'Manual control only. Schedules may be disabled.',
-  },
-];
-
 export default function SystemSettingsScreen() {
+  const { t } = useSettings();
   const { mode, isLoading, setMode } = useSchedules();
+
+  const MODES: { value: SystemMode; label: string; description: string }[] = [
+    { value: 'automatic', label: t.settings.automatic, description: t.settings.automaticDesc },
+    { value: 'semi-automatic', label: t.settings.semiAutomatic, description: t.settings.semiAutomaticDesc },
+    { value: 'manual', label: t.settings.manual, description: t.settings.manualDesc },
+  ];
   const [saving, setSaving] = useState(false);
 
   const handleModeChange = async (newMode: SystemMode) => {
@@ -43,9 +33,9 @@ export default function SystemSettingsScreen() {
     try {
       setSaving(true);
       await setMode(newMode);
-      Alert.alert('Success', `System mode set to ${newMode}`);
+      Alert.alert(t.common.success, `${t.settings.systemModeSet} ${newMode}`);
     } catch (err) {
-      Alert.alert('Error', 'Failed to update system mode');
+      Alert.alert(t.common.error, t.settings.failedUpdateMode);
     } finally {
       setSaving(false);
     }
@@ -57,15 +47,15 @@ export default function SystemSettingsScreen() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <ArrowLeft size={24} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>System Settings</Text>
+        <Text style={styles.headerTitle}>{t.settings.systemSettings}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Operating Mode</Text>
+          <Text style={styles.sectionTitle}>{t.settings.operatingMode}</Text>
           <Text style={styles.sectionDescription}>
-            Controls how the system manages battery operations.
+            {t.settings.operatingModeDesc}
           </Text>
 
           {isLoading ? (

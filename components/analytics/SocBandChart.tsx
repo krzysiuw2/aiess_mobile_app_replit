@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
+import { useSettings } from '@/contexts/SettingsContext';
 import Colors from '@/constants/colors';
 import { CHART_COLORS } from '@/constants/chartColors';
 import { ChartDataPoint } from '@/lib/influxdb';
@@ -12,10 +13,12 @@ interface SocBandChartProps {
 }
 
 export function SocBandChart({ data, timeRange }: SocBandChartProps) {
+  const { t } = useSettings();
+
   if (data.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No SoC data available</Text>
+        <Text style={styles.emptyText}>{t.analytics.noSocData}</Text>
       </View>
     );
   }
@@ -56,19 +59,19 @@ export function SocBandChart({ data, timeRange }: SocBandChartProps) {
     <View style={styles.container}>
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
-          <Text style={styles.statLabel}>Current</Text>
+          <Text style={styles.statLabel}>{t.analytics.current}</Text>
           <Text style={[styles.statValue, { color: CHART_COLORS.soc.line }]}>{currentSoc}%</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statLabel}>Min</Text>
+          <Text style={styles.statLabel}>{t.analytics.min}</Text>
           <Text style={styles.statValue}>{Math.round(minSoc)}%</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statLabel}>Max</Text>
+          <Text style={styles.statLabel}>{t.analytics.max}</Text>
           <Text style={styles.statValue}>{Math.round(maxSoc)}%</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statLabel}>Range</Text>
+          <Text style={styles.statLabel}>{t.analytics.range}</Text>
           <Text style={styles.statValue}>{Math.round(maxSoc - minSoc)}%</Text>
         </View>
       </View>
@@ -144,7 +147,7 @@ export function SocBandChart({ data, timeRange }: SocBandChartProps) {
                   <Text style={styles.tooltipTime}>
                     {point.time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                   </Text>
-                  <Text style={styles.tooltipValue}>SoC: {point.soc}%</Text>
+                  <Text style={styles.tooltipValue}>{`${t.monitor.soc}: `}{point.soc}%</Text>
                   {point.socMin !== undefined && (
                     <Text style={styles.tooltipRange}>
                       {point.socMin}% - {point.socMax}%

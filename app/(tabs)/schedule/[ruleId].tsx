@@ -38,12 +38,15 @@ interface TimePickerProps {
   onSelect: (time: string) => void;
   initialTime?: string;
   title: string;
+  doneLabel: string;
+  hourLabel: string;
+  minuteLabel: string;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
 const MINUTES = Array.from({ length: 12 }, (_, i) => (i * 5).toString().padStart(2, '0'));
 
-function TimePicker({ visible, onClose, onSelect, initialTime, title }: TimePickerProps) {
+function TimePicker({ visible, onClose, onSelect, initialTime, title, doneLabel, hourLabel, minuteLabel }: TimePickerProps) {
   const [hour, setHour] = useState(initialTime?.split(':')[0] || '12');
   const [minute, setMinute] = useState(initialTime?.split(':')[1] || '00');
 
@@ -61,12 +64,12 @@ function TimePicker({ visible, onClose, onSelect, initialTime, title }: TimePick
           <View style={pickerStyles.header}>
             <Text style={pickerStyles.title}>{title}</Text>
             <TouchableOpacity onPress={handleConfirm}>
-              <Text style={pickerStyles.doneButton}>Done</Text>
+              <Text style={pickerStyles.doneButton}>{doneLabel}</Text>
             </TouchableOpacity>
           </View>
           <View style={pickerStyles.pickerRow}>
             <View style={pickerStyles.column}>
-              <Text style={pickerStyles.columnLabel}>Hour</Text>
+              <Text style={pickerStyles.columnLabel}>{hourLabel}</Text>
               <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
                 {HOURS.map((h) => (
                   <TouchableOpacity
@@ -83,7 +86,7 @@ function TimePicker({ visible, onClose, onSelect, initialTime, title }: TimePick
             </View>
             <Text style={pickerStyles.separator}>:</Text>
             <View style={pickerStyles.column}>
-              <Text style={pickerStyles.columnLabel}>Min</Text>
+              <Text style={pickerStyles.columnLabel}>{minuteLabel}</Text>
               <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
                 {MINUTES.map((m) => (
                   <TouchableOpacity
@@ -113,9 +116,13 @@ interface DatePickerProps {
   onSelect: (date: string) => void;
   initialDate?: string;
   title: string;
+  doneLabel: string;
+  yearLabel: string;
+  monthLabel: string;
+  dayLabel: string;
 }
 
-function DatePicker({ visible, onClose, onSelect, initialDate, title }: DatePickerProps) {
+function DatePicker({ visible, onClose, onSelect, initialDate, title, doneLabel, yearLabel, monthLabel, dayLabel }: DatePickerProps) {
   const now = new Date();
   const currentYear = now.getFullYear();
   const YEARS = Array.from({ length: 5 }, (_, i) => (currentYear + i).toString());
@@ -141,12 +148,12 @@ function DatePicker({ visible, onClose, onSelect, initialDate, title }: DatePick
           <View style={pickerStyles.header}>
             <Text style={pickerStyles.title}>{title}</Text>
             <TouchableOpacity onPress={handleConfirm}>
-              <Text style={pickerStyles.doneButton}>Done</Text>
+              <Text style={pickerStyles.doneButton}>{doneLabel}</Text>
             </TouchableOpacity>
           </View>
           <View style={pickerStyles.pickerRow}>
             <View style={pickerStyles.column}>
-              <Text style={pickerStyles.columnLabel}>Year</Text>
+              <Text style={pickerStyles.columnLabel}>{yearLabel}</Text>
               <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
                 {YEARS.map((y) => (
                   <TouchableOpacity
@@ -160,7 +167,7 @@ function DatePicker({ visible, onClose, onSelect, initialDate, title }: DatePick
               </ScrollView>
             </View>
             <View style={pickerStyles.column}>
-              <Text style={pickerStyles.columnLabel}>Month</Text>
+              <Text style={pickerStyles.columnLabel}>{monthLabel}</Text>
               <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
                 {MONTHS.map((m) => (
                   <TouchableOpacity
@@ -174,7 +181,7 @@ function DatePicker({ visible, onClose, onSelect, initialDate, title }: DatePick
               </ScrollView>
             </View>
             <View style={pickerStyles.column}>
-              <Text style={pickerStyles.columnLabel}>Day</Text>
+              <Text style={pickerStyles.columnLabel}>{dayLabel}</Text>
               <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
                 {DAYS.map((d) => (
                   <TouchableOpacity
@@ -210,41 +217,6 @@ const pickerStyles = StyleSheet.create({
   itemTextSelected: { color: Colors.primary, fontWeight: '700' },
   separator: { fontSize: 28, fontWeight: '700', color: Colors.text, marginHorizontal: 4 },
 });
-
-// ─── Constants ──────────────────────────────────────────────────
-
-const ACTION_TYPES: { type: ActionType; label: string; description: string }[] = [
-  { type: 'ch', label: 'Charge', description: 'Fixed power charging' },
-  { type: 'dis', label: 'Discharge', description: 'Fixed power discharging' },
-  { type: 'sb', label: 'Standby', description: 'No power flow' },
-  { type: 'ct', label: 'Charge to Target', description: 'Charge to target SoC %' },
-  { type: 'dt', label: 'Discharge to Target', description: 'Discharge to target SoC %' },
-];
-
-const STRATEGIES: { value: Strategy; label: string }[] = [
-  { value: 'eq', label: 'Equal Spread' },
-  { value: 'agg', label: 'Aggressive' },
-  { value: 'con', label: 'Conservative' },
-];
-
-const GRID_OPERATORS: { value: GridOperator; label: string }[] = [
-  { value: 'gt', label: '> Greater than' },
-  { value: 'lt', label: '< Less than' },
-  { value: 'gte', label: '>= Greater or equal' },
-  { value: 'lte', label: '<= Less or equal' },
-  { value: 'eq', label: '= Equal to' },
-  { value: 'bt', label: 'Between' },
-];
-
-const WEEKDAY_BUTTONS = [
-  { index: 0, label: 'Sun' },
-  { index: 1, label: 'Mon' },
-  { index: 2, label: 'Tue' },
-  { index: 3, label: 'Wed' },
-  { index: 4, label: 'Thu' },
-  { index: 5, label: 'Fri' },
-  { index: 6, label: 'Sat' },
-];
 
 // ─── Form State (UI-friendly strings) ──────────────────────────
 
@@ -325,6 +297,33 @@ export default function RuleBuilderScreen() {
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
   const [showValidFromPicker, setShowValidFromPicker] = useState(false);
   const [showValidUntilPicker, setShowValidUntilPicker] = useState(false);
+
+  const ed = t.schedules.editor;
+
+  const ACTION_TYPES: { type: ActionType; label: string; description: string }[] = [
+    { type: 'ch', label: t.schedules.actionTypes.charge, description: ed.chargeDesc },
+    { type: 'dis', label: t.schedules.actionTypes.discharge, description: ed.dischargeDesc },
+    { type: 'sb', label: t.schedules.actionTypes.standby, description: ed.standbyDesc },
+    { type: 'ct', label: ed.chargeToTarget, description: ed.chargeToTargetDesc },
+    { type: 'dt', label: ed.dischargeToTarget, description: ed.dischargeToTargetDesc },
+  ];
+
+  const STRATEGIES: { value: Strategy; label: string }[] = [
+    { value: 'eq', label: ed.equalSpread },
+    { value: 'agg', label: ed.aggressive },
+    { value: 'con', label: ed.conservative },
+  ];
+
+  const GRID_OPERATORS: { value: GridOperator; label: string }[] = [
+    { value: 'gt', label: ed.operators.gt },
+    { value: 'lt', label: ed.operators.lt },
+    { value: 'gte', label: ed.operators.gte },
+    { value: 'lte', label: ed.operators.lte },
+    { value: 'eq', label: ed.operators.eq },
+    { value: 'bt', label: ed.operators.bt },
+  ];
+
+  const WEEKDAY_BUTTONS = ed.weekdays.map((label: string, index: number) => ({ index, label }));
 
   // Load existing rule
   useEffect(() => {
@@ -446,11 +445,11 @@ export default function RuleBuilderScreen() {
 
   const handleSave = async () => {
     if (!form.id.trim()) {
-      Alert.alert('Error', 'Rule ID is required');
+      Alert.alert(t.common.error, ed.ruleIdRequired);
       return;
     }
     if (form.id.length > 63) {
-      Alert.alert('Error', 'Rule ID must be 63 characters or less');
+      Alert.alert(t.common.error, ed.ruleIdTooLong);
       return;
     }
 
@@ -458,7 +457,7 @@ export default function RuleBuilderScreen() {
     const rule = formDataToOptimizedRule(fd);
     const errors = validateRule(rule, fd.priority);
     if (errors.length > 0) {
-      Alert.alert('Validation Error', errors.join('\n'));
+      Alert.alert(ed.validationError, errors.join('\n'));
       return;
     }
 
@@ -470,20 +469,20 @@ export default function RuleBuilderScreen() {
         const priorityChanged = originalPriority !== undefined && originalPriority !== fd.priority;
         await updateRule(rule, fd.priority, priorityChanged ? originalPriority : undefined);
       }
-      Alert.alert('Success', `Rule ${isNew ? 'created' : 'updated'} successfully`, [
-        { text: 'OK', onPress: () => router.back() },
+      Alert.alert(t.common.success, isNew ? ed.ruleCreated : ed.ruleUpdated, [
+        { text: t.common.ok, onPress: () => router.back() },
       ]);
     } catch {
-      Alert.alert('Error', 'Failed to save rule');
+      Alert.alert(t.common.error, ed.failedToSaveRule);
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDiscard = () => {
-    Alert.alert('Discard Changes?', 'Any unsaved changes will be lost.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Discard', style: 'destructive', onPress: () => router.back() },
+    Alert.alert(ed.discardChanges, ed.unsavedChangesLost, [
+      { text: t.common.cancel, style: 'cancel' },
+      { text: t.common.discard, style: 'destructive', onPress: () => router.back() },
     ]);
   };
 
@@ -495,7 +494,7 @@ export default function RuleBuilderScreen() {
           <X size={24} color={Colors.text} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>{isNew ? 'New Rule' : 'Edit Rule'}</Text>
+          <Text style={styles.headerTitle}>{isNew ? ed.newRule : ed.editRule}</Text>
         </View>
         <TouchableOpacity
           style={[styles.headerButton, styles.saveHeaderButton]}
@@ -516,21 +515,21 @@ export default function RuleBuilderScreen() {
         {form.source === 'ai' && (
           <View style={styles.sourceBanner}>
             <Bot size={16} color="#8b5cf6" />
-            <Text style={styles.sourceBannerText}>AI-generated rule</Text>
+            <Text style={styles.sourceBannerText}>{ed.aiGeneratedRule}</Text>
           </View>
         )}
 
         {/* ─── Basic Info ────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Basic Info</Text>
+          <Text style={styles.sectionTitle}>{ed.basicInfo}</Text>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Rule ID *</Text>
+            <Text style={styles.inputLabel}>{ed.ruleIdLabel}</Text>
             <TextInput
               style={styles.textInput}
               value={form.id}
               onChangeText={(text) => update({ id: text.toUpperCase().replace(/[^A-Z0-9\-_]/g, '') })}
-              placeholder="MY-RULE-NAME"
+              placeholder={ed.ruleIdPlaceholder}
               placeholderTextColor={Colors.textSecondary}
               autoCapitalize="characters"
               maxLength={63}
@@ -539,7 +538,7 @@ export default function RuleBuilderScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Priority</Text>
+            <Text style={styles.inputLabel}>{t.schedules.priority}</Text>
             <View style={styles.chipRow}>
               {([5, 6, 7, 8] as Priority[]).map((p) => (
                 <TouchableOpacity
@@ -551,7 +550,7 @@ export default function RuleBuilderScreen() {
                     P{p}
                   </Text>
                   <Text style={[styles.chipSubtext, form.priority === p && styles.chipTextActive]}>
-                    {p === 5 ? 'Base' : p === 6 ? 'Low' : p === 7 ? 'Norm' : 'High'}
+                    {p === 5 ? ed.base : p === 6 ? ed.low : p === 7 ? ed.norm : ed.high}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -560,8 +559,8 @@ export default function RuleBuilderScreen() {
 
           <View style={styles.switchRow}>
             <View>
-              <Text style={styles.inputLabel}>Active</Text>
-              <Text style={styles.hintText}>Rule will be evaluated when active</Text>
+              <Text style={styles.inputLabel}>{t.schedules.active}</Text>
+              <Text style={styles.hintText}>{ed.ruleEvaluatedWhenActive}</Text>
             </View>
             <Switch
               value={form.active}
@@ -574,7 +573,7 @@ export default function RuleBuilderScreen() {
 
         {/* ─── Action Type ───────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Action Type</Text>
+          <Text style={styles.sectionTitle}>{ed.actionType}</Text>
           <View style={styles.actionGrid}>
             {ACTION_TYPES.map((a) => (
               <TouchableOpacity
@@ -595,12 +594,12 @@ export default function RuleBuilderScreen() {
 
         {/* ─── Action Parameters ─────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Parameters</Text>
+          <Text style={styles.sectionTitle}>{ed.parameters}</Text>
 
           {(form.actionType === 'ch' || form.actionType === 'dis') && (
             <>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Power (kW)</Text>
+                <Text style={styles.inputLabel}>{ed.powerKw}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={form.power}
@@ -609,13 +608,13 @@ export default function RuleBuilderScreen() {
                   placeholder="50"
                   placeholderTextColor={Colors.textSecondary}
                 />
-                <Text style={styles.hintText}>Use 999 for max device power</Text>
+                <Text style={styles.hintText}>{ed.use999ForMax}</Text>
               </View>
 
               <View style={styles.switchRow}>
                 <View>
-                  <Text style={styles.inputLabel}>PID Control</Text>
-                  <Text style={styles.hintText}>Smooth grid tracking (use with grid condition)</Text>
+                  <Text style={styles.inputLabel}>{ed.pidControl}</Text>
+                  <Text style={styles.hintText}>{ed.pidControlHint}</Text>
                 </View>
                 <Switch
                   value={form.usePid}
@@ -630,7 +629,7 @@ export default function RuleBuilderScreen() {
           {(form.actionType === 'ct' || form.actionType === 'dt') && (
             <>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Target SoC (%)</Text>
+                <Text style={styles.inputLabel}>{ed.targetSoc}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={form.targetSoc}
@@ -641,7 +640,7 @@ export default function RuleBuilderScreen() {
                 />
               </View>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Max Power (kW)</Text>
+                <Text style={styles.inputLabel}>{ed.maxPowerKw}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={form.maxPower}
@@ -654,7 +653,7 @@ export default function RuleBuilderScreen() {
 
               {form.actionType === 'ct' && (
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Max Grid Import (kW)</Text>
+                  <Text style={styles.inputLabel}>{ed.maxGridImport}</Text>
                   <TextInput
                     style={styles.textInput}
                     value={form.maxGrid}
@@ -663,13 +662,13 @@ export default function RuleBuilderScreen() {
                     placeholder="100"
                     placeholderTextColor={Colors.textSecondary}
                   />
-                  <Text style={styles.hintText}>Dynamically limits charge to keep grid import below this</Text>
+                  <Text style={styles.hintText}>{ed.maxGridImportHint}</Text>
                 </View>
               )}
 
               {form.actionType === 'dt' && (
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Min Grid Power (kW)</Text>
+                  <Text style={styles.inputLabel}>{ed.minGridPower}</Text>
                   <TextInput
                     style={styles.textInput}
                     value={form.minGrid}
@@ -678,12 +677,12 @@ export default function RuleBuilderScreen() {
                     placeholder="0"
                     placeholderTextColor={Colors.textSecondary}
                   />
-                  <Text style={styles.hintText}>Prevents grid export by keeping grid above this value</Text>
+                  <Text style={styles.hintText}>{ed.minGridPowerHint}</Text>
                 </View>
               )}
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Strategy</Text>
+                <Text style={styles.inputLabel}>{ed.strategy}</Text>
                 <View style={styles.chipRow}>
                   {STRATEGIES.map((s) => (
                     <TouchableOpacity
@@ -702,18 +701,18 @@ export default function RuleBuilderScreen() {
           )}
 
           {form.actionType === 'sb' && (
-            <Text style={styles.noParamsText}>No parameters needed for Standby</Text>
+            <Text style={styles.noParamsText}>{ed.noParamsStandby}</Text>
           )}
         </View>
 
         {/* ─── Time Conditions ───────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Time Condition</Text>
+          <Text style={styles.sectionTitle}>{ed.timeCondition}</Text>
 
           <View style={styles.switchRow}>
             <View>
-              <Text style={styles.inputLabel}>Enable Time Window</Text>
-              <Text style={styles.hintText}>Rule active only during specified hours</Text>
+              <Text style={styles.inputLabel}>{ed.enableTimeWindow}</Text>
+              <Text style={styles.hintText}>{ed.timeWindowHint}</Text>
             </View>
             <Switch
               value={form.hasTimeCondition}
@@ -727,40 +726,40 @@ export default function RuleBuilderScreen() {
             <>
               <View style={styles.rowInputs}>
                 <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.inputLabel}>Start</Text>
+                  <Text style={styles.inputLabel}>{ed.start}</Text>
                   <TouchableOpacity style={styles.pickerButton} onPress={() => setShowStartTimePicker(true)}>
                     <Clock size={16} color={Colors.textSecondary} />
                     <Text style={[styles.pickerButtonText, !form.startTime && styles.placeholder]}>
-                      {form.startTime || 'Select'}
+                      {form.startTime || t.common.select}
                     </Text>
                   </TouchableOpacity>
                 </View>
                 <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.inputLabel}>End</Text>
+                  <Text style={styles.inputLabel}>{ed.end}</Text>
                   <TouchableOpacity style={styles.pickerButton} onPress={() => setShowEndTimePicker(true)}>
                     <Clock size={16} color={Colors.textSecondary} />
                     <Text style={[styles.pickerButtonText, !form.endTime && styles.placeholder]}>
-                      {form.endTime || 'Select'}
+                      {form.endTime || t.common.select}
                     </Text>
                   </TouchableOpacity>
                 </View>
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Active Days</Text>
+                <Text style={styles.inputLabel}>{ed.activeDays}</Text>
                 <View style={styles.quickSelectRow}>
                   <TouchableOpacity style={styles.quickChip} onPress={() => update({ selectedDays: [1, 2, 3, 4, 5] })}>
-                    <Text style={styles.quickChipText}>Mon-Fri</Text>
+                    <Text style={styles.quickChipText}>{ed.monFri}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.quickChip} onPress={() => update({ selectedDays: [0, 6] })}>
-                    <Text style={styles.quickChipText}>Sat-Sun</Text>
+                    <Text style={styles.quickChipText}>{ed.satSun}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.quickChip} onPress={() => update({ selectedDays: [0, 1, 2, 3, 4, 5, 6] })}>
-                    <Text style={styles.quickChipText}>All</Text>
+                    <Text style={styles.quickChipText}>{ed.all}</Text>
                   </TouchableOpacity>
                 </View>
                 <View style={styles.daysRow}>
-                  {WEEKDAY_BUTTONS.map((d) => (
+                  {WEEKDAY_BUTTONS.map((d: { index: number; label: string }) => (
                     <TouchableOpacity
                       key={d.index}
                       style={[styles.dayBtn, form.selectedDays.includes(d.index) && styles.dayBtnActive]}
@@ -779,12 +778,12 @@ export default function RuleBuilderScreen() {
 
         {/* ─── SoC Condition ─────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>SoC Condition</Text>
+          <Text style={styles.sectionTitle}>{ed.socCondition}</Text>
 
           <View style={styles.switchRow}>
             <View>
-              <Text style={styles.inputLabel}>Enable SoC Range</Text>
-              <Text style={styles.hintText}>Only activate when battery within range</Text>
+              <Text style={styles.inputLabel}>{ed.enableSocRange}</Text>
+              <Text style={styles.hintText}>{ed.socRangeHint}</Text>
             </View>
             <Switch
               value={form.hasSocCondition}
@@ -797,7 +796,7 @@ export default function RuleBuilderScreen() {
           {form.hasSocCondition && (
             <View style={styles.rowInputs}>
               <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>Min SoC (%)</Text>
+                <Text style={styles.inputLabel}>{ed.minSoc}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={form.socMin}
@@ -808,7 +807,7 @@ export default function RuleBuilderScreen() {
                 />
               </View>
               <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>Max SoC (%)</Text>
+                <Text style={styles.inputLabel}>{ed.maxSoc}</Text>
                 <TextInput
                   style={styles.textInput}
                   value={form.socMax}
@@ -824,12 +823,12 @@ export default function RuleBuilderScreen() {
 
         {/* ─── Grid Power Condition ──────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Grid Power Condition</Text>
+          <Text style={styles.sectionTitle}>{ed.gridPowerCondition}</Text>
 
           <View style={styles.switchRow}>
             <View>
-              <Text style={styles.inputLabel}>Enable Grid Trigger</Text>
-              <Text style={styles.hintText}>Only activate when grid power meets condition</Text>
+              <Text style={styles.inputLabel}>{ed.enableGridTrigger}</Text>
+              <Text style={styles.hintText}>{ed.gridTriggerHint}</Text>
             </View>
             <Switch
               value={form.hasGridCondition}
@@ -842,7 +841,7 @@ export default function RuleBuilderScreen() {
           {form.hasGridCondition && (
             <>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Operator</Text>
+                <Text style={styles.inputLabel}>{ed.operator}</Text>
                 <View style={styles.operatorGrid}>
                   {GRID_OPERATORS.map((op) => (
                     <TouchableOpacity
@@ -860,7 +859,7 @@ export default function RuleBuilderScreen() {
 
               <View style={styles.rowInputs}>
                 <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.inputLabel}>Value (kW)</Text>
+                  <Text style={styles.inputLabel}>{ed.valueKw}</Text>
                   <TextInput
                     style={styles.textInput}
                     value={form.gridValue}
@@ -872,7 +871,7 @@ export default function RuleBuilderScreen() {
                 </View>
                 {form.gridOperator === 'bt' && (
                   <View style={[styles.inputGroup, { flex: 1 }]}>
-                    <Text style={styles.inputLabel}>Max Value (kW)</Text>
+                    <Text style={styles.inputLabel}>{ed.maxValueKw}</Text>
                     <TextInput
                       style={styles.textInput}
                       value={form.gridValueMax}
@@ -885,7 +884,7 @@ export default function RuleBuilderScreen() {
                 )}
               </View>
               <Text style={styles.hintText}>
-                Positive = importing from grid, negative = exporting to grid
+                {ed.gridPowerNote}
               </Text>
             </>
           )}
@@ -893,35 +892,35 @@ export default function RuleBuilderScreen() {
 
         {/* ─── Validity Period ───────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Validity Period</Text>
-          <Text style={styles.hintText}>Leave empty for permanent validity</Text>
+          <Text style={styles.sectionTitle}>{ed.validityPeriod}</Text>
+          <Text style={styles.hintText}>{ed.permanentHint}</Text>
 
           <View style={[styles.rowInputs, { marginTop: 12 }]}>
             <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Valid From</Text>
+              <Text style={styles.inputLabel}>{ed.validFrom}</Text>
               <TouchableOpacity style={styles.pickerButton} onPress={() => setShowValidFromPicker(true)}>
                 <Calendar size={16} color={Colors.textSecondary} />
                 <Text style={[styles.pickerButtonText, !form.validFromDate && styles.placeholder]}>
-                  {form.validFromDate || 'Select date'}
+                  {form.validFromDate || ed.selectDate}
                 </Text>
               </TouchableOpacity>
               {form.validFromDate !== '' && (
                 <TouchableOpacity onPress={() => update({ validFromDate: '' })}>
-                  <Text style={styles.clearLink}>Clear</Text>
+                  <Text style={styles.clearLink}>{t.common.clear}</Text>
                 </TouchableOpacity>
               )}
             </View>
             <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Valid Until</Text>
+              <Text style={styles.inputLabel}>{ed.validUntil}</Text>
               <TouchableOpacity style={styles.pickerButton} onPress={() => setShowValidUntilPicker(true)}>
                 <Calendar size={16} color={Colors.textSecondary} />
                 <Text style={[styles.pickerButtonText, !form.validUntilDate && styles.placeholder]}>
-                  {form.validUntilDate || 'Select date'}
+                  {form.validUntilDate || ed.selectDate}
                 </Text>
               </TouchableOpacity>
               {form.validUntilDate !== '' && (
                 <TouchableOpacity onPress={() => update({ validUntilDate: '' })}>
-                  <Text style={styles.clearLink}>Clear</Text>
+                  <Text style={styles.clearLink}>{t.common.clear}</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -930,7 +929,7 @@ export default function RuleBuilderScreen() {
 
         {/* ─── Preview ───────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Rule Preview</Text>
+          <Text style={styles.sectionTitle}>{ed.rulePreview}</Text>
           <View style={styles.previewCard}>
             <Text style={styles.previewText}>
               {JSON.stringify(formDataToOptimizedRule(buildFormData()), null, 2)}
@@ -940,10 +939,10 @@ export default function RuleBuilderScreen() {
       </ScrollView>
 
       {/* Pickers */}
-      <TimePicker visible={showStartTimePicker} onClose={() => setShowStartTimePicker(false)} onSelect={(t) => update({ startTime: t })} initialTime={form.startTime} title="Start Time" />
-      <TimePicker visible={showEndTimePicker} onClose={() => setShowEndTimePicker(false)} onSelect={(t) => update({ endTime: t })} initialTime={form.endTime} title="End Time" />
-      <DatePicker visible={showValidFromPicker} onClose={() => setShowValidFromPicker(false)} onSelect={(d) => update({ validFromDate: d })} initialDate={form.validFromDate} title="Valid From" />
-      <DatePicker visible={showValidUntilPicker} onClose={() => setShowValidUntilPicker(false)} onSelect={(d) => update({ validUntilDate: d })} initialDate={form.validUntilDate} title="Valid Until" />
+      <TimePicker visible={showStartTimePicker} onClose={() => setShowStartTimePicker(false)} onSelect={(time) => update({ startTime: time })} initialTime={form.startTime} title={ed.startTime} doneLabel={t.common.done} hourLabel={ed.hour} minuteLabel={ed.minute} />
+      <TimePicker visible={showEndTimePicker} onClose={() => setShowEndTimePicker(false)} onSelect={(time) => update({ endTime: time })} initialTime={form.endTime} title={ed.endTime} doneLabel={t.common.done} hourLabel={ed.hour} minuteLabel={ed.minute} />
+      <DatePicker visible={showValidFromPicker} onClose={() => setShowValidFromPicker(false)} onSelect={(d) => update({ validFromDate: d })} initialDate={form.validFromDate} title={ed.validFrom} doneLabel={t.common.done} yearLabel={ed.year} monthLabel={ed.month} dayLabel={ed.day} />
+      <DatePicker visible={showValidUntilPicker} onClose={() => setShowValidUntilPicker(false)} onSelect={(d) => update({ validUntilDate: d })} initialDate={form.validUntilDate} title={ed.validUntil} doneLabel={t.common.done} yearLabel={ed.year} monthLabel={ed.month} dayLabel={ed.day} />
 
       {/* Footer */}
       <View style={styles.footer}>
@@ -951,11 +950,11 @@ export default function RuleBuilderScreen() {
           {isSaving ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.confirmButtonText}>{isNew ? 'Create Rule' : 'Save Changes'}</Text>
+            <Text style={styles.confirmButtonText}>{isNew ? ed.createRule : ed.saveChanges}</Text>
           )}
         </TouchableOpacity>
         <TouchableOpacity style={styles.discardButton} onPress={handleDiscard}>
-          <Text style={styles.discardButtonText}>Cancel</Text>
+          <Text style={styles.discardButtonText}>{t.common.cancel}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

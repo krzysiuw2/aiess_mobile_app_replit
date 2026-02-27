@@ -47,22 +47,22 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     // Validation
     if (!email.trim()) {
-      Alert.alert(t.common.error, 'Please enter your email address');
+      Alert.alert(t.common.error, t.auth.enterEmail);
       return;
     }
 
     if (!validateEmail(email)) {
-      Alert.alert(t.common.error, 'Please enter a valid email address');
+      Alert.alert(t.common.error, t.auth.validEmail);
       return;
     }
 
     if (!password) {
-      Alert.alert(t.common.error, 'Please enter your password');
+      Alert.alert(t.common.error, t.auth.enterPassword);
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert(t.common.error, 'Password must be at least 6 characters');
+      Alert.alert(t.common.error, t.auth.passwordMin6);
       return;
     }
     
@@ -74,15 +74,15 @@ export default function LoginScreen() {
       console.log('[Login] Error:', error);
       
       // Handle specific Supabase errors
-      let errorMessage = 'Login failed. Please try again.';
+      let errorMessage = t.auth.loginFailed;
       
       if (error?.message) {
         if (error.message.includes('Invalid login credentials')) {
-          errorMessage = 'Invalid email or password. Please check your credentials.';
+          errorMessage = t.auth.invalidCredentials;
         } else if (error.message.includes('Email not confirmed')) {
-          errorMessage = 'Please verify your email address before logging in.';
+          errorMessage = t.auth.emailNotConfirmed;
         } else if (error.message.includes('Too many requests')) {
-          errorMessage = 'Too many login attempts. Please wait a moment and try again.';
+          errorMessage = t.auth.tooManyAttempts;
         } else {
           errorMessage = error.message;
         }
@@ -97,7 +97,7 @@ export default function LoginScreen() {
     if (isNativePlatform && !isGoogleConfigured) {
       Alert.alert(
         t.common.comingSoon,
-        'Google Sign-In for mobile is coming soon! Please use email/password for now.'
+        t.auth.googleComingSoon
       );
       return;
     }
@@ -111,36 +111,36 @@ export default function LoginScreen() {
       // Navigation is handled by the useEffect when isAuthenticated changes
     } catch (error: any) {
       console.log('[Login] Google sign-in error:', error);
-      Alert.alert(t.common.error, error?.message || 'Google sign-in failed. Please try again.');
+      Alert.alert(t.common.error, error?.message || t.auth.googleSignInFailed);
     }
   };
 
   const handleAppleSignIn = () => {
-    Alert.alert(t.auth.comingInV11, 'Apple Sign-In coming in v1.1');
+    Alert.alert(t.auth.comingInV11, t.auth.appleSignInComingSoon);
   };
 
   const handleForgotPassword = async () => {
     if (!email.trim()) {
       Alert.alert(
-        'Reset Password',
-        'Please enter your email address first, then tap "Forgot password" again.',
+        t.auth.resetPassword,
+        t.auth.resetPasswordHint,
       );
       return;
     }
 
     if (!validateEmail(email)) {
-      Alert.alert(t.common.error, 'Please enter a valid email address');
+      Alert.alert(t.common.error, t.auth.validEmail);
       return;
     }
 
     try {
       await resetPassword(email.trim());
       Alert.alert(
-        'Check Your Email',
-        'If an account exists with this email, you will receive a password reset link.',
+        t.auth.checkYourEmail,
+        t.auth.resetEmailSent,
       );
     } catch (error: any) {
-      Alert.alert(t.common.error, error?.message || 'Failed to send reset email.');
+      Alert.alert(t.common.error, error?.message || t.auth.failedResetEmail);
     }
   };
 
@@ -164,7 +164,7 @@ export default function LoginScreen() {
               <Text style={styles.inputLabel}>{t.auth.email}</Text>
               <TextInput
                 style={styles.input}
-                placeholder="example@gmail.com"
+                placeholder={t.auth.emailPlaceholder}
                 placeholderTextColor={Colors.textLight}
                 value={email}
                 onChangeText={setEmail}
@@ -253,7 +253,7 @@ export default function LoginScreen() {
                 <>
                   <Text style={styles.googleButtonText}>{t.auth.signInWithGoogle}</Text>
                   {isNativePlatform && !isGoogleConfigured && (
-                    <Text style={styles.comingSoonText}>(Coming soon)</Text>
+                    <Text style={styles.comingSoonText}>({t.common.comingSoon})</Text>
                   )}
                 </>
               )}
@@ -264,7 +264,7 @@ export default function LoginScreen() {
               onPress={handleAppleSignIn}
             >
               <Text style={styles.appleButtonText}>{t.auth.signInWithApple}</Text>
-              <Text style={styles.appleComingSoon}>(v1.1)</Text>
+              <Text style={styles.appleComingSoon}>({t.auth.comingInV11})</Text>
             </TouchableOpacity>
 
             <View style={styles.signUpContainer}>

@@ -21,7 +21,7 @@ export default function AccountSettingsScreen() {
   const handleLogout = async () => {
     Alert.alert(
       t.settings.logOut,
-      'Are you sure you want to log out?',
+      t.settings.logOutConfirm,
       [
         { text: t.common.cancel, style: 'cancel' },
         {
@@ -42,7 +42,7 @@ export default function AccountSettingsScreen() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <ArrowLeft size={24} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Account Settings</Text>
+        <Text style={styles.headerTitle}>{t.settings.accountSettings}</Text>
         <View style={{ width: 40 }} />
       </View>
 

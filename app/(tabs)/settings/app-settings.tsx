@@ -31,7 +31,7 @@ export default function AppSettingsScreen() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <ArrowLeft size={24} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>App Settings</Text>
+        <Text style={styles.headerTitle}>{t.settings.appSettings}</Text>
         <View style={{ width: 40 }} />
       </View>
 

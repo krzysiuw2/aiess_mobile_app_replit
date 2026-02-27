@@ -15,18 +15,16 @@ import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { ChatMessage } from '@/types';
 
-const initialMessages: ChatMessage[] = [
-  {
-    id: '1',
-    text: 'How can I help you today?',
-    isUser: false,
-    timestamp: new Date(),
-  },
-];
-
 export default function AIScreen() {
   const { t } = useSettings();
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [
+    {
+      id: '1',
+      text: t.ai.helpPrompt,
+      isUser: false,
+      timestamp: new Date(),
+    },
+  ]);
   const [inputText, setInputText] = useState('');
 
   const handleSend = () => {

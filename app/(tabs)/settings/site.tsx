@@ -13,10 +13,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ArrowLeft, Shield, Zap, Info } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useSettings } from '@/contexts/SettingsContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useSchedules } from '@/hooks/useSchedules';
 
 export default function SiteSettingsScreen() {
+  const { t } = useSettings();
   const { selectedDevice } = useDevices();
   const { safety, rawSchedules, isLoading, setSafety, setSiteLimit } = useSchedules();
 
@@ -50,24 +52,24 @@ export default function SiteSettingsScreen() {
     const max = parseFloat(socMax);
 
     if (isNaN(min) || isNaN(max)) {
-      Alert.alert('Error', 'Please enter valid numbers');
+      Alert.alert(t.common.error, t.common.pleaseEnterValidNumbers);
       return;
     }
     if (min < 0 || min > 100 || max < 0 || max > 100) {
-      Alert.alert('Error', 'Values must be between 0 and 100');
+      Alert.alert(t.common.error, t.settings.valuesBetween0And100);
       return;
     }
     if (min >= max) {
-      Alert.alert('Error', 'Min SoC must be less than Max SoC');
+      Alert.alert(t.common.error, t.settings.minSocLessThanMax);
       return;
     }
 
     try {
       setSavingSafety(true);
       await setSafety(min, max);
-      Alert.alert('Success', 'Safety limits updated');
+      Alert.alert(t.common.success, t.settings.safetyLimitsUpdated);
     } catch (err) {
-      Alert.alert('Error', 'Failed to save safety limits');
+      Alert.alert(t.common.error, t.settings.failedSaveSafety);
     } finally {
       setSavingSafety(false);
     }
@@ -78,16 +80,16 @@ export default function SiteSettingsScreen() {
     const low = parseFloat(lth);
 
     if (isNaN(high) || isNaN(low)) {
-      Alert.alert('Error', 'Please enter valid numbers');
+      Alert.alert(t.common.error, t.common.pleaseEnterValidNumbers);
       return;
     }
 
     try {
       setSavingSiteLimit(true);
       await setSiteLimit(high, low);
-      Alert.alert('Success', 'Site limits updated');
+      Alert.alert(t.common.success, t.settings.siteLimitsUpdated);
     } catch (err) {
-      Alert.alert('Error', 'Failed to save site limits');
+      Alert.alert(t.common.error, t.settings.failedSaveSiteLimits);
     } finally {
       setSavingSiteLimit(false);
     }
@@ -100,7 +102,7 @@ export default function SiteSettingsScreen() {
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <ArrowLeft size={24} color={Colors.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Site Settings</Text>
+          <Text style={styles.headerTitle}>{t.settings.siteSettings}</Text>
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.centered}>
@@ -116,7 +118,7 @@ export default function SiteSettingsScreen() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <ArrowLeft size={24} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Site Settings</Text>
+        <Text style={styles.headerTitle}>{t.settings.siteSettings}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -126,19 +128,19 @@ export default function SiteSettingsScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Info size={20} color={Colors.primary} />
-              <Text style={styles.sectionTitle}>Device Info</Text>
+              <Text style={styles.sectionTitle}>{t.settings.deviceInfo}</Text>
             </View>
             <View style={styles.infoCard}>
               <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Device Name</Text>
+                <Text style={styles.infoLabel}>{t.settings.deviceName}</Text>
                 <Text style={styles.infoValue}>{selectedDevice.name}</Text>
               </View>
               <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Site ID</Text>
+                <Text style={styles.infoLabel}>{t.settings.siteId}</Text>
                 <Text style={styles.infoValue}>{selectedDevice.device_id}</Text>
               </View>
               <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
-                <Text style={styles.infoLabel}>Location</Text>
+                <Text style={styles.infoLabel}>{t.settings.location}</Text>
                 <Text style={styles.infoValue}>{selectedDevice.location || '-'}</Text>
               </View>
             </View>
@@ -149,34 +151,34 @@ export default function SiteSettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Info size={20} color={Colors.primary} />
-            <Text style={styles.sectionTitle}>Site Description</Text>
+            <Text style={styles.sectionTitle}>{t.settings.siteDescription}</Text>
           </View>
           <TextInput
             style={[styles.textInput, styles.textArea]}
             value={siteDescription}
             onChangeText={setSiteDescription}
-            placeholder="Describe this site (coming soon...)"
+            placeholder={t.settings.siteDescPlaceholder}
             placeholderTextColor={Colors.textSecondary}
             multiline
             numberOfLines={4}
             editable={false}
           />
-          <Text style={styles.hintText}>Site description for AI context (coming soon)</Text>
+          <Text style={styles.hintText}>{t.settings.siteDescHint}</Text>
         </View>
 
         {/* Safety SoC Limits */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Shield size={20} color={Colors.warning} />
-            <Text style={styles.sectionTitle}>Safety SoC Limits</Text>
+            <Text style={styles.sectionTitle}>{t.settings.safetySocLimits}</Text>
           </View>
           <Text style={styles.sectionDescription}>
-            Absolute battery boundaries that override ALL rules including P11 safety.
+            {t.settings.safetyDesc}
           </Text>
 
           <View style={styles.rowInputs}>
             <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Min SoC (%)</Text>
+              <Text style={styles.inputLabel}>{t.settings.minSoc}</Text>
               <TextInput
                 style={styles.textInput}
                 value={socMin}
@@ -187,7 +189,7 @@ export default function SiteSettingsScreen() {
               />
             </View>
             <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Max SoC (%)</Text>
+              <Text style={styles.inputLabel}>{t.settings.maxSoc}</Text>
               <TextInput
                 style={styles.textInput}
                 value={socMax}
@@ -207,7 +209,7 @@ export default function SiteSettingsScreen() {
             {savingSafety ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.saveButtonText}>Save Safety Limits</Text>
+              <Text style={styles.saveButtonText}>{t.settings.saveSafetyLimits}</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -216,15 +218,15 @@ export default function SiteSettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Zap size={20} color={Colors.error} />
-            <Text style={styles.sectionTitle}>Grid Connection Limits (P9)</Text>
+            <Text style={styles.sectionTitle}>{t.settings.gridConnectionLimits}</Text>
           </View>
           <Text style={styles.sectionDescription}>
-            Max import/export power for the grid connection. Caps all rules and actively controls grid when violated.
+            {t.settings.gridConnectionDesc}
           </Text>
 
           <View style={styles.rowInputs}>
             <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Max Import (kW)</Text>
+              <Text style={styles.inputLabel}>{t.settings.maxImport}</Text>
               <TextInput
                 style={styles.textInput}
                 value={hth}
@@ -235,7 +237,7 @@ export default function SiteSettingsScreen() {
               />
             </View>
             <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Max Export (kW)</Text>
+              <Text style={styles.inputLabel}>{t.settings.maxExport}</Text>
               <TextInput
                 style={styles.textInput}
                 value={lth}
@@ -244,7 +246,7 @@ export default function SiteSettingsScreen() {
                 placeholder="-40"
                 placeholderTextColor={Colors.textSecondary}
               />
-              <Text style={styles.hintText}>Negative = export</Text>
+              <Text style={styles.hintText}>{t.settings.negativeExport}</Text>
             </View>
           </View>
 
@@ -256,7 +258,7 @@ export default function SiteSettingsScreen() {
             {savingSiteLimit ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.saveButtonText}>Save Site Limits</Text>
+              <Text style={styles.saveButtonText}>{t.settings.saveSiteLimits}</Text>
             )}
           </TouchableOpacity>
         </View>

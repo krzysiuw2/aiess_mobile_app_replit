@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
+import { useSettings } from '@/contexts/SettingsContext';
 import Colors from '@/constants/colors';
 import { CHART_COLORS, FieldKey, FIELD_COLORS } from '@/constants/chartColors';
 import { ChartDataPoint } from '@/lib/influxdb';
@@ -19,12 +20,14 @@ export function EnergyFlowChart({
   visibleFields,
   loading = false 
 }: EnergyFlowChartProps) {
+  const { t } = useSettings();
+
   // Show loading state
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading chart...</Text>
+        <Text style={styles.loadingText}>{t.analytics.loadingChart}</Text>
       </View>
     );
   }
@@ -33,8 +36,8 @@ export function EnergyFlowChart({
   if (data.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No data available</Text>
-        <Text style={styles.emptySubtext}>Try selecting a different time range</Text>
+        <Text style={styles.emptyText}>{t.analytics.noDataAvailable}</Text>
+        <Text style={styles.emptySubtext}>{t.analytics.tryDifferentRange}</Text>
       </View>
     );
   }
@@ -268,37 +271,37 @@ export function EnergyFlowChart({
                   {visibleFields.gridPower && (
                     <Text style={styles.tooltipValue}>
                       <Text style={{ color: CHART_COLORS.grid.line }}>● </Text>
-                      Grid: {pointData.gridPower.toFixed(1)} kW
+                      {`${t.analytics.grid}: `}{pointData.gridPower.toFixed(1)} kW
                     </Text>
                   )}
                   {visibleFields.batteryPower && (
                     <Text style={styles.tooltipValue}>
                       <Text style={{ color: CHART_COLORS.battery.line }}>● </Text>
-                      Battery: {pointData.batteryPower.toFixed(1)} kW
+                      {`${t.analytics.battery}: `}{pointData.batteryPower.toFixed(1)} kW
                     </Text>
                   )}
                   {visibleFields.pvPower && (
                     <Text style={styles.tooltipValue}>
                       <Text style={{ color: CHART_COLORS.pv.production }}>● </Text>
-                      PV: {pointData.pvPower.toFixed(1)} kW
+                      {`${t.analytics.pv}: `}{pointData.pvPower.toFixed(1)} kW
                     </Text>
                   )}
                   {visibleFields.factoryLoad && (
                     <Text style={styles.tooltipValue}>
                       <Text style={{ color: CHART_COLORS.factory.load }}>● </Text>
-                      Factory: {pointData.factoryLoad.toFixed(1)} kW
+                      {`${t.monitor.factory}: `}{pointData.factoryLoad.toFixed(1)} kW
                     </Text>
                   )}
                   {visibleFields.compensatedPower && (
                     <Text style={styles.tooltipValue}>
                       <Text style={{ color: CHART_COLORS.load.line }}>● </Text>
-                      Load: {pointData.compensatedPower.toFixed(1)} kW
+                      {`${t.monitor.load}: `}{pointData.compensatedPower.toFixed(1)} kW
                     </Text>
                   )}
                   {visibleFields.soc && (
                     <Text style={styles.tooltipValue}>
                       <Text style={{ color: CHART_COLORS.soc.line }}>● </Text>
-                      SoC: {pointData.soc.toFixed(0)}%
+                      {`${t.monitor.soc}: `}{pointData.soc.toFixed(0)}%
                     </Text>
                   )}
                 </View>
@@ -309,9 +312,9 @@ export function EnergyFlowChart({
       </View>
       
       {/* Y-axis label */}
-      <Text style={styles.axisLabel}>Power (kW)</Text>
+      <Text style={styles.axisLabel}>{t.analytics.powerKw}</Text>
       {visibleFields.soc && (
-        <Text style={styles.axisNote}>SoC shown as scaled % for comparison</Text>
+        <Text style={styles.axisNote}>{t.analytics.socScaledNote}</Text>
       )}
     </View>
   );

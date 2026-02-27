@@ -36,32 +36,32 @@ export default function SignupScreen() {
   const handleSignup = async () => {
     // Validation
     if (!email.trim()) {
-      Alert.alert(t.common.error, 'Please enter your email address');
+      Alert.alert(t.common.error, t.auth.enterEmail);
       return;
     }
 
     if (!validateEmail(email)) {
-      Alert.alert(t.common.error, 'Please enter a valid email address');
+      Alert.alert(t.common.error, t.auth.validEmail);
       return;
     }
 
     if (!password) {
-      Alert.alert(t.common.error, 'Please enter a password');
+      Alert.alert(t.common.error, t.auth.enterAPassword);
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert(t.common.error, 'Password must be at least 6 characters');
+      Alert.alert(t.common.error, t.auth.passwordMin6);
       return;
     }
 
     if (!retypePassword) {
-      Alert.alert(t.common.error, 'Please confirm your password');
+      Alert.alert(t.common.error, t.auth.confirmPassword);
       return;
     }
 
     if (password !== retypePassword) {
-      Alert.alert(t.common.error, 'Passwords do not match');
+      Alert.alert(t.common.error, t.auth.passwordsNoMatch);
       return;
     }
 
@@ -73,11 +73,11 @@ export default function SignupScreen() {
       if (result?.user && !result?.session) {
         // Email confirmation required
         Alert.alert(
-          'Check Your Email',
-          'We sent you a confirmation link. Please check your email to verify your account.',
+          t.auth.checkYourEmail,
+          t.auth.confirmEmailSent,
           [
             {
-              text: 'OK',
+              text: t.common.ok,
               onPress: () => router.replace('/(auth)/login'),
             },
           ]
@@ -91,17 +91,17 @@ export default function SignupScreen() {
       console.log('[Signup] Error:', error);
       
       // Handle specific Supabase errors
-      let errorMessage = 'Signup failed. Please try again.';
+      let errorMessage = t.auth.signupFailed;
       
       if (error?.message) {
         if (error.message.includes('User already registered')) {
-          errorMessage = 'An account with this email already exists. Please sign in instead.';
+          errorMessage = t.auth.accountExists;
         } else if (error.message.includes('Password should be at least')) {
-          errorMessage = 'Password must be at least 6 characters long.';
+          errorMessage = t.auth.passwordTooShort;
         } else if (error.message.includes('Unable to validate email')) {
-          errorMessage = 'Please enter a valid email address.';
+          errorMessage = t.auth.invalidEmailFormat;
         } else if (error.message.includes('Signups not allowed')) {
-          errorMessage = 'Signups are currently disabled. Please contact support.';
+          errorMessage = t.auth.signupsDisabled;
         } else {
           errorMessage = error.message;
         }
@@ -126,15 +126,15 @@ export default function SignupScreen() {
             <AiessLogo size="large" />
           </View>
 
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Sign up to get started with AIESS</Text>
+          <Text style={styles.title}>{t.auth.createAccount}</Text>
+          <Text style={styles.subtitle}>{t.auth.signUpSubtitle}</Text>
 
           <View style={styles.form}>
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>{t.auth.email}</Text>
               <TextInput
                 style={styles.input}
-                placeholder="example@gmail.com"
+                placeholder={t.auth.emailPlaceholder}
                 placeholderTextColor={Colors.textLight}
                 value={email}
                 onChangeText={setEmail}
@@ -171,7 +171,7 @@ export default function SignupScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-              <Text style={styles.passwordHint}>Minimum 6 characters</Text>
+              <Text style={styles.passwordHint}>{t.auth.minPasswordLength}</Text>
             </View>
 
             <View style={styles.inputContainer}>

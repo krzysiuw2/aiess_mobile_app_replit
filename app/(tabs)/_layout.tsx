@@ -9,7 +9,10 @@ import {
 } from 'lucide-react-native';
 import React from 'react';
 import Colors from '@/constants/colors';
+import { useSettings } from '@/contexts/SettingsContext';
+
 export default function TabLayout() {
+  const { t } = useSettings();
 
   return (
     <Tabs
@@ -31,42 +34,42 @@ export default function TabLayout() {
       <Tabs.Screen
         name="devices"
         options={{
-          title: 'Devices',
+          title: t.tabs.devices,
           tabBarIcon: ({ color, size }) => <Network size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="monitor"
         options={{
-          title: 'Monitor',
+          title: t.tabs.monitor,
           tabBarIcon: ({ color, size }) => <Gauge size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="ai"
         options={{
-          title: 'AI',
+          title: t.tabs.ai,
           tabBarIcon: ({ color, size }) => <MessageSquare size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="schedule"
         options={{
-          title: 'Schedule',
+          title: t.tabs.schedule,
           tabBarIcon: ({ color, size }) => <CalendarClock size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="analytics"
         options={{
-          title: 'Analytics',
+          title: t.tabs.analytics,
           tabBarIcon: ({ color, size }) => <BarChart3 size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Settings',
+          title: t.tabs.settings,
           tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
         }}
       />

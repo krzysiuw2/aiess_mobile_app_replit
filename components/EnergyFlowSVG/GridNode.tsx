@@ -8,9 +8,11 @@ interface GridNodeProps {
   arrowColor: string;
   avg1m: string | null;
   avg5m: string | null;
+  avg1mLabel: string;
+  avg5mLabel: string;
 }
 
-export default function GridNode({ label, value, arrowPath, arrowColor, avg1m, avg5m }: GridNodeProps) {
+export default function GridNode({ label, value, arrowPath, arrowColor, avg1m, avg5m, avg1mLabel, avg5mLabel }: GridNodeProps) {
   return (
     <G transform="translate(0, 420)">
       <Rect
@@ -36,10 +38,10 @@ export default function GridNode({ label, value, arrowPath, arrowColor, avg1m, a
         {value}
       </SvgText>
       <SvgText x={12} y={54} fill="#94a3b8" fontSize={9}>
-        {avg1m ? `${avg1m} (1 min)` : '— (1 min)'}
+        {avg1m ? `${avg1m} (${avg1mLabel})` : `— (${avg1mLabel})`}
       </SvgText>
       <SvgText x={12} y={66} fill="#94a3b8" fontSize={9}>
-        {avg5m ? `${avg5m} (5 min)` : '— (5 min)'}
+        {avg5m ? `${avg5m} (${avg5mLabel})` : `— (${avg5mLabel})`}
       </SvgText>
     </G>
   );

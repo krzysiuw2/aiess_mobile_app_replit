@@ -14,6 +14,7 @@ import { ChevronLeft, ChevronRight, Calendar, Eye, EyeOff, Zap, Battery, BarChar
 import Colors from '@/constants/colors';
 import { FIELD_COLORS, FieldKey, CHART_COLORS } from '@/constants/chartColors';
 import { useSettings } from '@/contexts/SettingsContext';
+import type { TranslationKeys } from '@/locales';
 import { useDevices } from '@/contexts/DeviceContext';
 import { 
   fetchChartData, 
@@ -48,12 +49,14 @@ function DatePickerModal({
   visible, 
   date, 
   onSelect, 
-  onClose 
+  onClose,
+  t,
 }: { 
   visible: boolean; 
   date: Date; 
   onSelect: (date: Date) => void; 
   onClose: () => void;
+  t: TranslationKeys;
 }) {
   const [year, setYear] = useState(date.getFullYear());
   const [month, setMonth] = useState(date.getMonth());
@@ -64,13 +67,13 @@ function DatePickerModal({
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthNames = t.analytics.monthNames;
 
   return (
     <Modal visible={visible} transparent animationType="fade">
       <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
         <View style={styles.datePickerContainer} onStartShouldSetResponder={() => true}>
-          <Text style={styles.datePickerTitle}>Select Date</Text>
+          <Text style={styles.datePickerTitle}>{t.analytics.selectDate}</Text>
           
           <View style={styles.datePickerRow}>
             {/* Year */}
@@ -121,7 +124,7 @@ function DatePickerModal({
 
           <View style={styles.datePickerButtons}>
             <TouchableOpacity style={styles.datePickerCancel} onPress={onClose}>
-              <Text style={styles.datePickerCancelText}>Cancel</Text>
+              <Text style={styles.datePickerCancelText}>{t.common.cancel}</Text>
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.datePickerConfirm} 
@@ -130,7 +133,7 @@ function DatePickerModal({
                 onClose();
               }}
             >
-              <Text style={styles.datePickerConfirmText}>Select</Text>
+              <Text style={styles.datePickerConfirmText}>{t.common.select}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -164,7 +167,7 @@ export default function AnalyticsScreen() {
   useEffect(() => {
     async function loadData() {
       if (!selectedDevice?.device_id) {
-        setError('No device selected');
+        setError(t.common.noDeviceSelected);
         setLoading(false);
         return;
       }
@@ -182,14 +185,14 @@ export default function AnalyticsScreen() {
         setChartData(data);
       } catch (err) {
         console.error('[Analytics] Error:', err);
-        setError('Failed to load data');
+        setError(t.common.failedToLoad);
       } finally {
         setLoading(false);
       }
     }
 
     loadData();
-  }, [timeRange, selectedDate, selectedDevice?.device_id]);
+  }, [timeRange, selectedDate, selectedDevice?.device_id, t.common.noDeviceSelected, t.common.failedToLoad]);
 
   function isSamePeriod(date1: Date, date2: Date, range: string): boolean {
     if (range === '24h') {
@@ -364,7 +367,7 @@ export default function AnalyticsScreen() {
         </View>
 
         {/* Section 1: Energy Flow Chart */}
-        <SectionHeader title="Energy Flow" icon="Zap" />
+        <SectionHeader title={t.analytics.energyFlow} icon="Zap" />
         {error ? (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
@@ -379,30 +382,30 @@ export default function AnalyticsScreen() {
         )}
 
         {/* Section 2: Energy Source Breakdown */}
-        <SectionHeader title="Energy Source Breakdown" icon="BarChart2" />
+        <SectionHeader title={t.analytics.energySourceBreakdown} icon="BarChart2" />
         <EnergyDonutChart breakdown={energyBreakdown} />
 
         {/* Section 3: Energy Summary Cards */}
-        <SectionHeader title="Energy Summary" icon="BarChart2" />
+        <SectionHeader title={t.analytics.energySummary} icon="BarChart2" />
         <EnergySummaryCards stats={stats} />
 
         {/* Section 4: Energy Totals */}
-        <SectionHeader title="Energy Totals" icon="BarChart2" />
+        <SectionHeader title={t.analytics.energyTotals} icon="BarChart2" />
         <EnergyBarsChart data={chartData} timeRange={timeRange} />
 
         {/* Section 5: Battery SoC */}
-        <SectionHeader title="Battery State of Charge" icon="Battery" />
+        <SectionHeader title={t.analytics.batterySoc} icon="Battery" />
         <SocBandChart data={chartData} timeRange={timeRange} />
 
         {/* Section 6: Load Composition */}
-        <SectionHeader title="Load Composition" icon="Zap" />
+        <SectionHeader title={t.analytics.loadComposition} icon="Zap" />
         <LoadCompositionChart data={chartData} timeRange={timeRange} />
         
         {/* Section 7: Battery Performance */}
-        <SectionHeader title="Battery Performance" icon="Battery" />
+        <SectionHeader title={t.analytics.batteryPerformance} icon="Battery" />
         <View style={styles.kpiRow}>
           <KPICard
-            title="Peak Grid Demand"
+            title={t.analytics.peakGridDemand}
             value={`${peakDemand.gridPeak.value.toFixed(1)} kW`}
             subtitle={new Date(peakDemand.gridPeak.timestamp).toLocaleTimeString('en-US', {
               hour: '2-digit',
@@ -412,7 +415,7 @@ export default function AnalyticsScreen() {
             color={CHART_COLORS.grid.line}
           />
           <KPICard
-            title="Peak Factory Load"
+            title={t.analytics.peakFactoryLoad}
             value={`${peakDemand.factoryPeak.value.toFixed(1)} kW`}
             subtitle={new Date(peakDemand.factoryPeak.timestamp).toLocaleTimeString('en-US', {
               hour: '2-digit',
@@ -424,20 +427,20 @@ export default function AnalyticsScreen() {
         </View>
 
         {/* Section 8: Battery Cycles */}
-        <SectionHeader title="Battery Cycles" icon="RefreshCw" />
+        <SectionHeader title={t.analytics.batteryCycles} icon="RefreshCw" />
         <CyclesBarChart data={chartData} timeRange={timeRange} />
         
         {/* Section 9: Efficiency Metrics */}
-        <SectionHeader title="Efficiency" icon="TrendingUp" />
+        <SectionHeader title={t.analytics.efficiency} icon="TrendingUp" />
         <View style={styles.kpiRow}>
           <KPICard
-            title="Self-Consumption"
+            title={t.analytics.selfConsumption}
             value={`${efficiencyMetrics.selfConsumption.toFixed(1)}%`}
             icon={Sun}
             color={CHART_COLORS.pv.production}
           />
           <KPICard
-            title="Grid Independence"
+            title={t.analytics.gridIndependence}
             value={`${efficiencyMetrics.gridIndependence.toFixed(1)}%`}
             icon={Shield}
             color={CHART_COLORS.success}
@@ -451,6 +454,7 @@ export default function AnalyticsScreen() {
         date={selectedDate}
         onSelect={setSelectedDate}
         onClose={() => setShowDatePicker(false)}
+        t={t}
       />
     </SafeAreaView>
   );

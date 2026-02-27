@@ -23,8 +23,8 @@ export default function MonitorScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.centered}>
           <AlertCircle size={48} color={Colors.textSecondary} />
-          <Text style={styles.noDeviceText}>Please select a device first</Text>
-          <Text style={styles.noDeviceHint}>Go to Devices tab to select one</Text>
+          <Text style={styles.noDeviceText}>{t.monitor.selectDeviceFirst}</Text>
+          <Text style={styles.noDeviceHint}>{t.monitor.goToDevicesTab}</Text>
         </View>
       </SafeAreaView>
     );
@@ -49,12 +49,12 @@ export default function MonitorScreen() {
             {isError ? (
               <>
                 <WifiOff size={14} color={Colors.error} />
-                <Text style={styles.statusTextError}>Offline</Text>
+                <Text style={styles.statusTextError}>{t.monitor.offline}</Text>
               </>
             ) : (
               <>
                 <CheckCircle size={14} color={Colors.success} />
-                <Text style={styles.statusText}>Online</Text>
+                <Text style={styles.statusText}>{t.monitor.online}</Text>
               </>
             )}
           </View>
@@ -64,18 +64,18 @@ export default function MonitorScreen() {
         {isLoading && !liveData ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.loadingText}>Loading live data...</Text>
+            <Text style={styles.loadingText}>{t.monitor.loadingLiveData}</Text>
           </View>
         ) : isError && !liveData ? (
           <View style={styles.errorContainer}>
             <WifiOff size={48} color={Colors.error} />
-            <Text style={styles.errorTitle}>Connection Error</Text>
+            <Text style={styles.errorTitle}>{t.monitor.connectionError}</Text>
             <Text style={styles.errorText}>
-              {error?.message || 'Unable to fetch live data'}
+              {error?.message || t.monitor.unableToFetchLiveData}
             </Text>
             <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
               <RefreshCw size={16} color="#fff" />
-              <Text style={styles.retryText}>Retry</Text>
+              <Text style={styles.retryText}>{t.common.retry}</Text>
             </TouchableOpacity>
           </View>
         ) : (

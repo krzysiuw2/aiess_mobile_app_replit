@@ -46,14 +46,18 @@ const formatDate = (timestamp: number | undefined): string => {
   });
 };
 
-const getValidityLabel = (vf: number | undefined, vu: number | undefined): string => {
+const getValidityLabel = (
+  vf: number | undefined,
+  vu: number | undefined,
+  t: { schedules: { permanent: string; from: string; until: string } }
+): string => {
   const from = formatDate(vf);
   const until = formatDate(vu);
 
-  if (!from && !until) return 'Permanent';
+  if (!from && !until) return t.schedules.permanent;
   if (from && until && from === until) return from;
-  if (from && !until) return `From ${from}`;
-  if (!from && until) return `Until ${until}`;
+  if (from && !until) return `${t.schedules.from} ${from}`;
+  if (!from && until) return `${t.schedules.until} ${until}`;
   return `${from} - ${until}`;
 };
 
@@ -65,15 +69,16 @@ interface RuleCardProps {
 }
 
 function RuleCard({ rule, onEdit, onDelete, onToggle }: RuleCardProps) {
+  const { t } = useSettings();
   const isActive = rule.act !== false;
   const isAI = rule.s === 'ai';
   const actionLabel = getActionTypeLabel(rule.a.t);
-  const daysLabel = rule.d ? getDaysLabel(rule.d) : 'Everyday';
+  const daysLabel = rule.d ? getDaysLabel(rule.d) : t.schedules.everyday;
   const timeRange =
     rule.c?.ts !== undefined && rule.c?.te !== undefined
       ? `${formatTime(rule.c.ts)} - ${formatTime(rule.c.te)}`
-      : 'Always';
-  const validityLabel = getValidityLabel(rule.vf, rule.vu);
+      : t.schedules.always;
+  const validityLabel = getValidityLabel(rule.vf, rule.vu, t);
   const summary = getRuleSummary(rule);
 
   return (
@@ -112,7 +117,7 @@ function RuleCard({ rule, onEdit, onDelete, onToggle }: RuleCardProps) {
           <Calendar size={14} color={Colors.textSecondary} />
           <Text style={styles.infoValue}>{daysLabel}</Text>
         </View>
-        {validityLabel !== 'Permanent' && (
+        {validityLabel !== t.schedules.permanent && (
           <View style={styles.infoRow}>
             <CalendarCheck size={14} color={Colors.textSecondary} />
             <Text style={styles.infoValue}>{validityLabel}</Text>
@@ -124,11 +129,11 @@ function RuleCard({ rule, onEdit, onDelete, onToggle }: RuleCardProps) {
       <View style={styles.cardActions}>
         <TouchableOpacity style={styles.actionButton} onPress={onEdit}>
           <Pencil size={16} color={Colors.primary} />
-          <Text style={styles.actionButtonText}>Edit</Text>
+          <Text style={styles.actionButtonText}>{t.common.edit}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.actionButton, styles.deleteButton]} onPress={onDelete}>
           <Trash2 size={16} color={Colors.error} />
-          <Text style={[styles.actionButtonText, styles.deleteButtonText]}>Delete</Text>
+          <Text style={[styles.actionButtonText, styles.deleteButtonText]}>{t.common.delete}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -151,18 +156,18 @@ export default function ScheduleListScreen() {
 
   const handleDeleteRule = (rule: ScheduleRuleWithPriority) => {
     Alert.alert(
-      'Delete Rule',
-      `Are you sure you want to delete "${rule.id}"?`,
+      t.schedules.deleteRule,
+      t.schedules.deleteRuleConfirm.replace('{ruleId}', rule.id),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t.common.cancel, style: 'cancel' },
         {
-          text: 'Delete',
+          text: t.common.delete,
           style: 'destructive',
           onPress: async () => {
             try {
               await deleteRule(rule.id, rule.priority);
             } catch {
-              Alert.alert('Error', 'Failed to delete rule');
+              Alert.alert(t.common.error, t.schedules.failedToDeleteRule);
             }
           },
         },
@@ -174,7 +179,7 @@ export default function ScheduleListScreen() {
     try {
       await toggleRule(rule.id, rule.priority);
     } catch {
-      Alert.alert('Error', 'Failed to toggle rule');
+      Alert.alert(t.common.error, t.schedules.failedToToggleRule);
     }
   };
 
@@ -186,8 +191,8 @@ export default function ScheduleListScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centered}>
-          <Text style={styles.emptyTitle}>No Device Selected</Text>
-          <Text style={styles.emptySubtitle}>Please select a device from the Devices tab</Text>
+          <Text style={styles.emptyTitle}>{t.common.noDeviceSelected}</Text>
+          <Text style={styles.emptySubtitle}>{t.common.selectDeviceHint}</Text>
         </View>
       </SafeAreaView>
     );
@@ -199,7 +204,7 @@ export default function ScheduleListScreen() {
         <View>
           <Text style={styles.headerTitle}>{t.schedules.title}</Text>
           <Text style={styles.headerSubtitle}>
-            {selectedDevice.name} - {scheduleRules.length} rules
+            {selectedDevice.name} - {scheduleRules.length} {t.schedules.rules}
           </Text>
         </View>
       </View>
@@ -207,19 +212,19 @@ export default function ScheduleListScreen() {
       {isLoading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading schedules...</Text>
+          <Text style={styles.loadingText}>{t.schedules.loadingSchedules}</Text>
         </View>
       ) : error ? (
         <View style={styles.centered}>
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={refetch}>
-            <Text style={styles.retryButtonText}>Retry</Text>
+            <Text style={styles.retryButtonText}>{t.common.retry}</Text>
           </TouchableOpacity>
         </View>
       ) : scheduleRules.length === 0 ? (
         <View style={styles.centered}>
-          <Text style={styles.emptyTitle}>No Rules</Text>
-          <Text style={styles.emptySubtitle}>Create your first schedule rule</Text>
+          <Text style={styles.emptyTitle}>{t.schedules.noRules}</Text>
+          <Text style={styles.emptySubtitle}>{t.schedules.createFirstRule}</Text>
         </View>
       ) : (
         <ScrollView

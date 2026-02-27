@@ -66,9 +66,15 @@ export interface MonitorTranslations {
   discharge: string;
 }
 
+export interface EnergyFlowTranslations {
+  avg1min: string;
+  avg5min: string;
+}
+
 export interface EnergyFlowProps {
   liveData: LiveData | null | undefined;
   t: {
     monitor: MonitorTranslations;
+    energyFlow: EnergyFlowTranslations;
   };
 }

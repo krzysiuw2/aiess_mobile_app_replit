@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { BarChart } from 'react-native-gifted-charts';
+import { useSettings } from '@/contexts/SettingsContext';
 import Colors from '@/constants/colors';
 import { CHART_COLORS } from '@/constants/chartColors';
 import { ChartDataPoint } from '@/lib/influxdb';
@@ -66,12 +67,13 @@ function groupDataForBars(data: ChartDataPoint[], timeRange: string): BarGroup[]
 }
 
 export function EnergyBarsChart({ data, timeRange }: EnergyBarsChartProps) {
+  const { t } = useSettings();
   const barGroups = useMemo(() => groupDataForBars(data, timeRange), [data, timeRange]);
 
   if (barGroups.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No data available</Text>
+        <Text style={styles.emptyText}>{t.analytics.noDataAvailable}</Text>
       </View>
     );
   }
@@ -122,18 +124,18 @@ export function EnergyBarsChart({ data, timeRange }: EnergyBarsChartProps) {
       <View style={styles.legend}>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: CHART_COLORS.grid.import }]} />
-          <Text style={styles.legendLabel}>Grid Import</Text>
+          <Text style={styles.legendLabel}>{t.analytics.gridImport}</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: CHART_COLORS.pv.production }]} />
-          <Text style={styles.legendLabel}>PV</Text>
+          <Text style={styles.legendLabel}>{t.analytics.pv}</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: CHART_COLORS.grid.export }]} />
-          <Text style={styles.legendLabel}>Grid Export</Text>
+          <Text style={styles.legendLabel}>{t.analytics.gridExport}</Text>
         </View>
       </View>
-      <Text style={styles.axisLabel}>Energy (kWh)</Text>
+      <Text style={styles.axisLabel}>{t.analytics.energyKwh}</Text>
     </View>
   );
 }

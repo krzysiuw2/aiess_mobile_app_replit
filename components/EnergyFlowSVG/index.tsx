@@ -344,6 +344,8 @@ export default function EnergyFlowSVG(props: EnergyFlowProps) {
             arrowColor={d.gridArrowColor}
             avg1m={d.gridAvg1m}
             avg5m={d.gridAvg5m}
+            avg1mLabel={props.t.energyFlow.avg1min}
+            avg5mLabel={props.t.energyFlow.avg5min}
           />
 
           <LoadNode
@@ -354,6 +356,8 @@ export default function EnergyFlowSVG(props: EnergyFlowProps) {
             smoke3Ref={smoke3Ref}
             avg1m={d.loadAvg1m}
             avg5m={d.loadAvg5m}
+            avg1mLabel={props.t.energyFlow.avg1min}
+            avg5mLabel={props.t.energyFlow.avg5min}
           />
 
           <PvNode
@@ -363,6 +367,8 @@ export default function EnergyFlowSVG(props: EnergyFlowProps) {
             rayGroupRef={rayGroupRef}
             avg1m={d.pvAvg1m}
             avg5m={d.pvAvg5m}
+            avg1mLabel={props.t.energyFlow.avg1min}
+            avg5mLabel={props.t.energyFlow.avg5min}
           />
         </Svg>
       </View>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { PieChart } from 'react-native-gifted-charts';
+import { useSettings } from '@/contexts/SettingsContext';
 import Colors from '@/constants/colors';
 import { CHART_COLORS } from '@/constants/chartColors';
 import { EnergyBreakdown } from '@/lib/analytics';
@@ -10,10 +11,12 @@ interface EnergyDonutChartProps {
 }
 
 export function EnergyDonutChart({ breakdown }: EnergyDonutChartProps) {
+  const { t } = useSettings();
+
   if (breakdown.totalEnergy === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No energy data available</Text>
+        <Text style={styles.emptyText}>{t.analytics.noEnergyData}</Text>
       </View>
     );
   }
@@ -68,21 +71,21 @@ export function EnergyDonutChart({ breakdown }: EnergyDonutChartProps) {
           <View style={styles.legendItem}>
             <View style={[styles.legendDot, { backgroundColor: CHART_COLORS.donut.grid }]} />
             <View style={styles.legendTextContainer}>
-              <Text style={styles.legendLabel}>Grid</Text>
+              <Text style={styles.legendLabel}>{t.analytics.grid}</Text>
               <Text style={styles.legendValue}>{breakdown.fromGrid.toFixed(1)}%</Text>
             </View>
           </View>
           <View style={styles.legendItem}>
             <View style={[styles.legendDot, { backgroundColor: CHART_COLORS.donut.pv }]} />
             <View style={styles.legendTextContainer}>
-              <Text style={styles.legendLabel}>PV</Text>
+              <Text style={styles.legendLabel}>{t.analytics.pv}</Text>
               <Text style={styles.legendValue}>{breakdown.fromPV.toFixed(1)}%</Text>
             </View>
           </View>
           <View style={styles.legendItem}>
             <View style={[styles.legendDot, { backgroundColor: CHART_COLORS.donut.battery }]} />
             <View style={styles.legendTextContainer}>
-              <Text style={styles.legendLabel}>Battery</Text>
+              <Text style={styles.legendLabel}>{t.analytics.battery}</Text>
               <Text style={styles.legendValue}>{breakdown.fromBattery.toFixed(1)}%</Text>
             </View>
           </View>
