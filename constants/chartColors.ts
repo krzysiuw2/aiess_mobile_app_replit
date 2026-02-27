@@ -23,6 +23,10 @@ export const CHART_COLORS = {
     load: '#F44336',        // Red (factory load)
     area: '#EF5350',        // Light red
   },
+  load: {
+    line: '#009688',        // Teal (compensated/load)
+    area: '#4DB6AC',        // Light teal
+  },
   soc: {
     line: '#9C27B0',        // Purple
     area: '#BA68C8',        // Light purple
@@ -58,6 +62,7 @@ export const FIELD_COLORS = {
   batteryPower: { label: 'Battery', color: CHART_COLORS.battery.line, unit: 'kW' },
   pvPower: { label: 'PV', color: CHART_COLORS.pv.production, unit: 'kW' },
   factoryLoad: { label: 'Factory', color: CHART_COLORS.factory.load, unit: 'kW' },
+  compensatedPower: { label: 'Load', color: CHART_COLORS.load.line, unit: 'kW' },
   soc: { label: 'SoC', color: CHART_COLORS.soc.line, unit: '%', isSecondary: true },
 } as const;
 

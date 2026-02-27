@@ -123,6 +123,20 @@ export function EnergyFlowChart({
       curved: true,
     });
   }
+
+  // Compensated Power (Load)
+  if (visibleFields.compensatedPower) {
+    lineDatasets.push({
+      data: data.map((point, index) => ({
+        value: point.compensatedPower,
+        hideDataPoint: index % 5 !== 0,
+        dataPointColor: CHART_COLORS.load.line,
+      })),
+      color: CHART_COLORS.load.line,
+      thickness: 2,
+      curved: true,
+    });
+  }
   
   // SoC (scaled to match power range for visualization)
   if (visibleFields.soc) {
@@ -273,6 +287,12 @@ export function EnergyFlowChart({
                     <Text style={styles.tooltipValue}>
                       <Text style={{ color: CHART_COLORS.factory.load }}>● </Text>
                       Factory: {pointData.factoryLoad.toFixed(1)} kW
+                    </Text>
+                  )}
+                  {visibleFields.compensatedPower && (
+                    <Text style={styles.tooltipValue}>
+                      <Text style={{ color: CHART_COLORS.load.line }}>● </Text>
+                      Load: {pointData.compensatedPower.toFixed(1)} kW
                     </Text>
                   )}
                   {visibleFields.soc && (

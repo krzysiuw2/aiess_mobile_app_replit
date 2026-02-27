@@ -15,6 +15,9 @@ export interface ChartDataPoint {
   pvPower: number;
   soc: number;
   factoryLoad: number;
+  compensatedPower: number;
+  socMin?: number;
+  socMax?: number;
 }
 
 export interface EnergyStats {
@@ -360,18 +363,30 @@ export async function fetchChartData(
 ): Promise<ChartDataPoint[]> {
   const config = ANALYTICS_CONFIG[timeRange];
   
-  // Calculate range based on startDate or use relative
   let rangeClause: string;
   if (startDate) {
     const endDate = new Date(startDate);
-    if (timeRange === 'hour') {
-      endDate.setHours(endDate.getHours() + 1);
-    } else if (timeRange === 'day') {
-      endDate.setDate(endDate.getDate() + 1);
-    } else if (timeRange === 'week') {
-      endDate.setDate(endDate.getDate() + 7);
-    } else {
-      endDate.setMonth(endDate.getMonth() + 1);
+    switch (timeRange) {
+      case 'hour':
+        endDate.setHours(endDate.getHours() + 1);
+        break;
+      case 'day':
+      case '24h':
+        endDate.setDate(endDate.getDate() + 1);
+        break;
+      case 'week':
+      case '7d':
+        endDate.setDate(endDate.getDate() + 7);
+        break;
+      case 'month':
+      case '30d':
+        endDate.setMonth(endDate.getMonth() + 1);
+        break;
+      case '365d':
+        endDate.setFullYear(endDate.getFullYear() + 1);
+        break;
+      default:
+        endDate.setDate(endDate.getDate() + 1);
     }
     rangeClause = `range(start: ${startDate.toISOString()}, stop: ${endDate.toISOString()})`;
   } else {
@@ -380,6 +395,10 @@ export async function fetchChartData(
 
   const aggFilter = config.aggregation 
     ? `|> filter(fn: (r) => r.aggregation == "${config.aggregation}")` 
+    : '';
+
+  const socMinMaxFields = config.fieldSuffix
+    ? `or r._field == "soc_min" or r._field == "soc_max"`
     : '';
 
   const query = `
@@ -392,7 +411,9 @@ export async function fetchChartData(
           r._field == "grid_power${config.fieldSuffix}" or 
           r._field == "pcs_power${config.fieldSuffix}" or 
           r._field == "total_pv_power${config.fieldSuffix}" or 
-          r._field == "soc${config.fieldSuffix}"
+          r._field == "soc${config.fieldSuffix}" or
+          r._field == "compensated_power${config.fieldSuffix}"
+          ${socMinMaxFields}
       )
       |> aggregateWindow(every: ${config.window}, fn: mean, createEmpty: false)
       |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
@@ -411,6 +432,9 @@ export async function fetchChartData(
       const batteryPower = parseFloat(row[`pcs_power${config.fieldSuffix}`]) || 0;
       const pvPower = parseFloat(row[`total_pv_power${config.fieldSuffix}`]) || 0;
       const soc = parseFloat(row[`soc${config.fieldSuffix}`]) || 0;
+      const compensatedPower = parseFloat(row[`compensated_power${config.fieldSuffix}`]) || 0;
+      const socMinRaw = parseFloat(row['soc_min']);
+      const socMaxRaw = parseFloat(row['soc_max']);
 
       return {
         time: new Date(row['_time']),
@@ -419,6 +443,9 @@ export async function fetchChartData(
         pvPower: Math.round(pvPower * 10) / 10,
         soc: Math.round(soc),
         factoryLoad: Math.round(calculateFactoryLoad(gridPower, pvPower, batteryPower) * 10) / 10,
+        compensatedPower: Math.round(compensatedPower * 10) / 10,
+        socMin: !isNaN(socMinRaw) ? Math.round(socMinRaw) : undefined,
+        socMax: !isNaN(socMaxRaw) ? Math.round(socMaxRaw) : undefined,
       };
     }).sort((a, b) => a.time.getTime() - b.time.getTime());
   } catch (error) {

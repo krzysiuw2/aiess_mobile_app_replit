@@ -8,7 +8,6 @@ import {
   Dimensions,
   ActivityIndicator,
   Modal,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, ChevronRight, Calendar, Eye, EyeOff, Zap, Battery, BarChart2, TrendingUp, RefreshCw, Sun, Shield } from 'lucide-react-native';
@@ -27,11 +26,17 @@ import {
   calculateBatteryCycles,
   findPeakDemand,
   calculateEfficiencyMetrics,
+  calculateEnergyBreakdown,
 } from '@/lib/analytics';
 import { EnergyFlowChart } from '@/components/analytics/EnergyFlowChart';
 import { EnergySummaryCards } from '@/components/analytics/EnergySummaryCards';
 import { KPICard } from '@/components/analytics/KPICard';
 import { SectionHeader } from '@/components/analytics/SectionHeader';
+import { EnergyDonutChart } from '@/components/analytics/EnergyDonutChart';
+import { EnergyBarsChart } from '@/components/analytics/EnergyBarsChart';
+import { SocBandChart } from '@/components/analytics/SocBandChart';
+import { LoadCompositionChart } from '@/components/analytics/LoadCompositionChart';
+import { CyclesBarChart } from '@/components/analytics/CyclesBarChart';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -146,12 +151,12 @@ export default function AnalyticsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Field visibility toggles
   const [visibleFields, setVisibleFields] = useState<Record<FieldKey, boolean>>({
     gridPower: true,
     batteryPower: true,
     pvPower: true,
     factoryLoad: false,
+    compensatedPower: false,
     soc: true,
   });
 
@@ -168,12 +173,10 @@ export default function AnalyticsScreen() {
       setError(null);
 
       try {
-        // Map new format to old format for API compatibility
-        const apiTimeRange = timeRangeToApiFormat(timeRange);
-        const isCurrentPeriod = isSamePeriod(selectedDate, new Date(), apiTimeRange);
+        const isCurrentPeriod = isSamePeriod(selectedDate, new Date(), timeRange);
         const data = await fetchChartData(
           selectedDevice.device_id,
-          apiTimeRange,
+          timeRange as TimeRange,
           isCurrentPeriod ? undefined : selectedDate
         );
         setChartData(data);
@@ -187,46 +190,24 @@ export default function AnalyticsScreen() {
 
     loadData();
   }, [timeRange, selectedDate, selectedDevice?.device_id]);
-  
-  // Map new time range format to API format
-  function timeRangeToApiFormat(range: string): TimeRange {
-    const map: Record<string, TimeRange> = {
-      '24h': 'day',
-      '7d': 'week',
-      '30d': 'month',
-      '365d': 'month', // Use month bucket for year
-    };
-    return map[range] || 'day';
-  }
 
-  // Check if two dates are in the same period
-  function isSamePeriod(date1: Date, date2: Date, range: TimeRange): boolean {
-    if (range === 'hour') {
-      return date1.toDateString() === date2.toDateString() && 
-             date1.getHours() === date2.getHours();
-    }
-    if (range === 'day') {
+  function isSamePeriod(date1: Date, date2: Date, range: string): boolean {
+    if (range === '24h') {
       return date1.toDateString() === date2.toDateString();
     }
-    if (range === 'week') {
+    if (range === '7d') {
       const week1 = getWeekNumber(date1);
       const week2 = getWeekNumber(date2);
       return week1 === week2 && date1.getFullYear() === date2.getFullYear();
     }
-    return date1.getMonth() === date2.getMonth() && 
-           date1.getFullYear() === date2.getFullYear();
-  }
-  
-  // Show loading if fonts not loaded
-  if (!fontsLoaded) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading...</Text>
-        </View>
-      </SafeAreaView>
-    );
+    if (range === '30d') {
+      return date1.getMonth() === date2.getMonth() && 
+             date1.getFullYear() === date2.getFullYear();
+    }
+    if (range === '365d') {
+      return date1.getFullYear() === date2.getFullYear();
+    }
+    return date1.toDateString() === date2.toDateString();
   }
 
   function getWeekNumber(date: Date): number {
@@ -237,35 +218,31 @@ export default function AnalyticsScreen() {
     return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   }
 
-  // Calculate energy stats
   const stats = useMemo(() => {
-    const apiRange = timeRangeToApiFormat(timeRange);
-    return calculateEnergyStats(chartData, apiRange);
+    return calculateEnergyStats(chartData, timeRange as TimeRange);
   }, [chartData, timeRange]);
   
-  // Calculate additional analytics metrics
   const batteryCycles = useMemo(() => calculateBatteryCycles(chartData), [chartData]);
   const peakDemand = useMemo(() => findPeakDemand(chartData), [chartData]);
   const efficiencyMetrics = useMemo(() => calculateEfficiencyMetrics(chartData), [chartData]);
+  const energyBreakdown = useMemo(() => calculateEnergyBreakdown(chartData, timeRange), [chartData, timeRange]);
 
-  // Format date for display
   const formatDateDisplay = () => {
-    const options: Intl.DateTimeFormatOptions = 
-      timeRange === 'hour' 
-        ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }
-        : timeRange === 'day' 
-        ? { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }
-        : timeRange === 'week'
-        ? { day: 'numeric', month: 'short', year: 'numeric' }
-        : { month: 'long', year: 'numeric' };
-    
-    if (timeRange === 'week') {
+    if (timeRange === '24h') {
+      return selectedDate.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    }
+    if (timeRange === '7d') {
       const weekEnd = new Date(selectedDate);
       weekEnd.setDate(weekEnd.getDate() + 6);
       return `${selectedDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })} - ${weekEnd.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`;
     }
-    
-    return selectedDate.toLocaleDateString('en-US', options);
+    if (timeRange === '30d') {
+      return selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    }
+    if (timeRange === '365d') {
+      return selectedDate.getFullYear().toString();
+    }
+    return selectedDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
   // Navigate to previous/next period
@@ -401,19 +378,29 @@ export default function AnalyticsScreen() {
           />
         )}
 
-        {/* Section 2: Energy Summary Cards */}
+        {/* Section 2: Energy Source Breakdown */}
+        <SectionHeader title="Energy Source Breakdown" icon="BarChart2" />
+        <EnergyDonutChart breakdown={energyBreakdown} />
+
+        {/* Section 3: Energy Summary Cards */}
         <SectionHeader title="Energy Summary" icon="BarChart2" />
         <EnergySummaryCards stats={stats} />
+
+        {/* Section 4: Energy Totals */}
+        <SectionHeader title="Energy Totals" icon="BarChart2" />
+        <EnergyBarsChart data={chartData} timeRange={timeRange} />
+
+        {/* Section 5: Battery SoC */}
+        <SectionHeader title="Battery State of Charge" icon="Battery" />
+        <SocBandChart data={chartData} timeRange={timeRange} />
+
+        {/* Section 6: Load Composition */}
+        <SectionHeader title="Load Composition" icon="Zap" />
+        <LoadCompositionChart data={chartData} timeRange={timeRange} />
         
-        {/* Section 3: Battery Performance */}
+        {/* Section 7: Battery Performance */}
         <SectionHeader title="Battery Performance" icon="Battery" />
         <View style={styles.kpiRow}>
-          <KPICard
-            title="Total Cycles"
-            value={batteryCycles.toFixed(2)}
-            icon={RefreshCw}
-            color={CHART_COLORS.battery.line}
-          />
           <KPICard
             title="Peak Grid Demand"
             value={`${peakDemand.gridPeak.value.toFixed(1)} kW`}
@@ -424,9 +411,23 @@ export default function AnalyticsScreen() {
             icon={Zap}
             color={CHART_COLORS.grid.line}
           />
+          <KPICard
+            title="Peak Factory Load"
+            value={`${peakDemand.factoryPeak.value.toFixed(1)} kW`}
+            subtitle={new Date(peakDemand.factoryPeak.timestamp).toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit'
+            })}
+            icon={TrendingUp}
+            color={CHART_COLORS.factory.load}
+          />
         </View>
+
+        {/* Section 8: Battery Cycles */}
+        <SectionHeader title="Battery Cycles" icon="RefreshCw" />
+        <CyclesBarChart data={chartData} timeRange={timeRange} />
         
-        {/* Section 4: Efficiency Metrics */}
+        {/* Section 9: Efficiency Metrics */}
         <SectionHeader title="Efficiency" icon="TrendingUp" />
         <View style={styles.kpiRow}>
           <KPICard
