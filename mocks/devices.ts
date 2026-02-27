@@ -1,4 +1,4 @@
-import { Device, LiveData, Rule } from '@/types';
+import { Device, LiveData, OptimizedScheduleRule } from '@/types';
 
 export const mockDevices: Device[] = [
   {
@@ -35,10 +35,9 @@ export const mockLiveData: LiveData = {
   lastUpdate: new Date(),
 };
 
-export const mockRules: Rule[] = [
+export const mockRules: OptimizedScheduleRule[] = [
   {
     id: 'CHARGE-TO-50',
-    p: 7,
     a: {
       t: 'ct',
       soc: 50,
@@ -49,50 +48,19 @@ export const mockRules: Rule[] = [
     c: {
       ts: 600,
       te: 1400,
-      d: '1234567',
-      vf: 1722470400,
     },
-    act: true,
+    d: 'weekdays',
   },
   {
-    id: 'SUPLUS-FARM',
-    p: 7,
+    id: 'SURPLUS-FARM',
     a: {
       t: 'ch',
       pw: 125,
-      maxg: 0,
     },
     c: {
       ts: 600,
       te: 1400,
-      d: '1234567',
-      vf: 1722470400,
     },
-    act: true,
+    d: 'weekdays',
   },
 ];
-
-export const getActionTypeLabel = (type: string): string => {
-  const labels: Record<string, string> = {
-    ch: 'Charge',
-    dis: 'Discharge',
-    sb: 'Standby',
-    ct: 'Charge to SoC',
-    dt: 'Discharge to SoC',
-    sl: 'Site Limit',
-  };
-  return labels[type] || type;
-};
-
-export const formatTime = (time: number): string => {
-  const hours = Math.floor(time / 100);
-  const minutes = time % 100;
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-};
-
-export const getDaysLabel = (days: string): string => {
-  if (days === '1234567') return 'Everyday';
-  if (days === '12345') return 'Mon-Fri';
-  if (days === '67') return 'Weekends';
-  return days.split('').map(d => ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][parseInt(d)]).join(', ');
-};

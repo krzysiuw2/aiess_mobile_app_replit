@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { fetchLiveData, calculateFactoryLoad, getBatteryStatus } from '@/lib/influxdb';
+import { fetchLiveData } from '@/lib/influxdb';
 import { useAuth } from '@/contexts/AuthContext';
 import { Device, LiveData } from '@/types';
 
@@ -140,29 +140,10 @@ export const useLiveData = (siteId: string | null) => {
       console.log('[LiveData] Fetching live data for site:', siteId);
       
       try {
-        // Fetch real data from InfluxDB
-        const influxData = await fetchLiveData(siteId);
-        
-        // Calculate derived values
-        const factoryLoad = calculateFactoryLoad(
-          influxData.gridPower,
-          influxData.pvPower,
-          influxData.batteryPower
-        );
-        
-        const batteryStatus = getBatteryStatus(influxData.batteryPower);
-        
-        const liveData: LiveData = {
-          gridPower: Math.round(influxData.gridPower * 10) / 10,
-          batteryPower: Math.round(influxData.batteryPower * 10) / 10,
-          batterySoc: Math.round(influxData.batterySoc),
-          batteryStatus,
-          pvPower: Math.round(influxData.pvPower * 10) / 10,
-          factoryLoad: Math.round(factoryLoad * 10) / 10,
-          lastUpdate: influxData.timestamp,
-        };
-        
-        console.log('[LiveData] Data received:', liveData);
+        const liveData = await fetchLiveData(siteId);
+        if (!liveData) {
+          throw new Error('No data returned from InfluxDB');
+        }
         return liveData;
       } catch (error) {
         // Log transient network errors as warnings instead of errors

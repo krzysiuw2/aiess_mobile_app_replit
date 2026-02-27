@@ -1,51 +1,31 @@
-/**
- * AWS Schedules API Client
- * 
- * Handles communication with AWS API Gateway for BESS schedule rules.
- * Uses x-api-key authentication.
- */
-
-import { Rule } from '@/types';
+import type {
+  ActionType,
+  GridOperator,
+  Strategy,
+  Priority,
+  SystemMode,
+  OptimizedAction,
+  OptimizedConditions,
+  OptimizedScheduleRule,
+  ScheduleRuleWithPriority,
+  SchedulesResponse,
+  SaveSchedulesResponse,
+  ScheduleRuleFormData,
+} from '@/types';
 
 const API_ENDPOINT = process.env.EXPO_PUBLIC_AWS_ENDPOINT || '';
 const API_KEY = process.env.EXPO_PUBLIC_AWS_API_KEY || '';
 
-export interface SchedulesResponse {
-  site_id: string;
-  schedules: {
-    priority_4?: Rule[];
-    priority_5?: Rule[];
-    priority_6?: Rule[];
-    priority_7?: Rule[];
-    priority_8?: Rule[];
-    priority_9?: Rule[];
-  };
-  shadow_version: number;
-}
+// ─── API Methods ────────────────────────────────────────────────
 
-export interface SaveScheduleResponse {
-  message: string;
-  site_id: string;
-  shadow_version: number;
-  updated_priorities: string[];
-  total_rules: number;
-}
-
-/**
- * Get all schedules for a device
- */
 export async function getSchedules(siteId: string): Promise<SchedulesResponse> {
   if (!API_ENDPOINT || !API_KEY) {
     throw new Error('AWS Schedules API configuration missing');
   }
 
-  console.log('[Schedules] Fetching schedules for:', siteId);
-
   const response = await fetch(`${API_ENDPOINT}/schedules/${siteId}`, {
     method: 'GET',
-    headers: {
-      'x-api-key': API_KEY,
-    },
+    headers: { 'x-api-key': API_KEY },
   });
 
   if (!response.ok) {
@@ -54,81 +34,24 @@ export async function getSchedules(siteId: string): Promise<SchedulesResponse> {
     throw new Error(`Failed to fetch schedules: ${response.status}`);
   }
 
-  const data = await response.json();
-  console.log('[Schedules] Received schedules, shadow version:', data.shadow_version);
-  return data;
+  return response.json();
 }
 
-/**
- * Get all rules flattened into a single array with priority info
- */
-export function flattenRules(schedules: SchedulesResponse['schedules']): Rule[] {
-  const allRules: Rule[] = [];
-  
-  // Process priorities 4-9 (user-accessible from cloud)
-  for (let p = 4; p <= 9; p++) {
-    const priorityKey = `priority_${p}` as keyof typeof schedules;
-    const rules = schedules[priorityKey] || [];
-    rules.forEach(rule => {
-      allRules.push({ ...rule, p: rule.p || p });
-    });
+export async function saveSchedules(
+  siteId: string,
+  schedules: Record<string, OptimizedScheduleRule[]>,
+  options?: {
+    mode?: SystemMode;
+    safety?: { soc_min: number; soc_max: number };
   }
-  
-  // Sort by priority (higher first), then by ID
-  return allRules.sort((a, b) => {
-    if (b.p !== a.p) return b.p - a.p;
-    return a.id.localeCompare(b.id);
-  });
-}
-
-/**
- * Save a rule (create or update)
- * 
- * IMPORTANT: When priority changes, we must update BOTH old and new priorities!
- * The API replaces ALL rules in a priority - we must merge properly.
- * 
- * @param siteId - Device/site ID
- * @param rule - The rule to save (with new priority in rule.p)
- * @param existingSchedules - Current schedules from last GET
- * @param oldPriority - If editing and priority changed, pass the old priority to remove from
- */
-export async function saveRule(
-  siteId: string, 
-  rule: Rule, 
-  existingSchedules: SchedulesResponse['schedules'],
-  oldPriority?: number
-): Promise<SaveScheduleResponse> {
+): Promise<SaveSchedulesResponse> {
   if (!API_ENDPOINT || !API_KEY) {
     throw new Error('AWS Schedules API configuration missing');
   }
 
-  const newPriorityKey = `priority_${rule.p}` as keyof typeof existingSchedules;
-  const schedulesToUpdate: Record<string, Rule[]> = {};
-  
-  // Handle priority change - remove from old priority
-  if (oldPriority !== undefined && oldPriority !== rule.p) {
-    const oldPriorityKey = `priority_${oldPriority}` as keyof typeof existingSchedules;
-    const oldRules = existingSchedules[oldPriorityKey] || [];
-    // Filter out the rule being moved
-    const filteredOldRules = oldRules.filter(r => (r.id || (r as any).rule_id) !== rule.id);
-    schedulesToUpdate[oldPriorityKey] = filteredOldRules;
-    console.log('[Schedules] Removing rule from old priority:', oldPriority);
-  }
-
-  // Add/update rule in new priority
-  const existingRulesInNewPriority = [...(existingSchedules[newPriorityKey] || [])];
-  
-  // Filter out any existing rule with same ID (handles both same-priority update and cross-priority move)
-  const filteredNewRules = existingRulesInNewPriority.filter(
-    r => (r.id || (r as any).rule_id) !== rule.id
-  );
-  
-  // Add the updated rule
-  filteredNewRules.push(rule);
-  schedulesToUpdate[newPriorityKey] = filteredNewRules;
-
-  console.log('[Schedules] Saving rule:', rule.id, 'to priority', rule.p);
-  console.log('[Schedules] Updating priorities:', Object.keys(schedulesToUpdate));
+  const body: any = { site_id: siteId, sch: schedules };
+  if (options?.mode) body.mode = options.mode;
+  if (options?.safety) body.safety = options.safety;
 
   const response = await fetch(`${API_ENDPOINT}/schedules/${siteId}`, {
     method: 'POST',
@@ -136,160 +59,205 @@ export async function saveRule(
       'x-api-key': API_KEY,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      site_id: siteId,
-      schedules: schedulesToUpdate,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
     console.error('[Schedules] Save error:', response.status, errorText);
-    throw new Error(`Failed to save rule: ${response.status}`);
+    throw new Error(`Failed to save schedules: ${response.status}`);
   }
 
-  const data = await response.json();
-  console.log('[Schedules] Rule saved, new shadow version:', data.shadow_version);
-  return data;
+  return response.json();
 }
 
-/**
- * Delete a rule
- */
-export async function deleteRule(
-  siteId: string,
-  ruleId: string,
-  priority: number,
-  existingSchedules: SchedulesResponse['schedules']
-): Promise<SaveScheduleResponse> {
-  if (!API_ENDPOINT || !API_KEY) {
-    throw new Error('AWS Schedules API configuration missing');
+// ─── Flatten & Sort ─────────────────────────────────────────────
+
+export function flattenRules(sch: SchedulesResponse['sch']): ScheduleRuleWithPriority[] {
+  const allRules: ScheduleRuleWithPriority[] = [];
+
+  for (let p = 4; p <= 9; p++) {
+    const key = `p_${p}` as keyof typeof sch;
+    const rules = sch[key] || [];
+    rules.forEach(rule => allRules.push({ ...rule, priority: p as Priority }));
   }
 
-  const priorityKey = `priority_${priority}` as keyof typeof existingSchedules;
-  const existingRules = existingSchedules[priorityKey] || [];
-  const filteredRules = existingRules.filter(r => r.id !== ruleId);
-
-  console.log('[Schedules] Deleting rule:', ruleId, 'from priority', priority);
-
-  const response = await fetch(`${API_ENDPOINT}/schedules/${siteId}`, {
-    method: 'POST',
-    headers: {
-      'x-api-key': API_KEY,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      site_id: siteId,
-      schedules: {
-        [priorityKey]: filteredRules,
-      },
-    }),
+  return allRules.sort((a, b) => {
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    return a.id.localeCompare(b.id);
   });
+}
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[Schedules] Delete error:', response.status, errorText);
-    throw new Error(`Failed to delete rule: ${response.status}`);
+// ─── Form Conversion ────────────────────────────────────────────
+
+export function formDataToOptimizedRule(data: ScheduleRuleFormData): OptimizedScheduleRule {
+  const rule: OptimizedScheduleRule = {
+    id: data.id,
+    a: buildAction(data),
+  };
+
+  const conditions = buildConditions(data);
+  rule.c = Object.keys(conditions).length > 0 ? conditions : {};
+
+  if (!data.active) rule.act = false;
+  if (data.weekdays && data.weekdays.length > 0 && data.weekdays.length < 7) {
+    rule.d = data.weekdays;
+  }
+  if (data.validFrom && data.validFrom > 0) rule.vf = data.validFrom;
+  if (data.validUntil && data.validUntil > 0) rule.vu = data.validUntil;
+
+  return rule;
+}
+
+function buildAction(data: ScheduleRuleFormData): OptimizedAction {
+  const action: OptimizedAction = { t: data.actionType };
+
+  switch (data.actionType) {
+    case 'ch':
+    case 'dis':
+      if (data.power !== undefined) action.pw = data.power;
+      if (data.usePid) action.pid = true;
+      break;
+    case 'sb':
+      action.pw = 0;
+      break;
+    case 'sl':
+      if (data.highThreshold !== undefined) action.hth = data.highThreshold;
+      if (data.lowThreshold !== undefined) action.lth = data.lowThreshold;
+      break;
+    case 'ct':
+      if (data.targetSoc !== undefined) action.soc = data.targetSoc;
+      if (data.maxPower !== undefined) action.maxp = data.maxPower;
+      if (data.maxGridPower !== undefined) action.maxg = data.maxGridPower;
+      if (data.strategy) action.str = data.strategy;
+      if (data.usePid) action.pid = true;
+      break;
+    case 'dt':
+      if (data.targetSoc !== undefined) action.soc = data.targetSoc;
+      if (data.maxPower !== undefined) action.maxp = data.maxPower;
+      if (data.minGridPower !== undefined) action.ming = data.minGridPower;
+      if (data.strategy) action.str = data.strategy;
+      if (data.usePid) action.pid = true;
+      break;
   }
 
-  const data = await response.json();
-  console.log('[Schedules] Rule deleted, new shadow version:', data.shadow_version);
-  return data;
+  return action;
 }
 
-/**
- * Helper: Get human-readable action type
- */
-export function getActionTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    ch: 'Charge',
-    dis: 'Discharge',
-    sb: 'Standby',
-    ct: 'Charge to Target',
-    dt: 'Discharge to Target',
-    sl: 'Site Limit',
+function buildConditions(data: ScheduleRuleFormData): OptimizedConditions {
+  const c: OptimizedConditions = {};
+
+  if (data.timeStart) c.ts = parseTime(data.timeStart);
+  if (data.timeEnd) c.te = parseTime(data.timeEnd);
+  if (data.socMin !== undefined) c.sm = data.socMin;
+  if (data.socMax !== undefined) c.sx = data.socMax;
+  if (data.gridPowerOperator) c.gpo = data.gridPowerOperator;
+  if (data.gridPowerValue !== undefined) c.gpv = data.gridPowerValue;
+  if (data.gridPowerValueMax !== undefined) c.gpx = data.gridPowerValueMax;
+
+  return c;
+}
+
+export function optimizedRuleToFormData(
+  rule: OptimizedScheduleRule,
+  priority: Priority
+): ScheduleRuleFormData {
+  return {
+    id: rule.id,
+    priority,
+    actionType: rule.a.t,
+    active: rule.act !== false,
+
+    power: rule.a.pw,
+    usePid: rule.a.pid ?? false,
+    highThreshold: rule.a.hth,
+    lowThreshold: rule.a.lth,
+    targetSoc: rule.a.soc,
+    maxPower: rule.a.maxp,
+    maxGridPower: rule.a.maxg,
+    minGridPower: rule.a.ming,
+    strategy: rule.a.str,
+
+    timeStart: rule.c?.ts !== undefined ? formatTime(rule.c.ts) : undefined,
+    timeEnd: rule.c?.te !== undefined ? formatTime(rule.c.te) : undefined,
+    socMin: rule.c?.sm,
+    socMax: rule.c?.sx,
+    gridPowerOperator: rule.c?.gpo,
+    gridPowerValue: rule.c?.gpv,
+    gridPowerValueMax: rule.c?.gpx,
+
+    weekdays: Array.isArray(rule.d) ? rule.d : weekdayShorthandToArray(rule.d),
+    validFrom: rule.vf,
+    validUntil: rule.vu,
   };
-  return labels[type] || type;
 }
 
-/**
- * Helper: Format time from HHMM integer to HH:MM string
- */
-export function formatTime(time: number): string {
-  const hours = Math.floor(time / 100);
-  const minutes = time % 100;
+// ─── Validation ─────────────────────────────────────────────────
+
+export function validateRule(rule: OptimizedScheduleRule, priority: number): string[] {
+  const errors: string[] = [];
+
+  if (!rule.id || rule.id.length === 0) errors.push('Rule ID is required');
+  if (rule.id && rule.id.length > 63) errors.push('Rule ID max 63 characters');
+  if (priority < 4 || priority > 9) errors.push('Priority must be 4-9');
+
+  switch (rule.a.t) {
+    case 'ch':
+    case 'dis':
+      if (rule.a.pw === undefined || rule.a.pw < 0) errors.push('Power must be >= 0');
+      break;
+    case 'sl':
+      if (rule.a.hth === undefined) errors.push('High threshold required for site limit');
+      if (rule.a.lth === undefined) errors.push('Low threshold required for site limit');
+      if (priority !== 9) errors.push('Site limit action only allowed on P9');
+      break;
+    case 'ct':
+    case 'dt':
+      if (rule.a.soc === undefined) errors.push('Target SoC required');
+      if (rule.a.soc !== undefined && (rule.a.soc < 0 || rule.a.soc > 100)) {
+        errors.push('Target SoC must be 0-100');
+      }
+      break;
+  }
+
+  if (rule.c?.sm !== undefined && (rule.c.sm < 0 || rule.c.sm > 100)) {
+    errors.push('SoC min must be 0-100');
+  }
+  if (rule.c?.sx !== undefined && (rule.c.sx < 0 || rule.c.sx > 100)) {
+    errors.push('SoC max must be 0-100');
+  }
+  if (rule.c?.sm !== undefined && rule.c?.sx !== undefined && rule.c.sm >= rule.c.sx) {
+    errors.push('SoC min must be less than SoC max');
+  }
+
+  return errors;
+}
+
+// ─── Display Helpers ────────────────────────────────────────────
+
+export function formatTime(hhmm: number): string {
+  const hours = Math.floor(hhmm / 100);
+  const minutes = hhmm % 100;
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 }
 
-/**
- * Helper: Parse HH:MM string to HHMM integer
- */
 export function parseTime(timeStr: string): number {
   const [hours, minutes] = timeStr.split(':').map(Number);
   return hours * 100 + minutes;
 }
 
-/**
- * Helper: Get weekday label from shorthand, digit string, or array
- */
-export function getDaysLabel(days: string | string[] | undefined): string {
-  console.log('[getDaysLabel] Input:', days, 'type:', typeof days);
-  
-  if (!days) return 'Everyday';
-  
-  // Handle array format (verbose) ["Mon", "Tue", ...]
-  if (Array.isArray(days)) {
-    if (days.length === 7) return 'Everyday';
-    if (days.length === 0) return 'Everyday';
-    return days.join(', ');
-  }
-  
-  const daysStr = String(days);
-  
-  const shorthandLabels: Record<string, string> = {
-    weekdays: 'Mon-Fri',
-    wd: 'Mon-Fri',
-    weekend: 'Sat-Sun',
-    we: 'Sat-Sun',
-    everyday: 'Everyday',
-    ed: 'Everyday',
-    all: 'Everyday',
+export function getActionTypeLabel(type: ActionType): string {
+  const labels: Record<ActionType, string> = {
+    ch: 'Charge',
+    dis: 'Discharge',
+    sb: 'Standby',
+    sl: 'Site Limit',
+    ct: 'Charge to Target',
+    dt: 'Discharge to Target',
   };
-  
-  if (shorthandLabels[daysStr.toLowerCase()]) {
-    return shorthandLabels[daysStr.toLowerCase()];
-  }
-  
-  // Handle digit string like "12345" (Mon-Fri) or "5" (Fri only)
-  // Schema: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 0 or 7=Sun
-  if (/^[0-7]+$/.test(daysStr)) {
-    const dayMap: Record<string, string> = {
-      '0': 'Sun',
-      '1': 'Mon',
-      '2': 'Tue',
-      '3': 'Wed',
-      '4': 'Thu',
-      '5': 'Fri',
-      '6': 'Sat',
-      '7': 'Sun',
-    };
-    const selectedDays = daysStr.split('').map(d => dayMap[d] || d);
-    // Remove duplicates and join
-    const uniqueDays = [...new Set(selectedDays)];
-    return uniqueDays.join(', ');
-  }
-  
-  // Handle range format like "mon-fri"
-  if (daysStr.includes('-')) {
-    return daysStr;
-  }
-  
-  return daysStr;
+  return labels[type] || type;
 }
 
-/**
- * Helper: Get priority label
- */
 export function getPriorityLabel(priority: number): string {
   const labels: Record<number, string> = {
     4: 'P4 - Reserved',
@@ -302,3 +270,103 @@ export function getPriorityLabel(priority: number): string {
   return labels[priority] || `P${priority}`;
 }
 
+export function getStrategyLabel(str: Strategy): string {
+  const labels: Record<Strategy, string> = {
+    eq: 'Equal Spread',
+    agg: 'Aggressive',
+    con: 'Conservative',
+  };
+  return labels[str] || str;
+}
+
+export function getGridOperatorLabel(op: GridOperator): string {
+  const labels: Record<GridOperator, string> = {
+    gt: 'Greater than',
+    lt: 'Less than',
+    gte: 'Greater or equal',
+    lte: 'Less or equal',
+    eq: 'Equal to',
+    bt: 'Between',
+  };
+  return labels[op] || op;
+}
+
+export function getDaysLabel(d: string | number[] | undefined): string {
+  if (!d) return 'Everyday';
+
+  if (Array.isArray(d)) {
+    if (d.length === 0 || d.length === 7) return 'Everyday';
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return d.map(i => dayNames[i]).join(', ');
+  }
+
+  const shorthand: Record<string, string> = {
+    weekdays: 'Mon-Fri', wd: 'Mon-Fri',
+    weekend: 'Sat-Sun', we: 'Sat-Sun',
+    everyday: 'Everyday', ed: 'Everyday', all: 'Everyday',
+  };
+
+  const lower = d.toLowerCase();
+  if (shorthand[lower]) return shorthand[lower];
+
+  if (/^[0-7]+$/.test(d)) {
+    const dayMap: Record<string, string> = {
+      '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed',
+      '4': 'Thu', '5': 'Fri', '6': 'Sat', '7': 'Sun',
+    };
+    const unique = [...new Set(d.split('').map(ch => dayMap[ch] || ch))];
+    return unique.join(', ');
+  }
+
+  if (d.includes('-')) return d;
+
+  return d;
+}
+
+export function weekdayShorthandToArray(d: string | number[] | undefined): number[] {
+  if (!d) return [0, 1, 2, 3, 4, 5, 6];
+  if (Array.isArray(d)) return d;
+
+  const shorthandMap: Record<string, number[]> = {
+    weekdays: [1, 2, 3, 4, 5],
+    wd: [1, 2, 3, 4, 5],
+    weekend: [0, 6],
+    we: [0, 6],
+    everyday: [0, 1, 2, 3, 4, 5, 6],
+    ed: [0, 1, 2, 3, 4, 5, 6],
+    all: [0, 1, 2, 3, 4, 5, 6],
+  };
+
+  const lower = d.toLowerCase();
+  return shorthandMap[lower] || [0, 1, 2, 3, 4, 5, 6];
+}
+
+export function getRuleSummary(rule: OptimizedScheduleRule): string {
+  const action = getActionTypeLabel(rule.a.t);
+  let detail = '';
+
+  switch (rule.a.t) {
+    case 'ch':
+    case 'dis':
+      detail = `${rule.a.pw} kW`;
+      if (rule.a.pid) detail += ' (PID)';
+      break;
+    case 'sl':
+      detail = `${rule.a.lth} to ${rule.a.hth} kW`;
+      break;
+    case 'ct':
+    case 'dt':
+      detail = `to ${rule.a.soc}%`;
+      if (rule.a.maxp) detail += `, max ${rule.a.maxp} kW`;
+      break;
+  }
+
+  let time = '';
+  if (rule.c?.ts !== undefined && rule.c?.te !== undefined) {
+    time = ` (${formatTime(rule.c.ts)}-${formatTime(rule.c.te)})`;
+  }
+
+  const days = rule.d ? `, ${getDaysLabel(rule.d)}` : '';
+
+  return `${action} ${detail}${time}${days}`;
+}

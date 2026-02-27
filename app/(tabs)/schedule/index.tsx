@@ -8,183 +8,126 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { 
-  Plus, 
-  CheckCircle, 
-  XCircle, 
-  Pencil, 
+import {
+  Plus,
+  Pencil,
   Trash2,
   Zap,
-  Battery,
   Clock,
   Calendar,
   CalendarCheck,
+  Bot,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useSchedules } from '@/hooks/useSchedules';
-import { 
-  getActionTypeLabel, 
-  formatTime, 
+import {
+  getActionTypeLabel,
+  formatTime,
   getDaysLabel,
   getPriorityLabel,
+  getRuleSummary,
 } from '@/lib/aws-schedules';
-import { Rule } from '@/types';
+import type { ScheduleRuleWithPriority } from '@/types';
 
-interface RuleCardProps {
-  rule: Rule;
-  onEdit: () => void;
-  onDelete: () => void;
-  t: any;
-}
-
-// Format timestamp to readable date
 const formatDate = (timestamp: number | undefined): string => {
-  if (timestamp === undefined || timestamp === null) return '∞';
-  // Timestamp could be Unix seconds or milliseconds
+  if (timestamp === undefined || timestamp === null || timestamp === 0) return '';
   const ms = timestamp > 1e12 ? timestamp : timestamp * 1000;
   const date = new Date(ms);
-  return date.toLocaleDateString('en-GB', { 
-    day: '2-digit', 
-    month: 'short', 
-    year: 'numeric' 
+  return date.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
   });
 };
 
-// Get validity label
 const getValidityLabel = (vf: number | undefined, vu: number | undefined): string => {
   const from = formatDate(vf);
   const until = formatDate(vu);
-  
-  if (from === '∞' && until === '∞') {
-    return '∞'; // Always valid
-  }
-  
-  // If same day, show only one date
-  if (from !== '∞' && until !== '∞' && from === until) {
-    return from;
-  }
-  
-  return `${from} → ${until}`;
+
+  if (!from && !until) return 'Permanent';
+  if (from && until && from === until) return from;
+  if (from && !until) return `From ${from}`;
+  if (!from && until) return `Until ${until}`;
+  return `${from} - ${until}`;
 };
 
-function RuleCard({ rule, onEdit, onDelete, t }: RuleCardProps) {
-  const isActive = rule.act !== false; // Default is true
-  const actionLabel = rule.a?.t ? getActionTypeLabel(rule.a.t) : 'Unknown';
-  
-  // Days field "d" is at top level of rule, NOT inside conditions "c"
-  // Also check for verbose format "weekdays" field
-  const daysValue = rule.d || rule.weekdays || rule.c?.d;
-  const daysLabel = daysValue ? getDaysLabel(daysValue) : 'Everyday';
-  const timeRange = rule.c?.ts !== undefined && rule.c?.te !== undefined
-    ? `${formatTime(rule.c.ts)} - ${formatTime(rule.c.te)}`
-    : 'Always';
-  
-  // Validity - check top level vf/vu or inside conditions
-  const validFrom = rule.vf ?? rule.c?.vf;
-  const validUntil = rule.vu ?? rule.c?.vu;
-  const validityLabel = getValidityLabel(validFrom, validUntil);
+interface RuleCardProps {
+  rule: ScheduleRuleWithPriority;
+  onEdit: () => void;
+  onDelete: () => void;
+  onToggle: () => void;
+}
 
-  // Build action details string
-  const getActionDetails = () => {
-    if (!rule.a) return '-';
-    
-    const parts: string[] = [];
-    
-    if (rule.a.soc !== undefined) {
-      parts.push(`${rule.a.soc}% SoC`);
-    }
-    if (rule.a.pw !== undefined) {
-      parts.push(`${rule.a.pw} kW`);
-    }
-    if (rule.a.maxp !== undefined) {
-      parts.push(`Max: ${rule.a.maxp} kW`);
-    }
-    if (rule.a.maxg !== undefined) {
-      parts.push(`Grid max: ${rule.a.maxg} kW`);
-    }
-    if (rule.a.hth !== undefined) {
-      parts.push(`High: ${rule.a.hth} kW`);
-    }
-    if (rule.a.lth !== undefined) {
-      parts.push(`Low: ${rule.a.lth} kW`);
-    }
-    
-    return parts.join(' • ') || '-';
-  };
+function RuleCard({ rule, onEdit, onDelete, onToggle }: RuleCardProps) {
+  const isActive = rule.act !== false;
+  const isAI = rule.s === 'ai';
+  const actionLabel = getActionTypeLabel(rule.a.t);
+  const daysLabel = rule.d ? getDaysLabel(rule.d) : 'Everyday';
+  const timeRange =
+    rule.c?.ts !== undefined && rule.c?.te !== undefined
+      ? `${formatTime(rule.c.ts)} - ${formatTime(rule.c.te)}`
+      : 'Always';
+  const validityLabel = getValidityLabel(rule.vf, rule.vu);
+  const summary = getRuleSummary(rule);
 
   return (
     <View style={[styles.ruleCard, !isActive && styles.ruleCardInactive]}>
       {/* Header */}
       <View style={styles.cardHeader}>
         <View style={styles.headerLeft}>
-          <Text style={styles.ruleId}>{rule.id}</Text>
-          <Text style={styles.priorityBadge}>P{rule.p}</Text>
+          <Text style={styles.ruleId} numberOfLines={1}>{rule.id}</Text>
+          <Text style={styles.priorityBadge}>P{rule.priority}</Text>
+          {isAI && (
+            <View style={styles.aiBadge}>
+              <Bot size={12} color="#8b5cf6" />
+              <Text style={styles.aiBadgeText}>AI</Text>
+            </View>
+          )}
         </View>
-        <View style={styles.headerRight}>
-          <View style={[styles.statusBadge, !isActive && styles.statusBadgeInactive]}>
-            {isActive ? (
-              <CheckCircle size={16} color={Colors.success} />
-            ) : (
-              <XCircle size={16} color={Colors.textSecondary} />
-            )}
-            <Text style={[styles.statusText, !isActive && styles.statusTextInactive]}>
-              {isActive ? 'Active' : 'Inactive'}
-            </Text>
-          </View>
-        </View>
+        <Switch
+          value={isActive}
+          onValueChange={onToggle}
+          trackColor={{ false: Colors.border, true: Colors.primaryLight }}
+          thumbColor={isActive ? Colors.primary : Colors.textSecondary}
+          style={styles.toggleSwitch}
+        />
       </View>
 
-      {/* Content */}
-      <View style={styles.cardContent}>
-        {/* Action */}
-        <View style={styles.infoRow}>
-          <Zap size={16} color={Colors.primary} />
-          <Text style={styles.infoLabel}>Action:</Text>
-          <Text style={styles.infoValue}>{actionLabel}</Text>
-        </View>
-        
-        {/* Details */}
-        <View style={styles.infoRow}>
-          <Battery size={16} color={Colors.textSecondary} />
-          <Text style={styles.infoLabel}>Details:</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{getActionDetails()}</Text>
-        </View>
+      {/* Summary */}
+      <Text style={styles.summaryText}>{summary}</Text>
 
-        {/* Time */}
+      {/* Details */}
+      <View style={styles.cardContent}>
         <View style={styles.infoRow}>
-          <Clock size={16} color={Colors.textSecondary} />
-          <Text style={styles.infoLabel}>Time:</Text>
+          <Clock size={14} color={Colors.textSecondary} />
           <Text style={styles.infoValue}>{timeRange}</Text>
         </View>
-
-        {/* Days */}
         <View style={styles.infoRow}>
-          <Calendar size={16} color={Colors.textSecondary} />
-          <Text style={styles.infoLabel}>Days:</Text>
+          <Calendar size={14} color={Colors.textSecondary} />
           <Text style={styles.infoValue}>{daysLabel}</Text>
         </View>
-
-        {/* Validity */}
-        <View style={styles.infoRow}>
-          <CalendarCheck size={16} color={Colors.textSecondary} />
-          <Text style={styles.infoLabel}>Valid:</Text>
-          <Text style={styles.infoValue}>{validityLabel}</Text>
-        </View>
+        {validityLabel !== 'Permanent' && (
+          <View style={styles.infoRow}>
+            <CalendarCheck size={14} color={Colors.textSecondary} />
+            <Text style={styles.infoValue}>{validityLabel}</Text>
+          </View>
+        )}
       </View>
 
       {/* Actions */}
       <View style={styles.cardActions}>
         <TouchableOpacity style={styles.actionButton} onPress={onEdit}>
-          <Pencil size={18} color={Colors.primary} />
+          <Pencil size={16} color={Colors.primary} />
           <Text style={styles.actionButtonText}>Edit</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.actionButton, styles.deleteButton]} onPress={onDelete}>
-          <Trash2 size={18} color={Colors.error} />
+          <Trash2 size={16} color={Colors.error} />
           <Text style={[styles.actionButtonText, styles.deleteButtonText]}>Delete</Text>
         </TouchableOpacity>
       </View>
@@ -195,19 +138,18 @@ function RuleCard({ rule, onEdit, onDelete, t }: RuleCardProps) {
 export default function ScheduleListScreen() {
   const { t } = useSettings();
   const { selectedDevice } = useDevices();
-  const { rules, isLoading, error, refetch, removeRule, shadowVersion } = useSchedules();
-  
-  // Filter out P9 rules (Site Limit is a settings-type rule, not a schedule)
-  const scheduleRules = rules.filter(rule => rule.p !== 9);
+  const { rules, isLoading, error, refetch, deleteRule, toggleRule } = useSchedules();
 
-  const handleEditRule = (rule: Rule) => {
-    router.push({ 
-      pathname: '/(tabs)/schedule/[ruleId]', 
-      params: { ruleId: rule.id, priority: rule.p.toString() } 
+  const scheduleRules = rules.filter(rule => rule.priority !== 9);
+
+  const handleEditRule = (rule: ScheduleRuleWithPriority) => {
+    router.push({
+      pathname: '/(tabs)/schedule/[ruleId]',
+      params: { ruleId: rule.id, priority: rule.priority.toString() },
     });
   };
 
-  const handleDeleteRule = (rule: Rule) => {
+  const handleDeleteRule = (rule: ScheduleRuleWithPriority) => {
     Alert.alert(
       'Delete Rule',
       `Are you sure you want to delete "${rule.id}"?`,
@@ -218,14 +160,22 @@ export default function ScheduleListScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await removeRule(rule.id, rule.p);
-            } catch (err) {
+              await deleteRule(rule.id, rule.priority);
+            } catch {
               Alert.alert('Error', 'Failed to delete rule');
             }
           },
         },
       ]
     );
+  };
+
+  const handleToggleRule = async (rule: ScheduleRuleWithPriority) => {
+    try {
+      await toggleRule(rule.id, rule.priority);
+    } catch {
+      Alert.alert('Error', 'Failed to toggle rule');
+    }
   };
 
   const handleAddRule = () => {
@@ -245,18 +195,15 @@ export default function ScheduleListScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>{t.schedules.title}</Text>
           <Text style={styles.headerSubtitle}>
-            {selectedDevice.name} • {scheduleRules.length} rules
-            {shadowVersion && ` • v${shadowVersion}`}
+            {selectedDevice.name} - {scheduleRules.length} rules
           </Text>
         </View>
       </View>
 
-      {/* Content */}
       {isLoading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={Colors.primary} />
@@ -285,17 +232,16 @@ export default function ScheduleListScreen() {
         >
           {scheduleRules.map((rule) => (
             <RuleCard
-              key={`${rule.p}-${rule.id}`}
+              key={`${rule.priority}-${rule.id}`}
               rule={rule}
               onEdit={() => handleEditRule(rule)}
               onDelete={() => handleDeleteRule(rule)}
-              t={t}
+              onToggle={() => handleToggleRule(rule)}
             />
           ))}
         </ScrollView>
       )}
 
-      {/* FAB */}
       <TouchableOpacity style={styles.fab} onPress={handleAddRule}>
         <Plus size={28} color="#fff" />
       </TouchableOpacity>
@@ -374,13 +320,13 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   ruleCardInactive: {
-    opacity: 0.6,
+    opacity: 0.55,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -389,63 +335,55 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   ruleId: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: Colors.text,
     flexShrink: 1,
   },
   priorityBadge: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: Colors.primary,
     backgroundColor: Colors.primaryLight,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 4,
   },
-  headerRight: {
+  aiBadge: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(34, 197, 94, 0.1)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusBadgeInactive: {
-    backgroundColor: Colors.surfaceSecondary,
-  },
-  statusText: {
-    fontSize: 12,
+  aiBadgeText: {
+    fontSize: 11,
     fontWeight: '600',
-    color: Colors.success,
+    color: '#8b5cf6',
   },
-  statusTextInactive: {
-    color: Colors.textSecondary,
+  toggleSwitch: {
+    transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }],
+  },
+  summaryText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Colors.text,
+    marginBottom: 10,
   },
   cardContent: {
-    gap: 8,
+    gap: 5,
     marginBottom: 12,
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  infoLabel: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    width: 55,
+    gap: 6,
   },
   infoValue: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: Colors.text,
-    flex: 1,
+    fontSize: 12,
+    color: Colors.textSecondary,
   },
   cardActions: {
     flexDirection: 'row',
@@ -457,14 +395,14 @@ const styles = StyleSheet.create({
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
     backgroundColor: Colors.primaryLight,
     borderRadius: 8,
   },
   actionButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: Colors.primary,
   },

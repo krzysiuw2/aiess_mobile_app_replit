@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Energetyczny v3 (PL)</title>
+    <style>
+        body {
+            font-family: -apple-system, sans-serif;
+            background-color: #f8fafc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 2rem;
+        }
+
+        .dashboard-container {
+            background: #ffffff;
+            border-radius: 24px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 500px;
+            padding: 2rem;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            align-items: stretch;
+            /* Give it a mobile app feel */
+            min-height: 800px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            color: #1e293b;
+            margin: 0 0 1rem 0;
+        }
+
+        .site-banner {
+            background: #1e1b4b;
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .site-info h2 { margin: 0; font-size: 1.1rem; }
+        .site-info p { margin: 0; font-size: 0.8rem; opacity: 0.7; }
+        
+        .site-status {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* The SVG Canvas */
+        .svg-canvas {
+            width: 100%;
+            height: 600px; /* Tall enough for the layout */
+            /* border: 1px solid red; /* for debugging */
+            position: relative;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+        }
+
+        /* CSS for the Flow Lines */
+        .wire-base {
+            fill: none;
+            stroke: #cbd5e1;
+            stroke-width: 4;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .wire-electrons {
+            fill: none;
+            stroke: #3b82f6;
+            stroke-width: 4;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            stroke-dasharray: 8 16;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .wire-electrons.flowing { opacity: 1; }
+        .flow-forward { animation: flowAnim 1s linear infinite; }
+        .flow-reverse { animation: flowAnimReverse 1s linear infinite; }
+
+        @keyframes flowAnim { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+        @keyframes flowAnimReverse { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 24; } }
+
+        /* General Node text styles */
+        .tabular-text { font-variant-numeric: tabular-nums; }
+        
+        /* Sun animations */
+        @keyframes rayPulse { 0% { opacity: 0.3; } 50% { opacity: 1; } 100% { opacity: 0.3; } }
+        @keyframes shineDash { 0% { stroke-dashoffset: 20; opacity: 0; } 20% { opacity: 1; } 80% { opacity: 1; } 100% { stroke-dashoffset: -20; opacity: 0; } }
+        .sun-active .sun-rays { animation: rayPulse 3s ease-in-out infinite; }
+        .sun-active .shine-beam-line { animation: shineDash 2s linear infinite; }
+
+        /* Factory smoke */
+        @keyframes smokeRise {
+            0% { transform: translateY(0) scale(1); opacity: 0.8; }
+            100% { transform: translateY(-15px) scale(2); opacity: 0; }
+        }
+        .smoke-active { animation: smokeRise 2.5s ease-in infinite; }
+
+        /* Controls Panel (overlaying the app to test) */
+        .debug-controls {
+            position: fixed;
+            left: 20px;
+            top: 20px;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            width: 250px;
+            font-size: 0.8rem;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .debug-controls h3 { margin-top: 0; font-size: 1rem;}
+        .control-group { margin-bottom: 10px; }
+        .control-group label { display: block; font-weight: bold; margin-bottom: 5px; }
+        .control-group input[type="range"] { width: 100%; }
+        
+    </style>
+</head>
+<body>
+
+    <!-- DEBUG CONTROLS TO MANIPULATE THE DASHBOARD -->
+    <div class="debug-controls">
+        <h3>Kontrola na żywo</h3>
+        
+        <div class="control-group">
+            <label>SoC Baterii (%) <span id="lbl-soc">42</span></label>
+            <input type="range" id="ctrl-soc" min="0" max="100" value="42" oninput="document.getElementById('lbl-soc').innerText=this.value; updateDashboard();">
+        </div>
+        
+        <div class="control-group">
+            <label>Moc Baterii (kW) <span id="lbl-batt">-14.2</span></label>
+            <input type="range" id="ctrl-batt" min="-30" max="30" step="0.1" value="-14.2" oninput="document.getElementById('lbl-batt').innerText=this.value; updateDashboard();">
+        </div>
+
+        <div class="control-group">
+            <label>Moc Sieci (kW) <span id="lbl-grid">0.6</span></label>
+            <input type="range" id="ctrl-grid" min="-50" max="50" step="0.1" value="0.6" oninput="document.getElementById('lbl-grid').innerText=this.value; updateDashboard();">
+        </div>
+
+        <div class="control-group">
+            <label>Moc Odbiornika (kW) <span id="lbl-load">0.6</span></label>
+            <input type="range" id="ctrl-load" min="0" max="50" step="0.1" value="0.6" oninput="document.getElementById('lbl-load').innerText=this.value; updateDashboard();">
+        </div>
+
+        <div class="control-group">
+            <label>Moc PV (kW) <span id="lbl-pv">0.0</span></label>
+            <input type="range" id="ctrl-pv" min="0" max="50" step="0.1" value="0.0" oninput="document.getElementById('lbl-pv').innerText=this.value; updateDashboard();">
+        </div>
+
+        <div class="control-group">
+            <label>Akcja Reguły AI</label>
+            <select id="ctrl-action" onchange="updateDashboard();" style="width:100%; padding:4px;">
+                <option value="ch">Ładowanie (ch)</option>
+                <option value="sb">Czuwanie (sb)</option>
+                <option value="dis">Rozładowanie (dis)</option>
+            </select>
+        </div>
+    </div>
+
+
+    <!-- THE MOBILE APP DASHBOARD -->
+    <div class="dashboard-container">
+        
+        <div class="header">
+            <h1>Panel na żywo</h1>
+            <div class="site-banner">
+                <div class="site-info">
+                    <h2>Domagała</h2>
+                    <p>domagala_1</p>
+                </div>
+                <div class="site-status">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    Online
+                </div>
+            </div>
+        </div>
+
+        <!-- Master SVG ViewBox (350x550) provides the coordinate system for layout -->
+        <div class="svg-canvas">
+            <svg viewBox="0 0 350 550" preserveAspectRatio="xMidYMid meet">
+                
+                <!-- Shared Filters -->
+                <defs>
+                    <filter id="card-shadow" x="-5%" y="-5%" width="110%" height="110%">
+                        <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.1" />
+                    </filter>
+                    
+                    <clipPath id="liquid-clip">
+                        <rect x="20" y="30" width="60" height="100" rx="4" />
+                    </clipPath>
+
+                    <filter id="lamp-glow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="2" result="blur" />
+                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                    
+                    <filter id="smoke-blur" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="1.5" />
+                    </filter>
+
+                    <filter id="sun-glow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="2" result="blur" />
+                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                </defs>
+
+                <!-- ==========================================
+                     FLOW LINES LAYER (Underneath everything) 
+                     ========================================== -->
+                <g id="lines-layer">
+                    <!-- Base Standby Lines -->
+                    <path class="wire-base" d="M 50 150 L 50 250 Q 50 270 70 270 L 155 270 Q 175 270 175 290 L 175 320" /> <!-- Batt to Hub -->
+                    <path class="wire-base" d="M 175 376 L 175 420" /> <!-- Hub to Load -->
+                    <path class="wire-base" d="M 155 350 L 60 350 Q 40 350 40 370 L 40 420" /> <!-- Hub to Grid -->
+                    <path class="wire-base" d="M 195 350 L 290 350 Q 310 350 310 370 L 310 420" /> <!-- Hub to PV -->
+                    
+                    <!-- Animated Electron Lines -->
+                    <path id="line-batt" class="wire-electrons" d="M 50 150 L 50 250 Q 50 270 70 270 L 155 270 Q 175 270 175 290 L 175 320" />
+                    <path id="line-load" class="wire-electrons" d="M 175 376 L 175 420" />
+                    <path id="line-grid" class="wire-electrons" d="M 155 350 L 60 350 Q 40 350 40 370 L 40 420" />
+                    <path id="line-pv" class="wire-electrons" d="M 195 350 L 290 350 Q 310 350 310 370 L 310 420" />
+                </g>
+
+                <!-- ==========================================
+                     COMPONENTS LAYER
+                     ========================================== -->
+                <g id="components-layer">
+                    
+                    <!-- 1. BATTERY NODE (Top Left) -->
+                    <!-- Positioned at x=0, y=0 -->
+                    <g transform="translate(0, 0)">
+                        <!-- Battery Outer Shell -->
+                        <rect x="16" y="26" width="68" height="108" rx="8" fill="#0f172a" />
+                        <rect x="36" y="16" width="28" height="10" rx="3" fill="#0f172a" />
+                        <rect x="20" y="30" width="60" height="100" rx="4" fill="#1e293b" />
+                        <g stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.3">
+                            <line x1="72" y1="55" x2="80" y2="55" />
+                            <line x1="68" y1="80" x2="80" y2="80" />
+                            <line x1="72" y1="105" x2="80" y2="105" />
+                        </g>
+                        <!-- Liquid -->
+                        <g clip-path="url(#liquid-clip)">
+                            <g id="batt-wave-container">
+                                <path id="batt-liquid-path" fill="#10b981" d="M -120 0 Q -105 -10 -90 0 T -60 0 Q -45 -10 -30 0 T 0 0 Q 15 -10 30 0 T 60 0 Q 75 -10 90 0 T 120 0 Q 135 -10 150 0 T 180 0 Q 195 -10 210 0 T 240 0 V 150 H -120 Z" />
+                            </g>
+                        </g>
+                        <!-- Highlights -->
+                        <rect x="20" y="30" width="60" height="100" rx="4" fill="none" stroke="#334155" stroke-width="2" />
+                        <rect x="22" y="32" width="10" height="96" rx="2" fill="#ffffff" opacity="0.1" />
+                    </g>
+
+                    <!-- 2. SoC CARD (Top Middle) -->
+                    <!-- Positioned at x=100, y=20 -->
+                    <g transform="translate(100, 20)">
+                        <rect x="2" y="2" width="106" height="50" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="2" filter="url(#card-shadow)" />
+                        
+                        <text x="55" y="22" fill="#475569" font-size="12" font-weight="600" text-anchor="middle">SoC</text>
+                        <text id="node-soc-text" x="55" y="42" fill="#10b981" font-size="18" font-weight="bold" text-anchor="middle" class="tabular-text">42.0 %</text>
+                    </g>
+
+                    <!-- 3. STATUS CARD (Top Right) -->
+                    <!-- Positioned at x=220, y=20 -->
+                    <g transform="translate(220, 20)">
+                        <rect x="2" y="2" width="116" height="50" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="2" filter="url(#card-shadow)" />
+                        
+                        <!-- Status Icon -->
+                        <g id="status-icon" transform="translate(20, 27)" class="">
+                            <circle id="status-outer" cx="0" cy="0" r="10" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" />
+                            <circle id="status-inner" cx="0" cy="0" r="4" fill="#64748b" />
+                        </g>
+
+                        <text x="75" y="22" fill="#475569" font-size="12" font-weight="600" text-anchor="middle">Status</text>
+                        <text id="node-status-text" x="75" y="42" fill="#1e293b" font-size="14" font-weight="bold" text-anchor="middle">Czuwanie</text>
+                    </g>
+
+                    <!-- 4. BATTERY POWER CARD (Middle Right) -->
+                    <!-- Positioned at x=220, y=80 -->
+                    <g transform="translate(220, 80)">
+                        <rect x="2" y="2" width="116" height="50" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="2" filter="url(#card-shadow)" />
+                        <!-- Lightning Bolt -->
+                        <path d="M 25 15 L 15 30 L 22 30 L 18 40 L 30 25 L 23 25 Z" fill="none" stroke="#475569" stroke-width="2" stroke-linejoin="round" />
+                        
+                        <text x="75" y="22" fill="#475569" font-size="12" font-weight="600" text-anchor="middle">Moc</text>
+                        <text id="node-batt-power-text" x="75" y="42" fill="#1e293b" font-size="16" font-weight="bold" text-anchor="middle" class="tabular-text">0.0 kW</text>
+                    </g>
+
+                    <!-- 5. AI DECISION NODE (Below Power Card) -->
+                    <!-- Positioned at x=110, y=145 -->
+                    <g transform="translate(100, 145)">
+                        <rect x="2" y="2" width="236" height="60" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" filter="url(#card-shadow)" />
+                        <!-- Header Banner -->
+                        <path d="M 4 10 Q 4 4 10 4 L 230 4 Q 236 4 236 10 L 236 20 L 4 20 Z" fill="#f8fafc" />
+                        <line x1="2" y1="20" x2="238" y2="20" stroke="#e2e8f0" stroke-width="1" />
+                        <text x="12" y="15" fill="#334155" font-size="10" font-weight="bold" letter-spacing="0.5">LOGIKA AI</text>
+                        
+                        <!-- Dividers -->
+                        <line x1="90" y1="28" x2="90" y2="52" stroke="#f1f5f9" stroke-width="2" />
+                        <line x1="160" y1="28" x2="160" y2="52" stroke="#f1f5f9" stroke-width="2" />
+
+                        <!-- Data -->
+                        <text x="12" y="34" fill="#64748b" font-size="9" font-weight="600">ID REGUŁY</text>
+                        <text id="ai-id" x="12" y="48" fill="#3b82f6" font-size="11" font-weight="bold" textLength="70" lengthAdjust="spacingAndGlyphs">SHAVE-SURP...</text>
+
+                        <text x="125" y="34" fill="#64748b" font-size="9" font-weight="600" text-anchor="middle">AKCJA</text>
+                        <text id="ai-action" x="125" y="48" fill="#3b82f6" font-size="11" font-weight="bold" text-anchor="middle">Ładowanie</text>
+
+                        <text x="170" y="34" fill="#64748b" font-size="9" font-weight="600">MOC DOC.</text>
+                        <text id="ai-power" x="170" y="48" fill="#1e293b" font-size="12" font-weight="bold" class="tabular-text">-14.2 kW</text>
+                    </g>
+
+
+                    <!-- 6. CENTRAL HUB / INVERTER (Center) -->
+                    <!-- Positioned at x=155, y=320 -->
+                    <g transform="translate(155, 320)" filter="url(#card-shadow)">
+                        <rect x="0" y="0" width="40" height="56" rx="8" fill="#0f172a" />
+                        <path d="M 0 16 Q 20 22 40 16" fill="none" stroke="#334155" stroke-width="2" />
+                        <rect x="12" y="24" width="16" height="6" rx="2" fill="#cbd5e1" />
+                        <!-- Status Lamp -->
+                        <circle cx="11" cy="43" r="3" fill="#10b981" filter="url(#lamp-glow)" />
+                    </g>
+
+                    <!-- 7. GRID NODE (Bottom Left) -->
+                    <!-- Positioned at x=0, y=420 -->
+                    <g transform="translate(0, 420)">
+                        <rect x="2" y="2" width="106" height="50" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="2" filter="url(#card-shadow)" />
+                        <text x="12" y="20" fill="#475569" font-size="12" font-weight="600">Sieć</text>
+                        <text id="node-grid-text" x="12" y="40" fill="#1e293b" font-size="16" font-weight="bold" class="tabular-text">0.6 kW</text>
+                        <!-- Tower Icon -->
+                        <g transform="translate(68, 8)">
+                            <path d="M 12 26 L 18 6 L 24 26 M 10 14 L 26 14 M 14 20 L 22 20 M 15 8 L 21 8" fill="none" stroke="#475569" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                            <path id="grid-arrow" d="M 4 18 L 10 18 M 8 16 L 10 18 L 8 20" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                        </g>
+                    </g>
+
+                    <!-- 8. LOAD / FACTORY NODE (Bottom Middle) -->
+                    <!-- Positioned at x=122, y=420 -->
+                    <g transform="translate(122, 420)">
+                        <rect x="2" y="2" width="106" height="50" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="2" filter="url(#card-shadow)" />
+                        <text x="12" y="20" fill="#475569" font-size="12" font-weight="600">Odbiornik</text>
+                        <text id="node-load-text" x="12" y="40" fill="#1e293b" font-size="16" font-weight="bold" class="tabular-text">0.6 kW</text>
+                        <!-- Factory Icon -->
+                        <g transform="translate(68, 6)">
+                            <g fill="#cbd5e1" filter="url(#smoke-blur)">
+                                <circle class="smoke-puff" id="smoke-1" cx="21" cy="4" r="2.5" />
+                                <circle class="smoke-puff" id="smoke-2" cx="21" cy="4" r="2.5" style="animation-delay: 0.8s;" />
+                                <circle class="smoke-puff" id="smoke-3" cx="21" cy="4" r="2.5" style="animation-delay: 1.6s;" />
+                            </g>
+                            <path d="M 2 34 L 2 18 L 10 24 L 10 14 L 18 20 L 18 14 L 26 14 L 26 34 Z" fill="#64748b" stroke="#334155" stroke-width="1.5" stroke-linejoin="round" />
+                            <path d="M 2 18 L 10 24 M 10 14 L 18 20 M 18 14 L 26 14" stroke="#f8fafc" stroke-width="1" stroke-linecap="round" opacity="0.4" />
+                            <rect x="19" y="10" width="4" height="4" fill="#94a3b8" />
+                            <rect x="18" y="8" width="6" height="2" rx="0.5" fill="#334155" />
+                            <rect x="6" y="26" width="3" height="4" rx="0.5" fill="#fbbf24" opacity="0.9" />
+                            <rect x="12" y="26" width="3" height="4" rx="0.5" fill="#fbbf24" opacity="0.9" />
+                            <rect x="18" y="26" width="3" height="4" rx="0.5" fill="#fbbf24" opacity="0.9" />
+                            <rect x="12" y="20" width="3" height="4" rx="0.5" fill="#fbbf24" opacity="0.9" />
+                            <rect x="18" y="20" width="3" height="4" rx="0.5" fill="#fbbf24" opacity="0.9" />
+                        </g>
+                    </g>
+
+                    <!-- 9. PV NODE (Bottom Right) -->
+                    <!-- Positioned at x=244, y=420 -->
+                    <g transform="translate(244, 420)">
+                        <rect x="2" y="2" width="106" height="50" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="2" filter="url(#card-shadow)" />
+                        <text x="12" y="20" fill="#475569" font-size="12" font-weight="600">Moc PV</text>
+                        <text id="node-pv-text" x="12" y="40" fill="#1e293b" font-size="16" font-weight="bold" class="tabular-text">0.0 kW</text>
+                        
+                        <g transform="translate(68, 8)">
+                            <g id="pv-sun" class="sun-group">
+                                <g filter="url(#sun-glow)">
+                                    <g class="sun-rays" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round">
+                                        <line x1="22" y1="2" x2="22" y2="0" /><line x1="22" y1="14" x2="22" y2="16" />
+                                        <line x1="16" y1="8" x2="14" y2="8" /><line x1="28" y1="8" x2="30" y2="8" />
+                                        <line x1="17.7" y1="3.7" x2="16.3" y2="2.3" /><line x1="26.3" y1="12.3" x2="27.7" y2="13.7" />
+                                        <line x1="17.7" y1="12.3" x2="16.3" y2="13.7" /><line x1="26.3" y1="3.7" x2="27.7" y2="2.3" />
+                                    </g>
+                                    <circle cx="22" cy="8" r="4" fill="#fbbf24" />
+                                </g>
+                                <g class="shine-beams" stroke="#fbbf24" stroke-width="1" stroke-linecap="round" opacity="0.6">
+                                    <line class="shine-beam-line" x1="18" y1="12" x2="10" y2="20" />
+                                    <line class="shine-beam-line" x1="24" y1="15" x2="16" y2="23" style="animation-delay: 0.5s;" />
+                                </g>
+                            </g>
+                            <g transform="translate(0, 14)">
+                                <line x1="6" y1="16" x2="6" y2="20" stroke="#64748b" stroke-width="2" stroke-linecap="round" />
+                                <line x1="14" y1="16" x2="14" y2="20" stroke="#64748b" stroke-width="2" stroke-linecap="round" />
+                                <line x1="22" y1="16" x2="22" y2="20" stroke="#64748b" stroke-width="2" stroke-linecap="round" />
+                                <polygon points="2,16 28,16 24,6 4,6" fill="#334155" />
+                                <polygon points="2,15 28,15 24,5 4,5" fill="#1e293b" stroke="#475569" stroke-width="1" stroke-linejoin="round" />
+                                <line x1="3" y1="10" x2="26" y2="10" stroke="#3b82f6" stroke-width="0.5" opacity="0.6" />
+                                <line x1="3.5" y1="12.5" x2="27" y2="12.5" stroke="#3b82f6" stroke-width="0.5" opacity="0.6" />
+                                <line x1="2.5" y1="7.5" x2="25" y2="7.5" stroke="#3b82f6" stroke-width="0.5" opacity="0.6" />
+                                <line x1="10" y1="15" x2="11.5" y2="5" stroke="#3b82f6" stroke-width="0.5" opacity="0.6" />
+                                <line x1="15" y1="15" x2="15" y2="5" stroke="#3b82f6" stroke-width="0.5" opacity="0.6" />
+                                <line x1="20" y1="15" x2="18.5" y2="5" stroke="#3b82f6" stroke-width="0.5" opacity="0.6" />
+                                <polygon points="4,15 15,15 13,5 4,5" fill="#ffffff" opacity="0.1" />
+                            </g>
+                        </g>
+                    </g>
+                </g>
+            </svg>
+        </div>
+    </div>
+
+    <!-- MAIN JAVASCRIPT LOGIC -->
+    <script>
+        // DOM Elements
+        const lineBatt = document.getElementById('line-batt');
+        const lineLoad = document.getElementById('line-load');
+        const lineGrid = document.getElementById('line-grid');
+        const linePv   = document.getElementById('line-pv');
+
+        const battLiquid = document.getElementById('batt-liquid-path');
+        const battWaveContainer = document.getElementById('batt-wave-container');
+        
+        function setFlowLine(element, state) {
+            element.setAttribute('class', 'wire-electrons');
+            if (state === 'forward') element.classList.add('flowing', 'flow-forward');
+            if (state === 'reverse') element.classList.add('flowing', 'flow-reverse');
+        }
+
+        // Format number helper
+        const fmt = (v) => Math.abs(v) < 100 ? Number(v).toFixed(1) : Math.round(v).toString();
+
+        function scaleText(element, strVal, threshold, minSize, maxSize, targetLen) {
+            element.textContent = strVal;
+            if (strVal.length >= threshold) {
+                element.setAttribute('font-size', minSize);
+                element.setAttribute('textLength', targetLen);
+                element.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+            } else {
+                element.setAttribute('font-size', maxSize);
+                element.removeAttribute('textLength');
+                element.removeAttribute('lengthAdjust');
+            }
+        }
+
+        // --- BATTERY ANIMATION LOOP (Global) ---
+        let bTime = performance.now();
+        let bOffset = 0;
+        let bY = 70;
+        let bTargetY = 70;
+        let bSpeed = 0;
+        let bDir = 1; // 1 or -1
+
+        function animLoop(time) {
+            const dt = Math.min(time - bTime, 100);
+            bTime = time;
+
+            // Interpolate Y
+            bY += (bTargetY - bY) * 0.1;
+            
+            // Move X if speed > 0
+            if (bSpeed > 0) {
+                bOffset += (bSpeed * bDir * (dt / 1000));
+                if (bOffset > 0) bOffset -= 120;
+                if (bOffset <= -120) bOffset += 120;
+            }
+
+            battWaveContainer.setAttribute('transform', `translate(${bOffset}, ${bY})`);
+            requestAnimationFrame(animLoop);
+        }
+        requestAnimationFrame(animLoop);
+
+        // --- MAIN UPDATE FUNCTION ---
+        function updateDashboard() {
+            // Get values
+            const soc = parseFloat(document.getElementById('ctrl-soc').value);
+            const battPwr = parseFloat(document.getElementById('ctrl-batt').value);
+            const gridPwr = parseFloat(document.getElementById('ctrl-grid').value);
+            const loadPwr = parseFloat(document.getElementById('ctrl-load').value);
+            const pvPwr = parseFloat(document.getElementById('ctrl-pv').value);
+            const aiAction = document.getElementById('ctrl-action').value;
+
+            // 1. Update Battery Node
+            bTargetY = 130 - ((soc / 100) * 100);
+            
+            let bColor = '#10b981';
+            if (soc <= 20) bColor = '#ef4444';
+            else if (soc <= 50) bColor = '#f59e0b';
+            battLiquid.setAttribute('fill', bColor);
+            
+            const bAbs = Math.abs(battPwr);
+            if (bAbs <= 0.2) {
+                bSpeed = 0;
+                battLiquid.setAttribute('d', "M -120 0 Q -105 0 -90 0 T -60 0 Q -45 0 -30 0 T 0 0 Q 15 0 30 0 T 60 0 Q 75 0 90 0 T 120 0 Q 135 0 150 0 T 180 0 Q 195 0 210 0 T 240 0 V 150 H -120 Z");
+            } else {
+                bSpeed = 60; // Constant speed: 60px/s = 2s per full wave loop
+                bDir = battPwr < 0 ? -1 : 1;
+                battLiquid.setAttribute('d', "M -120 0 Q -105 -10 -90 0 T -60 0 Q -45 -10 -30 0 T 0 0 Q 15 -10 30 0 T 60 0 Q 75 -10 90 0 T 120 0 Q 135 -10 150 0 T 180 0 Q 195 -10 210 0 T 240 0 V 150 H -120 Z");
+            }
+
+            // 2. Update SoC Card
+            const strSoc = `${fmt(soc)} %`;
+            document.getElementById('node-soc-text').textContent = strSoc;
+            document.getElementById('node-soc-text').setAttribute('fill', bColor);
+
+            // 3. Update Battery Power Card
+            scaleText(document.getElementById('node-batt-power-text'), `${fmt(bAbs)} kW`, 7, '13', '16', '45');
+            document.getElementById('node-batt-power-text').setAttribute('fill', bAbs > 0.2 ? '#1e293b' : '#94a3b8');
+
+            // 4. Update Status Card
+            const statusIcon = document.getElementById('status-icon');
+            const statusOuter = document.getElementById('status-outer');
+            const statusInner = document.getElementById('status-inner');
+            const statusText = document.getElementById('node-status-text');
+            
+            if (battPwr < -0.2) {
+                statusText.textContent = 'Ładowanie';
+                statusText.setAttribute('fill', '#3b82f6');
+                statusOuter.setAttribute('stroke', '#3b82f6');
+                statusInner.setAttribute('fill', '#3b82f6');
+                statusOuter.setAttribute('stroke-dasharray', 'none');
+                statusIcon.setAttribute('class', 'icon-pulse');
+            } else if (battPwr > 0.2) {
+                statusText.textContent = 'Rozład.';
+                statusText.setAttribute('fill', '#f59e0b');
+                statusOuter.setAttribute('stroke', '#f59e0b');
+                statusInner.setAttribute('fill', '#f59e0b');
+                statusOuter.setAttribute('stroke-dasharray', '15 6');
+                statusIcon.setAttribute('class', 'icon-spin');
+            } else {
+                statusText.textContent = 'Czuwanie';
+                statusText.setAttribute('fill', '#64748b');
+                statusOuter.setAttribute('stroke', '#64748b');
+                statusInner.setAttribute('fill', '#64748b');
+                statusOuter.setAttribute('stroke-dasharray', 'none');
+                statusIcon.setAttribute('class', '');
+            }
+
+            // 5. Update Grid Node
+            const gAbs = Math.abs(gridPwr);
+            scaleText(document.getElementById('node-grid-text'), `${fmt(gAbs)} kW`, 7, '13', '16', '45');
+            const gArrow = document.getElementById('grid-arrow');
+            if (gridPwr > 0.1) {
+                gArrow.setAttribute('d', "M 4 18 L 10 18 M 8 16 L 10 18 L 8 20");
+                gArrow.setAttribute('stroke', '#ef4444');
+            } else if (gridPwr < -0.1) {
+                gArrow.setAttribute('d', "M 10 18 L 4 18 M 6 16 L 4 18 L 6 20");
+                gArrow.setAttribute('stroke', '#10b981');
+            } else {
+                gArrow.setAttribute('d', "M 4 18 L 10 18");
+                gArrow.setAttribute('stroke', '#475569');
+            }
+
+            // 6. Update Load Node
+            scaleText(document.getElementById('node-load-text'), `${fmt(loadPwr)} kW`, 6, '13', '16', '45');
+            document.querySelectorAll('.smoke-puff').forEach(p => {
+                if (loadPwr > 0.2) p.classList.add('smoke-active');
+                else p.classList.remove('smoke-active');
+            });
+
+            // 7. Update PV Node
+            scaleText(document.getElementById('node-pv-text'), `${fmt(pvPwr)} kW`, 6, '13', '16', '45');
+            if (pvPwr >= 0.1) document.getElementById('pv-sun').classList.add('sun-active');
+            else document.getElementById('pv-sun').classList.remove('sun-active');
+
+            // 8. Update AI Node
+            const aiDict = { 'ch': ['Ładowanie', '#3b82f6'], 'sb': ['Czuwanie', '#64748b'], 'dis': ['Rozład.', '#f59e0b'] };
+            document.getElementById('ai-action').textContent = aiDict[aiAction][0];
+            document.getElementById('ai-action').setAttribute('fill', aiDict[aiAction][1]);
+            document.getElementById('ai-id').setAttribute('fill', aiDict[aiAction][1]);
+            document.getElementById('ai-power').textContent = `${battPwr > 0 ? '+' : ''}${battPwr.toFixed(1)} kW`;
+            document.getElementById('ai-power').setAttribute('fill', aiAction === 'sb' ? '#64748b' : '#1e293b');
+
+            // 9. UPDATE ALL FLOW LINES
+            // Battery Line (Negative = Charging/Forward, Positive = Discharging/Reverse)
+            if (battPwr < -0.2) setFlowLine(lineBatt, 'reverse');
+            else if (battPwr > 0.2) setFlowLine(lineBatt, 'forward');
+            else setFlowLine(lineBatt, 'standby');
+
+            // Load Line (Always positive flow to the factory)
+            if (loadPwr > 0.2) setFlowLine(lineLoad, 'forward');
+            else setFlowLine(lineLoad, 'standby');
+
+            // Grid Line (Negative = Export/Forward, Positive = Import/Reverse)
+            // Note: Line path is Hub -> Grid.
+            // If Grid is Negative (export), power flows Hub -> Grid (forward)
+            // If Grid is Positive (import), power flows Grid -> Hub (reverse)
+            if (gridPwr < -0.1) setFlowLine(lineGrid, 'forward');
+            else if (gridPwr > 0.1) setFlowLine(lineGrid, 'reverse');
+            else setFlowLine(lineGrid, 'standby');
+
+            // PV Line (Always positive flow from PV to Hub. Line drawn Hub->PV, so flow is reverse)
+            if (pvPwr > 0.1) setFlowLine(linePv, 'reverse');
+            else setFlowLine(linePv, 'standby');
+        }
+
+        // Init
+        updateDashboard();
+    </script>
+</body>
+</html>

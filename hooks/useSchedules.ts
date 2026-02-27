@@ -1,45 +1,44 @@
-/**
- * useSchedules Hook
- * 
- * Manages schedule rules data fetching and mutations.
- */
-
 import { useState, useEffect, useCallback } from 'react';
-import { Rule } from '@/types';
 import { useDevices } from '@/contexts/DeviceContext';
 import {
   getSchedules,
+  saveSchedules,
   flattenRules,
-  saveRule,
-  deleteRule,
-  SchedulesResponse,
 } from '@/lib/aws-schedules';
+import type {
+  OptimizedScheduleRule,
+  ScheduleRuleWithPriority,
+  SchedulesResponse,
+  Priority,
+  SystemMode,
+} from '@/types';
 
 interface UseSchedulesReturn {
-  rules: Rule[];
-  rawSchedules: SchedulesResponse['schedules'] | null;
-  shadowVersion: number | null;
+  rules: ScheduleRuleWithPriority[];
+  rawSchedules: SchedulesResponse | null;
+  mode: SystemMode;
+  safety: { soc_min: number; soc_max: number };
   isLoading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
-  addRule: (rule: Rule) => Promise<void>;
-  updateRule: (rule: Rule, oldPriority?: number) => Promise<void>;
-  removeRule: (ruleId: string, priority: number) => Promise<void>;
+  createRule: (rule: OptimizedScheduleRule, priority: Priority) => Promise<void>;
+  updateRule: (rule: OptimizedScheduleRule, priority: Priority, oldPriority?: Priority) => Promise<void>;
+  deleteRule: (ruleId: string, priority: Priority) => Promise<void>;
+  toggleRule: (ruleId: string, priority: Priority) => Promise<void>;
+  setSafety: (socMin: number, socMax: number) => Promise<void>;
+  setMode: (mode: SystemMode) => Promise<void>;
+  setSiteLimit: (hth: number, lth: number) => Promise<void>;
 }
 
 export function useSchedules(): UseSchedulesReturn {
   const { selectedDevice } = useDevices();
-  const [rules, setRules] = useState<Rule[]>([]);
-  const [rawSchedules, setRawSchedules] = useState<SchedulesResponse['schedules'] | null>(null);
-  const [shadowVersion, setShadowVersion] = useState<number | null>(null);
+  const [rawSchedules, setRawSchedules] = useState<SchedulesResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchSchedules = useCallback(async () => {
     if (!selectedDevice) {
-      setRules([]);
       setRawSchedules(null);
-      setShadowVersion(null);
       setIsLoading(false);
       return;
     }
@@ -47,17 +46,12 @@ export function useSchedules(): UseSchedulesReturn {
     try {
       setIsLoading(true);
       setError(null);
-      
       const response = await getSchedules(selectedDevice.device_id);
-      setRawSchedules(response.schedules);
-      setShadowVersion(response.shadow_version);
-      setRules(flattenRules(response.schedules));
-      
-      console.log('[useSchedules] Loaded', flattenRules(response.schedules).length, 'rules');
+      setRawSchedules(response);
     } catch (err) {
       console.error('[useSchedules] Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to load schedules');
-      setRules([]);
+      setRawSchedules(null);
     } finally {
       setIsLoading(false);
     }
@@ -67,45 +61,120 @@ export function useSchedules(): UseSchedulesReturn {
     fetchSchedules();
   }, [fetchSchedules]);
 
-  const addRule = useCallback(async (rule: Rule) => {
-    if (!selectedDevice || !rawSchedules) {
-      throw new Error('No device selected');
-    }
+  const rules = rawSchedules ? flattenRules(rawSchedules.sch) : [];
+  const mode: SystemMode = rawSchedules?.mode || 'automatic';
+  const safety = {
+    soc_min: rawSchedules?.safety?.soc_min ?? 5,
+    soc_max: rawSchedules?.safety?.soc_max ?? 100,
+  };
 
-    await saveRule(selectedDevice.device_id, rule, rawSchedules);
-    await fetchSchedules(); // Refetch to get updated shadow version
-  }, [selectedDevice, rawSchedules, fetchSchedules]);
+  const siteId = selectedDevice?.device_id;
 
-  const updateRule = useCallback(async (rule: Rule, oldPriority?: number) => {
-    if (!selectedDevice || !rawSchedules) {
-      throw new Error('No device selected');
-    }
+  const createRule = useCallback(async (rule: OptimizedScheduleRule, priority: Priority) => {
+    if (!siteId || !rawSchedules) throw new Error('No site selected');
 
-    // Pass old priority if provided (for priority changes)
-    await saveRule(selectedDevice.device_id, rule, rawSchedules, oldPriority);
+    const key = `p_${priority}` as keyof typeof rawSchedules.sch;
+    const existing = rawSchedules.sch[key] || [];
+    const merged = [...existing, rule];
+
+    await saveSchedules(siteId, { [key]: merged });
     await fetchSchedules();
-  }, [selectedDevice, rawSchedules, fetchSchedules]);
+  }, [siteId, rawSchedules, fetchSchedules]);
 
-  const removeRule = useCallback(async (ruleId: string, priority: number) => {
-    if (!selectedDevice || !rawSchedules) {
-      throw new Error('No device selected');
+  const updateRule = useCallback(async (
+    rule: OptimizedScheduleRule,
+    priority: Priority,
+    oldPriority?: Priority
+  ) => {
+    if (!siteId || !rawSchedules) throw new Error('No site selected');
+
+    const updates: Record<string, OptimizedScheduleRule[]> = {};
+
+    if (oldPriority !== undefined && oldPriority !== priority) {
+      const oldKey = `p_${oldPriority}` as keyof typeof rawSchedules.sch;
+      updates[oldKey] = (rawSchedules.sch[oldKey] || []).filter(r => r.id !== rule.id);
     }
 
-    await deleteRule(selectedDevice.device_id, ruleId, priority, rawSchedules);
+    const newKey = `p_${priority}` as keyof typeof rawSchedules.sch;
+    const newRules = (rawSchedules.sch[newKey] || []).filter(r => r.id !== rule.id);
+    newRules.push(rule);
+    updates[newKey] = newRules;
+
+    await saveSchedules(siteId, updates);
     await fetchSchedules();
-  }, [selectedDevice, rawSchedules, fetchSchedules]);
+  }, [siteId, rawSchedules, fetchSchedules]);
+
+  const deleteRule = useCallback(async (ruleId: string, priority: Priority) => {
+    if (!siteId || !rawSchedules) throw new Error('No site selected');
+
+    const key = `p_${priority}` as keyof typeof rawSchedules.sch;
+    const filtered = (rawSchedules.sch[key] || []).filter(r => r.id !== ruleId);
+
+    await saveSchedules(siteId, { [key]: filtered });
+    await fetchSchedules();
+  }, [siteId, rawSchedules, fetchSchedules]);
+
+  const toggleRule = useCallback(async (ruleId: string, priority: Priority) => {
+    if (!siteId || !rawSchedules) throw new Error('No site selected');
+
+    const key = `p_${priority}` as keyof typeof rawSchedules.sch;
+    const existing = rawSchedules.sch[key] || [];
+    const updated = existing.map(rule => {
+      if (rule.id !== ruleId) return rule;
+      const isActive = rule.act !== false;
+      if (isActive) return { ...rule, act: false as const };
+      const { act, ...rest } = rule;
+      return rest;
+    });
+
+    await saveSchedules(siteId, { [key]: updated });
+    await fetchSchedules();
+  }, [siteId, rawSchedules, fetchSchedules]);
+
+  const setSafety = useCallback(async (socMin: number, socMax: number) => {
+    if (!siteId) throw new Error('No site selected');
+    if (socMin >= socMax) throw new Error('soc_min must be less than soc_max');
+
+    await saveSchedules(siteId, {}, { safety: { soc_min: socMin, soc_max: socMax } });
+    await fetchSchedules();
+  }, [siteId, fetchSchedules]);
+
+  const setMode = useCallback(async (newMode: SystemMode) => {
+    if (!siteId) throw new Error('No site selected');
+
+    await saveSchedules(siteId, {}, { mode: newMode });
+    await fetchSchedules();
+  }, [siteId, fetchSchedules]);
+
+  const setSiteLimit = useCallback(async (hth: number, lth: number) => {
+    if (!siteId || !rawSchedules) throw new Error('No site selected');
+
+    const existingP9 = rawSchedules.sch.p_9 || [];
+    const siteLimitRule: OptimizedScheduleRule = {
+      id: existingP9.find(r => r.a.t === 'sl')?.id || 'SITE-LIMIT',
+      a: { t: 'sl', hth, lth },
+      c: {},
+    };
+
+    const otherP9 = existingP9.filter(r => r.a.t !== 'sl');
+    await saveSchedules(siteId, { p_9: [...otherP9, siteLimitRule] });
+    await fetchSchedules();
+  }, [siteId, rawSchedules, fetchSchedules]);
 
   return {
     rules,
     rawSchedules,
-    shadowVersion,
+    mode,
+    safety,
     isLoading,
     error,
     refetch: fetchSchedules,
-    addRule,
+    createRule,
     updateRule,
-    removeRule,
+    deleteRule,
+    toggleRule,
+    setSafety,
+    setMode,
+    setSiteLimit,
   };
 }
-
-

@@ -163,6 +163,38 @@ export function getBatteryStatus(batteryPower: number): 'Charging' | 'Dischargin
   return 'Standby';
 }
 
+async function runFluxQuery(query: string): Promise<Record<string, string>[]> {
+  const response = await fetch(`${INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${INFLUX_TOKEN}`,
+      'Content-Type': 'application/vnd.flux',
+      'Accept': 'application/csv',
+    },
+    body: query,
+  });
+  if (!response.ok) {
+    if (response.status === 503) {
+      console.warn('[InfluxDB] Temporary service unavailable');
+    }
+    throw new Error(`InfluxDB error: ${response.status}`);
+  }
+  const csv = await response.text();
+  return parseInfluxCSV(csv);
+}
+
+function extractNumericFields(rows: Record<string, string>[]): Record<string, number> {
+  const values: Record<string, number> = {};
+  for (const row of rows) {
+    const field = row['_field']?.trim();
+    const raw = row['_value']?.trim();
+    if (!field || !raw) continue;
+    const num = parseFloat(raw);
+    if (!isNaN(num)) values[field] = num;
+  }
+  return values;
+}
+
 /**
  * Fetch live data from InfluxDB for a specific site
  */
@@ -172,77 +204,111 @@ export async function fetchLiveData(siteId: string): Promise<LiveData | null> {
     throw new Error('InfluxDB configuration missing');
   }
 
-  const query = `
+  const liveQuery = `
     from(bucket: "aiess_v1")
       |> range(start: -5m)
       |> filter(fn: (r) => r._measurement == "energy_telemetry")
       |> filter(fn: (r) => r.site_id == "${siteId}")
-      |> filter(fn: (r) => r._field == "grid_power" or r._field == "total_pv_power" or r._field == "pcs_power" or r._field == "soc")
+      |> filter(fn: (r) =>
+           r._field == "grid_power" or
+           r._field == "total_pv_power" or
+           r._field == "pcs_power" or
+           r._field == "soc" or
+           r._field == "active_rule_id" or
+           r._field == "active_rule_action" or
+           r._field == "active_rule_power"
+      )
       |> last()
   `;
 
+  const meanQuery = (minutes: number) => `
+    from(bucket: "aiess_v1")
+      |> range(start: -${minutes}m)
+      |> filter(fn: (r) => r._measurement == "energy_telemetry")
+      |> filter(fn: (r) => r.site_id == "${siteId}")
+      |> filter(fn: (r) => r._field == "grid_power" or r._field == "total_pv_power" or r._field == "pcs_power")
+      |> mean()
+  `;
+
   try {
-    const response = await fetch(`${INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${INFLUX_TOKEN}`,
-        'Content-Type': 'application/vnd.flux',
-        'Accept': 'application/csv',
-      },
-      body: query,
-    });
+    const [liveRows, avg1mRows, avg5mRows] = await Promise.all([
+      runFluxQuery(liveQuery),
+      runFluxQuery(meanQuery(1)).catch(() => [] as Record<string, string>[]),
+      runFluxQuery(meanQuery(5)).catch(() => [] as Record<string, string>[]),
+    ]);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      // Log 503 errors as warnings (transient network issues)
-      if (response.status === 503) {
-        console.warn('[InfluxDB] Temporary service unavailable (will retry):', response.status);
-      } else {
-        console.error('[InfluxDB] API error:', response.status, errorText);
-      }
-      throw new Error(`InfluxDB error: ${response.status}`);
-    }
-
-    const csv = await response.text();
-    const rows = parseInfluxCSV(csv);
-
-    if (rows.length === 0) {
+    if (liveRows.length === 0) {
       console.warn('[InfluxDB] No data found for site:', siteId);
       return null;
     }
 
-    // Extract values from rows (each row is a different field)
-    const values: Record<string, number> = {};
-    for (const row of rows) {
-      const field = row['_field'];
-      const value = parseFloat(row['_value']) || 0;
-      if (field) {
-        values[field] = value;
+    // Parse live data (numeric + string _field/_value pairs)
+    const numValues: Record<string, number> = {};
+    const strValues: Record<string, string> = {};
+    for (const row of liveRows) {
+      const field = row['_field']?.trim();
+      const raw = row['_value']?.trim();
+      if (!field || !raw) continue;
+      const num = parseFloat(raw);
+      if (!isNaN(num)) {
+        numValues[field] = num;
+      } else {
+        strValues[field] = raw;
       }
     }
 
-    const gridPower = values['grid_power'] || 0;
-    const pvPower = values['total_pv_power'] || 0;
-    const batteryPower = values['pcs_power'] || 0;
-    const batterySoc = values['soc'] || 0;
+    const gridPower = numValues['grid_power'] ?? 0;
+    const pvPower = numValues['total_pv_power'] ?? 0;
+    const batteryPower = numValues['pcs_power'] ?? 0;
+    const batterySoc = numValues['soc'] ?? 0;
+
+    const activeRuleId = strValues['active_rule_id'] || undefined;
+    const activeRuleAction = (strValues['active_rule_action'] || undefined) as 'ch' | 'sb' | 'dis' | undefined;
+    const activeRulePower = numValues['active_rule_power'] ?? undefined;
 
     const factoryLoad = calculateFactoryLoad(gridPower, pvPower, batteryPower);
     const batteryStatus = getBatteryStatus(batteryPower);
 
+    // Parse 1-min and 5-min averages
+    const avg1m = extractNumericFields(avg1mRows);
+    const avg5m = extractNumericFields(avg5mRows);
+
+    const round1 = (v: number) => Math.round(v * 10) / 10;
+
+    const gridPowerAvg1m = avg1m['grid_power'] != null ? round1(avg1m['grid_power']) : undefined;
+    const gridPowerAvg5m = avg5m['grid_power'] != null ? round1(avg5m['grid_power']) : undefined;
+    const pvPowerAvg1m = avg1m['total_pv_power'] != null ? round1(avg1m['total_pv_power']) : undefined;
+    const pvPowerAvg5m = avg5m['total_pv_power'] != null ? round1(avg5m['total_pv_power']) : undefined;
+
+    const factoryLoadAvg1m = avg1m['grid_power'] != null
+      ? round1(calculateFactoryLoad(avg1m['grid_power'], avg1m['total_pv_power'] ?? 0, avg1m['pcs_power'] ?? 0))
+      : undefined;
+    const factoryLoadAvg5m = avg5m['grid_power'] != null
+      ? round1(calculateFactoryLoad(avg5m['grid_power'], avg5m['total_pv_power'] ?? 0, avg5m['pcs_power'] ?? 0))
+      : undefined;
+
     const liveData: LiveData = {
-      gridPower: Math.round(gridPower * 10) / 10,
-      batteryPower: Math.round(batteryPower * 10) / 10,
+      gridPower: round1(gridPower),
+      batteryPower: round1(batteryPower),
       batterySoc: Math.round(batterySoc),
       batteryStatus,
-      pvPower: Math.round(pvPower * 10) / 10,
-      factoryLoad: Math.round(factoryLoad * 10) / 10,
+      pvPower: round1(pvPower),
+      factoryLoad: round1(factoryLoad),
       lastUpdate: new Date(),
+      activeRuleId,
+      activeRuleAction,
+      activeRulePower,
+      gridPowerAvg1m,
+      gridPowerAvg5m,
+      pvPowerAvg1m,
+      pvPowerAvg5m,
+      factoryLoadAvg1m,
+      factoryLoadAvg5m,
     };
 
     console.log('[LiveData] Data received:', JSON.stringify(liveData));
     return liveData;
   } catch (error) {
-    // Log 503 errors as warnings (transient), others as errors
     if (error instanceof Error && error.message.includes('503')) {
       console.warn('[InfluxDB] Transient error (auto-retry enabled):', error.message);
     } else {

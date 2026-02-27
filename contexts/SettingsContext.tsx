@@ -9,8 +9,6 @@ const SETTINGS_KEY = '@aiess_settings';
 
 const defaultSettings: AppSettings = {
   language: 'en',
-  highThreshold: null,
-  lowThreshold: null,
 };
 
 export const [SettingsProvider, useSettings] = createContextHook(() => {
@@ -20,11 +18,9 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
   const settingsQuery = useQuery({
     queryKey: ['settings'],
     queryFn: async () => {
-      console.log('[Settings] Loading settings');
       const stored = await AsyncStorage.getItem(SETTINGS_KEY);
       if (stored) {
         const parsed = JSON.parse(stored) as AppSettings;
-        console.log('[Settings] Loaded settings:', parsed);
         return parsed;
       }
       return defaultSettings;
@@ -40,7 +36,6 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
   const updateSettingsMutation = useMutation({
     mutationFn: async (newSettings: Partial<AppSettings>) => {
       const updated = { ...settings, ...newSettings };
-      console.log('[Settings] Updating settings:', updated);
       await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(updated));
       return updated;
     },
@@ -56,10 +51,6 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
     updateSettings({ language });
   }, [updateSettings]);
 
-  const setSiteLimits = useCallback((highThreshold: number | null, lowThreshold: number | null) => {
-    updateSettings({ highThreshold, lowThreshold });
-  }, [updateSettings]);
-
   const t: TranslationKeys = getTranslation(settings.language);
 
   return {
@@ -67,7 +58,6 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
     t,
     language: settings.language,
     setLanguage,
-    setSiteLimits,
     isLoading: settingsQuery.isLoading,
   };
 });
