@@ -141,11 +141,18 @@ function RuleCard({ rule, onEdit, onDelete, onToggle }: RuleCardProps) {
 }
 
 export default function ScheduleListScreen() {
-  const { t } = useSettings();
+  const { t, settings } = useSettings();
   const { selectedDevice } = useDevices();
-  const { rules, isLoading, error, refetch, deleteRule, toggleRule } = useSchedules();
+  const { rules, rawSchedules, isLoading, error, refetch, deleteRule, toggleRule } = useSchedules();
 
   const scheduleRules = rules.filter(rule => rule.priority !== 9);
+
+  const p9SiteLimit = rawSchedules?.sch?.p_9?.find(r => r.a.t === 'sl');
+  const siteConfigComplete =
+    !!settings.siteDescription?.trim() &&
+    settings.maxChargePower !== undefined &&
+    settings.maxDischargePower !== undefined &&
+    p9SiteLimit !== undefined;
 
   const handleEditRule = (rule: ScheduleRuleWithPriority) => {
     router.push({
@@ -184,6 +191,10 @@ export default function ScheduleListScreen() {
   };
 
   const handleAddRule = () => {
+    if (!siteConfigComplete) {
+      Alert.alert(t.settings.siteConfigIncompleteTitle, t.settings.siteConfigIncomplete);
+      return;
+    }
     router.push({ pathname: '/(tabs)/schedule/[ruleId]', params: { ruleId: 'new' } });
   };
 

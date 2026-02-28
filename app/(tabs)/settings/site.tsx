@@ -8,17 +8,22 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Modal,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { ArrowLeft, Shield, Zap, Info } from 'lucide-react-native';
+import { ArrowLeft, Shield, Zap, Info, BatteryCharging, Sun, X } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useSchedules } from '@/hooks/useSchedules';
 
+const BELL_CURVE_BARS = [0.08, 0.18, 0.35, 0.58, 0.78, 0.92, 1.0, 0.95, 0.82, 0.62, 0.38, 0.15];
+const BELL_HOURS = ['6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17'];
+
 export default function SiteSettingsScreen() {
-  const { t } = useSettings();
+  const { t, settings, setSiteConfig } = useSettings();
   const { selectedDevice } = useDevices();
   const { safety, rawSchedules, isLoading, setSafety, setSiteLimit } = useSchedules();
 
@@ -26,7 +31,11 @@ export default function SiteSettingsScreen() {
   const [socMax, setSocMax] = useState('');
   const [hth, setHth] = useState('');
   const [lth, setLth] = useState('');
-  const [siteDescription, setSiteDescription] = useState('');
+  const [siteDescription, setSiteDescription] = useState(settings.siteDescription || '');
+  const [maxCharge, setMaxCharge] = useState(settings.maxChargePower?.toString() || '');
+  const [maxDischarge, setMaxDischarge] = useState(settings.maxDischargePower?.toString() || '');
+  const [sunFollow, setSunFollow] = useState(settings.gridExportFollowsSun || false);
+  const [showSunFollowPopup, setShowSunFollowPopup] = useState(false);
   const [savingSafety, setSavingSafety] = useState(false);
   const [savingSiteLimit, setSavingSiteLimit] = useState(false);
 
@@ -73,6 +82,26 @@ export default function SiteSettingsScreen() {
     } finally {
       setSavingSafety(false);
     }
+  };
+
+  const handleSaveDescription = () => {
+    if (!siteDescription.trim()) {
+      Alert.alert(t.common.error, t.settings.siteConfigIncomplete);
+      return;
+    }
+    setSiteConfig({ siteDescription: siteDescription.trim() });
+    Alert.alert(t.common.success, t.settings.siteDescSaved);
+  };
+
+  const handleSaveDesiredPower = () => {
+    const ch = parseFloat(maxCharge);
+    const dis = parseFloat(maxDischarge);
+    if (isNaN(ch) || isNaN(dis) || ch <= 0 || dis <= 0) {
+      Alert.alert(t.common.error, t.common.pleaseEnterValidNumbers);
+      return;
+    }
+    setSiteConfig({ maxChargePower: ch, maxDischargePower: dis });
+    Alert.alert(t.common.success, t.settings.desiredPowerSaved);
   };
 
   const handleSaveSiteLimit = async () => {
@@ -147,7 +176,7 @@ export default function SiteSettingsScreen() {
           </View>
         )}
 
-        {/* Site Description (placeholder) */}
+        {/* Site Description */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Info size={20} color={Colors.primary} />
@@ -161,9 +190,51 @@ export default function SiteSettingsScreen() {
             placeholderTextColor={Colors.textSecondary}
             multiline
             numberOfLines={4}
-            editable={false}
           />
           <Text style={styles.hintText}>{t.settings.siteDescHint}</Text>
+
+          {/* Auto-generated datasheet block */}
+          {selectedDevice && (
+            <View style={styles.datasheetCard}>
+              <Text style={styles.datasheetTitle}>{t.settings.datasheetTitle}</Text>
+              <View style={styles.datasheetRow}>
+                <Text style={styles.datasheetLabel}>{t.settings.datasheetPower}</Text>
+                <Text style={styles.datasheetValue}>
+                  {selectedDevice.pcs_power_kw != null ? `${selectedDevice.pcs_power_kw} kW` : '—'}
+                </Text>
+              </View>
+              <View style={styles.datasheetRow}>
+                <Text style={styles.datasheetLabel}>{t.settings.datasheetCapacity}</Text>
+                <Text style={styles.datasheetValue}>
+                  {selectedDevice.battery_capacity_kwh != null ? `${selectedDevice.battery_capacity_kwh} kWh` : '—'}
+                </Text>
+              </View>
+              <View style={[styles.datasheetRow, { borderBottomWidth: 0 }]}>
+                <Text style={styles.datasheetLabel}>{t.settings.datasheetPv}</Text>
+                <Text style={styles.datasheetValue}>
+                  {selectedDevice.pv_power_kw != null ? `${selectedDevice.pv_power_kw} kWp` : '—'}
+                </Text>
+              </View>
+              <Text style={styles.datasheetHint}>{t.settings.datasheetAutoNote}</Text>
+            </View>
+          )}
+
+          {/* Sun-follow prompt injection */}
+          {sunFollow && (
+            <View style={[styles.sunFollowNote, { marginTop: 12 }]}>
+              <Sun size={14} color={Colors.warning} />
+              <Text style={styles.sunFollowNoteText}>
+                {t.settings.sunFollowDescSuffix.replace('{power}', Math.abs(parseFloat(lth) || 0).toString())}
+              </Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[styles.saveButton, { marginTop: 12 }]}
+            onPress={handleSaveDescription}
+          >
+            <Text style={styles.saveButtonText}>{t.settings.saveSiteDesc}</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Safety SoC Limits */}
@@ -243,11 +314,34 @@ export default function SiteSettingsScreen() {
                 value={lth}
                 onChangeText={setLth}
                 keyboardType="numeric"
-                placeholder="-40"
+                placeholder="-1"
                 placeholderTextColor={Colors.textSecondary}
               />
               <Text style={styles.hintText}>{t.settings.negativeExport}</Text>
             </View>
+          </View>
+
+          {/* Sun-follow export toggle */}
+          <View style={styles.sunFollowRow}>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Sun size={16} color={Colors.warning} />
+                <Text style={styles.inputLabel}>{t.settings.sunFollowExport}</Text>
+              </View>
+              <Text style={styles.hintText}>{t.settings.sunFollowExportHint}</Text>
+              <TouchableOpacity onPress={() => setShowSunFollowPopup(true)}>
+                <Text style={styles.readMoreLink}>{t.settings.sunFollowReadMore}</Text>
+              </TouchableOpacity>
+            </View>
+            <Switch
+              value={sunFollow}
+              onValueChange={(v) => {
+                setSunFollow(v);
+                setSiteConfig({ gridExportFollowsSun: v });
+              }}
+              trackColor={{ false: Colors.border, true: Colors.primaryLight }}
+              thumbColor={sunFollow ? Colors.primary : Colors.textSecondary}
+            />
           </View>
 
           <TouchableOpacity
@@ -262,7 +356,98 @@ export default function SiteSettingsScreen() {
             )}
           </TouchableOpacity>
         </View>
+
+        {/* Desired Power Limits */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <BatteryCharging size={20} color={Colors.primary} />
+            <Text style={styles.sectionTitle}>{t.settings.desiredPowerLimits}</Text>
+          </View>
+          <Text style={styles.sectionDescription}>
+            {t.settings.desiredPowerDesc}
+          </Text>
+
+          <View style={styles.rowInputs}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.maxChargePower}</Text>
+              <TextInput
+                style={styles.textInput}
+                value={maxCharge}
+                onChangeText={(v) => setMaxCharge(v.replace(/[^0-9.]/g, ''))}
+                keyboardType="decimal-pad"
+                placeholder="50"
+                placeholderTextColor={Colors.textSecondary}
+              />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.maxDischargePower}</Text>
+              <TextInput
+                style={styles.textInput}
+                value={maxDischarge}
+                onChangeText={(v) => setMaxDischarge(v.replace(/[^0-9.]/g, ''))}
+                keyboardType="decimal-pad"
+                placeholder="50"
+                placeholderTextColor={Colors.textSecondary}
+              />
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.saveButton}
+            onPress={handleSaveDesiredPower}
+          >
+            <Text style={styles.saveButtonText}>{t.settings.saveDesiredPower}</Text>
+          </TouchableOpacity>
+        </View>
+
       </ScrollView>
+
+      {/* Sun-follow info popup */}
+      <Modal visible={showSunFollowPopup} transparent animationType="fade">
+        <View style={styles.popupOverlay}>
+          <View style={styles.popupContainer}>
+            <View style={styles.popupHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Sun size={22} color={Colors.warning} />
+                <Text style={styles.popupTitle}>{t.settings.sunFollowPopupTitle}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowSunFollowPopup(false)}>
+                <X size={22} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Bell curve chart */}
+            <View style={styles.chartContainer}>
+              <View style={styles.chartBars}>
+                {BELL_CURVE_BARS.map((h, i) => (
+                  <View key={i} style={styles.chartBarWrapper}>
+                    <View
+                      style={[
+                        styles.chartBar,
+                        {
+                          height: h * 100,
+                          backgroundColor: h > 0.85 ? Colors.warning : h > 0.5 ? '#fbbf24' : '#fde68a',
+                        },
+                      ]}
+                    />
+                    <Text style={styles.chartLabel}>{BELL_HOURS[i]}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={styles.chartCaption}>Export power (kW) vs. hour of day</Text>
+            </View>
+
+            <Text style={styles.popupBody}>{t.settings.sunFollowPopupBody}</Text>
+
+            <TouchableOpacity
+              style={styles.popupCloseButton}
+              onPress={() => setShowSunFollowPopup(false)}
+            >
+              <Text style={styles.popupCloseText}>{t.settings.sunFollowPopupClose}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -391,5 +576,154 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  datasheetCard: {
+    marginTop: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+  },
+  datasheetTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.text,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  datasheetRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+  },
+  datasheetLabel: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
+  datasheetValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  datasheetHint: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  readMoreLink: {
+    fontSize: 13,
+    color: Colors.primary,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  sunFollowRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    backgroundColor: Colors.surface,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  sunFollowNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 28,
+  },
+  sunFollowNoteText: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.warning,
+    fontWeight: '500',
+    lineHeight: 17,
+  },
+  popupOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 24,
+  },
+  popupContainer: {
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxHeight: '85%',
+  },
+  popupHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  popupTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  popupBody: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 21,
+    marginBottom: 20,
+  },
+  popupCloseButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  popupCloseText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  chartContainer: {
+    marginBottom: 20,
+    backgroundColor: Colors.background,
+    borderRadius: 12,
+    padding: 16,
+  },
+  chartBars: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    height: 110,
+    gap: 4,
+  },
+  chartBarWrapper: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  chartBar: {
+    width: '80%',
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+    minHeight: 4,
+  },
+  chartLabel: {
+    fontSize: 8,
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
+  chartCaption: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 8,
   },
 });

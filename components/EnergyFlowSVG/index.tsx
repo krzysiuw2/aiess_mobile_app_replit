@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import Svg from 'react-native-svg';
 import type { EnergyFlowProps, DerivedState, FlowState } from './types';
 
@@ -12,10 +12,10 @@ import GridNode from './GridNode';
 import LoadNode from './LoadNode';
 import PvNode from './PvNode';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const ASPECT_RATIO = 350 / 550;
-const DIAGRAM_WIDTH = SCREEN_WIDTH - 32;
-const DIAGRAM_HEIGHT = DIAGRAM_WIDTH / ASPECT_RATIO;
+const VIEWBOX_W = 350;
+const VIEWBOX_H = 550;
+const MAX_WIDTH = 500;
+const VERTICAL_CHROME = 180;
 
 const AI_COLOR_MAP: Record<string, string> = {
   ch: '#3b82f6',
@@ -145,6 +145,13 @@ function flowDirFromState(s: FlowState): 1 | -1 | 0 {
 }
 
 export default function EnergyFlowSVG(props: EnergyFlowProps) {
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+
+  const fromScreen = screenWidth - 32;
+  const fromHeight = (screenHeight - VERTICAL_CHROME) * (VIEWBOX_W / VIEWBOX_H);
+  const diagramWidth = Math.min(fromScreen, fromHeight, MAX_WIDTH);
+  const diagramHeight = diagramWidth / (VIEWBOX_W / VIEWBOX_H);
+
   const d = useMemo(() => deriveState(props), [props.liveData, props.t]);
 
   // Refs for animated SVG elements
@@ -289,11 +296,11 @@ export default function EnergyFlowSVG(props: EnergyFlowProps) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.svgContainer}>
+      <View style={{ width: diagramWidth, height: diagramHeight }}>
         <Svg
-          viewBox="0 0 350 550"
-          width={DIAGRAM_WIDTH}
-          height={DIAGRAM_HEIGHT}
+          viewBox={`0 0 ${VIEWBOX_W} ${VIEWBOX_H}`}
+          width={diagramWidth}
+          height={diagramHeight}
           preserveAspectRatio="xMidYMid meet"
         >
           <FlowLines
@@ -381,9 +388,5 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  svgContainer: {
-    width: DIAGRAM_WIDTH,
-    height: DIAGRAM_HEIGHT,
   },
 });

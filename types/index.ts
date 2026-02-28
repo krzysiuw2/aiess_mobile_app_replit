@@ -160,4 +160,8 @@ export type Language = 'en' | 'pl';
 
 export interface AppSettings {
   language: Language;
+  siteDescription?: string;
+  maxChargePower?: number;
+  maxDischargePower?: number;
+  gridExportFollowsSun?: boolean;
 }

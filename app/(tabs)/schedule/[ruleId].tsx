@@ -284,10 +284,33 @@ const DEFAULT_FORM: FormState = {
 // ─── Main Component ─────────────────────────────────────────────
 
 export default function RuleBuilderScreen() {
-  const { t } = useSettings();
+  const { t, settings } = useSettings();
   const { ruleId, priority } = useLocalSearchParams<{ ruleId: string; priority?: string }>();
-  const { rules, createRule, updateRule } = useSchedules();
+  const { rules, rawSchedules, safety, createRule, updateRule } = useSchedules();
   const isNew = ruleId === 'new';
+
+  const p9SiteLimit = rawSchedules?.sch?.p_9?.find(r => r.a.t === 'sl');
+  const siteHth = p9SiteLimit?.a.hth ?? 9999;
+  const siteLth = p9SiteLimit?.a.lth ?? -9999;
+
+  const maxCharge = settings.maxChargePower ?? 9999;
+  const maxDischarge = settings.maxDischargePower ?? 9999;
+
+  const siteConfigComplete =
+    !!settings.siteDescription?.trim() &&
+    settings.maxChargePower !== undefined &&
+    settings.maxDischargePower !== undefined &&
+    p9SiteLimit !== undefined;
+
+  const clamp = (val: number, min: number, max: number) =>
+    Math.max(min, Math.min(max, val));
+
+  const clampField = (field: keyof FormState, min: number, max: number) => {
+    const raw = parseFloat(form[field] as string);
+    if (isNaN(raw)) return;
+    const clamped = clamp(raw, min, max);
+    if (clamped !== raw) update({ [field]: clamped.toString() } as Partial<FormState>);
+  };
 
   const [form, setForm] = useState<FormState>({ ...DEFAULT_FORM });
   const [isSaving, setIsSaving] = useState(false);
@@ -444,6 +467,10 @@ export default function RuleBuilderScreen() {
   };
 
   const handleSave = async () => {
+    if (!siteConfigComplete) {
+      Alert.alert(t.settings.siteConfigIncompleteTitle, t.settings.siteConfigIncomplete);
+      return;
+    }
     if (!form.id.trim()) {
       Alert.alert(t.common.error, ed.ruleIdRequired);
       return;
@@ -604,11 +631,14 @@ export default function RuleBuilderScreen() {
                   style={styles.textInput}
                   value={form.power}
                   onChangeText={(v) => update({ power: v.replace(/[^0-9.]/g, '') })}
+                  onBlur={() => clampField('power', 0, form.actionType === 'ch' ? maxCharge : maxDischarge)}
                   keyboardType="decimal-pad"
                   placeholder="50"
                   placeholderTextColor={Colors.textSecondary}
                 />
-                <Text style={styles.hintText}>{ed.use999ForMax}</Text>
+                <Text style={styles.hintText}>
+                  {ed.use999ForMax} (max: {form.actionType === 'ch' ? maxCharge : maxDischarge} kW)
+                </Text>
               </View>
 
               <View style={styles.switchRow}>
@@ -634,10 +664,14 @@ export default function RuleBuilderScreen() {
                   style={styles.textInput}
                   value={form.targetSoc}
                   onChangeText={(v) => update({ targetSoc: v.replace(/[^0-9]/g, '') })}
+                  onBlur={() => clampField('targetSoc', safety.soc_min, safety.soc_max)}
                   keyboardType="number-pad"
                   placeholder="80"
                   placeholderTextColor={Colors.textSecondary}
                 />
+                <Text style={styles.hintText}>
+                  {safety.soc_min}% ~ {safety.soc_max}%
+                </Text>
               </View>
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{ed.maxPowerKw}</Text>
@@ -645,10 +679,14 @@ export default function RuleBuilderScreen() {
                   style={styles.textInput}
                   value={form.maxPower}
                   onChangeText={(v) => update({ maxPower: v.replace(/[^0-9.]/g, '') })}
+                  onBlur={() => clampField('maxPower', 0, form.actionType === 'ct' ? maxCharge : maxDischarge)}
                   keyboardType="decimal-pad"
                   placeholder="50"
                   placeholderTextColor={Colors.textSecondary}
                 />
+                <Text style={styles.hintText}>
+                  max: {form.actionType === 'ct' ? maxCharge : maxDischarge} kW
+                </Text>
               </View>
 
               {form.actionType === 'ct' && (
@@ -658,11 +696,14 @@ export default function RuleBuilderScreen() {
                     style={styles.textInput}
                     value={form.maxGrid}
                     onChangeText={(v) => update({ maxGrid: v.replace(/[^0-9.]/g, '') })}
+                    onBlur={() => clampField('maxGrid', 0, siteHth)}
                     keyboardType="decimal-pad"
                     placeholder="100"
                     placeholderTextColor={Colors.textSecondary}
                   />
-                  <Text style={styles.hintText}>{ed.maxGridImportHint}</Text>
+                  <Text style={styles.hintText}>
+                    {ed.maxGridImportHint} (max: {siteHth} kW)
+                  </Text>
                 </View>
               )}
 
@@ -673,11 +714,14 @@ export default function RuleBuilderScreen() {
                     style={styles.textInput}
                     value={form.minGrid}
                     onChangeText={(v) => update({ minGrid: v.replace(/[^0-9.\-]/g, '') })}
+                    onBlur={() => clampField('minGrid', siteLth, siteHth)}
                     keyboardType="decimal-pad"
                     placeholder="0"
                     placeholderTextColor={Colors.textSecondary}
                   />
-                  <Text style={styles.hintText}>{ed.minGridPowerHint}</Text>
+                  <Text style={styles.hintText}>
+                    {ed.minGridPowerHint} ({siteLth} ~ {siteHth} kW)
+                  </Text>
                 </View>
               )}
 
@@ -794,30 +838,37 @@ export default function RuleBuilderScreen() {
           </View>
 
           {form.hasSocCondition && (
-            <View style={styles.rowInputs}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>{ed.minSoc}</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={form.socMin}
-                  onChangeText={(v) => update({ socMin: v.replace(/[^0-9]/g, '') })}
-                  keyboardType="number-pad"
-                  placeholder="0"
-                  placeholderTextColor={Colors.textSecondary}
-                />
+            <>
+              <View style={styles.rowInputs}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>{ed.minSoc}</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={form.socMin}
+                    onChangeText={(v) => update({ socMin: v.replace(/[^0-9]/g, '') })}
+                    onBlur={() => clampField('socMin', safety.soc_min, safety.soc_max)}
+                    keyboardType="number-pad"
+                    placeholder={safety.soc_min.toString()}
+                    placeholderTextColor={Colors.textSecondary}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>{ed.maxSoc}</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={form.socMax}
+                    onChangeText={(v) => update({ socMax: v.replace(/[^0-9]/g, '') })}
+                    onBlur={() => clampField('socMax', safety.soc_min, safety.soc_max)}
+                    keyboardType="number-pad"
+                    placeholder={safety.soc_max.toString()}
+                    placeholderTextColor={Colors.textSecondary}
+                  />
+                </View>
               </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>{ed.maxSoc}</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={form.socMax}
-                  onChangeText={(v) => update({ socMax: v.replace(/[^0-9]/g, '') })}
-                  keyboardType="number-pad"
-                  placeholder="100"
-                  placeholderTextColor={Colors.textSecondary}
-                />
-              </View>
-            </View>
+              <Text style={styles.hintText}>
+                {ed.socRangeHint} ({safety.soc_min}% ~ {safety.soc_max}%)
+              </Text>
+            </>
           )}
         </View>
 
@@ -864,6 +915,7 @@ export default function RuleBuilderScreen() {
                     style={styles.textInput}
                     value={form.gridValue}
                     onChangeText={(v) => update({ gridValue: v.replace(/[^0-9.\-]/g, '') })}
+                    onBlur={() => clampField('gridValue', siteLth, siteHth)}
                     keyboardType="decimal-pad"
                     placeholder="0"
                     placeholderTextColor={Colors.textSecondary}
@@ -876,6 +928,7 @@ export default function RuleBuilderScreen() {
                       style={styles.textInput}
                       value={form.gridValueMax}
                       onChangeText={(v) => update({ gridValueMax: v.replace(/[^0-9.\-]/g, '') })}
+                      onBlur={() => clampField('gridValueMax', siteLth, siteHth)}
                       keyboardType="decimal-pad"
                       placeholder="50"
                       placeholderTextColor={Colors.textSecondary}
@@ -927,15 +980,6 @@ export default function RuleBuilderScreen() {
           </View>
         </View>
 
-        {/* ─── Preview ───────────────────────────────── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{ed.rulePreview}</Text>
-          <View style={styles.previewCard}>
-            <Text style={styles.previewText}>
-              {JSON.stringify(formDataToOptimizedRule(buildFormData()), null, 2)}
-            </Text>
-          </View>
-        </View>
       </ScrollView>
 
       {/* Pickers */}
@@ -1090,9 +1134,6 @@ const styles = StyleSheet.create({
   pickerButtonText: { fontSize: 16, color: Colors.text },
   placeholder: { color: Colors.textSecondary },
   clearLink: { color: Colors.primary, fontSize: 12, marginTop: 4 },
-
-  previewCard: { backgroundColor: Colors.card, borderRadius: 12, padding: 12 },
-  previewText: { fontFamily: 'monospace', fontSize: 11, color: Colors.textOnDark },
 
   footer: { flexDirection: 'row', padding: 16, gap: 12 },
   confirmButton: {

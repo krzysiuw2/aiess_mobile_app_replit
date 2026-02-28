@@ -106,6 +106,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     justifyContent: 'flex-start',
     paddingTop: 8,
+    width: '100%',
+    maxWidth: 600,
+    alignSelf: 'center',
   },
   centered: {
     flex: 1,
