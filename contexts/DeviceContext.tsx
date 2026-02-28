@@ -25,7 +25,6 @@ export const [DeviceProvider, useDevices] = createContextHook(() => {
 
       console.log('[Devices] Fetching devices for user:', user.id);
       
-      // Query devices that the user has access to via device_users table
       const { data, error } = await supabase
         .from('devices')
         .select(`
@@ -53,7 +52,6 @@ export const [DeviceProvider, useDevices] = createContextHook(() => {
 
       console.log('[Devices] Fetched', data?.length || 0, 'devices');
       
-      // Transform the data to match our Device type
       const devices: Device[] = (data || []).map((d: any) => ({
         id: d.id,
         device_id: d.device_id,

@@ -158,7 +158,6 @@ export default function AnalyticsScreen() {
     gridPower: true,
     batteryPower: true,
     pvPower: true,
-    factoryLoad: false,
     compensatedPower: false,
     soc: true,
   });
@@ -176,11 +175,10 @@ export default function AnalyticsScreen() {
       setError(null);
 
       try {
-        const isCurrentPeriod = isSamePeriod(selectedDate, new Date(), timeRange);
         const data = await fetchChartData(
           selectedDevice.device_id,
           timeRange as TimeRange,
-          isCurrentPeriod ? undefined : selectedDate
+          selectedDate
         );
         setChartData(data);
       } catch (err) {
@@ -193,33 +191,6 @@ export default function AnalyticsScreen() {
 
     loadData();
   }, [timeRange, selectedDate, selectedDevice?.device_id, t.common.noDeviceSelected, t.common.failedToLoad]);
-
-  function isSamePeriod(date1: Date, date2: Date, range: string): boolean {
-    if (range === '24h') {
-      return date1.toDateString() === date2.toDateString();
-    }
-    if (range === '7d') {
-      const week1 = getWeekNumber(date1);
-      const week2 = getWeekNumber(date2);
-      return week1 === week2 && date1.getFullYear() === date2.getFullYear();
-    }
-    if (range === '30d') {
-      return date1.getMonth() === date2.getMonth() && 
-             date1.getFullYear() === date2.getFullYear();
-    }
-    if (range === '365d') {
-      return date1.getFullYear() === date2.getFullYear();
-    }
-    return date1.toDateString() === date2.toDateString();
-  }
-
-  function getWeekNumber(date: Date): number {
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() + 4 - (d.getDay() || 7));
-    const yearStart = new Date(d.getFullYear(), 0, 1);
-    return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  }
 
   const stats = useMemo(() => {
     return calculateEnergyStats(chartData, timeRange as TimeRange);
@@ -422,7 +393,7 @@ export default function AnalyticsScreen() {
               minute: '2-digit'
             })}
             icon={TrendingUp}
-            color={CHART_COLORS.factory.load}
+            color={CHART_COLORS.load.line}
           />
         </View>
 

@@ -21,7 +21,7 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
       const stored = await AsyncStorage.getItem(SETTINGS_KEY);
       if (stored) {
         const parsed = JSON.parse(stored) as AppSettings;
-        return parsed;
+        return { language: parsed.language || 'en' } as AppSettings;
       }
       return defaultSettings;
     },
@@ -51,10 +51,6 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
     updateSettings({ language });
   }, [updateSettings]);
 
-  const setSiteConfig = useCallback((patch: Partial<Pick<AppSettings, 'siteDescription' | 'maxChargePower' | 'maxDischargePower' | 'gridExportFollowsSun'>>) => {
-    updateSettings(patch);
-  }, [updateSettings]);
-
   const t: TranslationKeys = getTranslation(settings.language);
 
   return {
@@ -62,7 +58,6 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
     t,
     language: settings.language,
     setLanguage,
-    setSiteConfig,
     isLoading: settingsQuery.isLoading,
   };
 });

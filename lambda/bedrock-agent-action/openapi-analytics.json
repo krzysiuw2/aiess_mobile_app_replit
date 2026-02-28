@@ -1,0 +1,68 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "AIESS Analytics Tools",
+    "description": "Energy monitoring, TGE pricing, chart generation, and rule history tools for the AIESS Energy Core agent.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/get_battery_status": {
+      "get": {
+        "description": "Retrieves real-time battery status including SoC, PCS power, grid power, PV power, load, and the currently active rule from the last 2 minutes of telemetry data.",
+        "operationId": "get_battery_status",
+        "parameters": [
+          { "name": "site_id", "in": "query", "required": true, "description": "The device or site identifier.", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Battery status data.", "content": { "application/json": { "schema": { "type": "object", "properties": { "soc": { "type": "number", "description": "Battery state of charge percentage." }, "battery_power_kw": { "type": "number", "description": "Battery power in kW." }, "grid_power_kw": { "type": "number", "description": "Grid power in kW." }, "pv_power_kw": { "type": "number", "description": "PV power in kW." }, "load_kw": { "type": "number", "description": "Load power in kW." } } } } } } }
+      }
+    },
+    "/get_energy_summary": {
+      "get": {
+        "description": "Retrieves aggregated energy statistics (averages of SoC, PCS power, grid power, PV power, load) for a specified time period. Auto-selects the optimal data bucket for the time range.",
+        "operationId": "get_energy_summary",
+        "parameters": [
+          { "name": "site_id", "in": "query", "required": true, "description": "The device or site identifier.", "schema": { "type": "string" } },
+          { "name": "hours", "in": "query", "required": false, "description": "Number of hours to look back. Defaults to 24.", "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Energy summary statistics.", "content": { "application/json": { "schema": { "type": "object", "properties": { "period_hours": { "type": "integer", "description": "The time period in hours." } } } } } } }
+      }
+    },
+    "/get_tge_prices": {
+      "get": {
+        "description": "Retrieves TGE (Polish energy exchange) electricity prices. When hours is 0 or not provided, returns only the latest spot price in PLN/MWh and PLN/kWh. When hours is provided and greater than 0, returns both the current price and hourly price history for that period.",
+        "operationId": "get_tge_prices",
+        "parameters": [
+          { "name": "site_id", "in": "query", "required": true, "description": "The device or site identifier.", "schema": { "type": "string" } },
+          { "name": "hours", "in": "query", "required": false, "description": "Number of hours of price history to include. Omit or 0 for latest price only.", "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "TGE electricity price data.", "content": { "application/json": { "schema": { "type": "object", "properties": { "price_pln_mwh": { "type": "number", "description": "Current price in PLN per MWh." }, "price_pln_kwh": { "type": "number", "description": "Current price in PLN per kWh." } } } } } } }
+      }
+    },
+    "/get_rule_history": {
+      "get": {
+        "description": "Retrieves rule history. Returns both config snapshots (what rules were configured in the shadow) and active rule execution history (which rule was actually running on the device firmware). Use type parameter to request only config, only active, or both. Always call this before speculating about which rule was active.",
+        "operationId": "get_rule_history",
+        "parameters": [
+          { "name": "site_id", "in": "query", "required": true, "description": "The device or site identifier.", "schema": { "type": "string" } },
+          { "name": "hours", "in": "query", "required": false, "description": "Number of hours to look back. Defaults to 24.", "schema": { "type": "integer" } },
+          { "name": "type", "in": "query", "required": false, "description": "History type: config, active, or both. Defaults to both.", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Rule history data.", "content": { "application/json": { "schema": { "type": "object", "properties": { "period_hours": { "type": "integer", "description": "The time period in hours." } } } } } } }
+      }
+    },
+    "/get_chart_data": {
+      "get": {
+        "description": "Generates labeled datasets with time-series data points for visualization. Returns data formatted for line or bar charts. Available fields: grid_power, pcs_power, soc, total_pv_power, compensated_power. Use this when the user wants to see visual trends.",
+        "operationId": "get_chart_data",
+        "parameters": [
+          { "name": "site_id", "in": "query", "required": true, "description": "The device or site identifier.", "schema": { "type": "string" } },
+          { "name": "fields", "in": "query", "required": true, "description": "Comma-separated field names: grid_power, pcs_power, soc, total_pv_power, compensated_power.", "schema": { "type": "string" } },
+          { "name": "hours", "in": "query", "required": false, "description": "Number of hours to look back. Defaults to 24.", "schema": { "type": "integer" } },
+          { "name": "chart_type", "in": "query", "required": false, "description": "Chart type: line or bar. Defaults to line.", "schema": { "type": "string" } },
+          { "name": "title", "in": "query", "required": false, "description": "Optional chart title.", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Chart data with datasets and labels.", "content": { "application/json": { "schema": { "type": "object", "properties": { "chart_type": { "type": "string", "description": "The type of chart." }, "title": { "type": "string", "description": "Chart title." }, "point_count": { "type": "integer", "description": "Number of data points." } } } } } } }
+      }
+    }
+  }
+}

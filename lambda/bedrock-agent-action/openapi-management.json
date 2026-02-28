@@ -1,0 +1,66 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "AIESS Management Tools",
+    "description": "Schedule management, system configuration, and site config tools for the AIESS Energy Core agent.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/get_site_config": {
+      "get": {
+        "description": "Retrieves the full site configuration from DynamoDB including description, battery specs, PV arrays, grid limits, power limits, tariff, load profile, and location. Call this first to understand the site context.",
+        "operationId": "get_site_config",
+        "parameters": [
+          { "name": "site_id", "in": "query", "required": true, "description": "The device or site identifier.", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Site configuration object from DynamoDB.", "content": { "application/json": { "schema": { "type": "object", "properties": { "site_id": { "type": "string", "description": "The site identifier." } } } } } } }
+      }
+    },
+    "/get_current_schedules": {
+      "get": {
+        "description": "Retrieves all current schedule rules from the IoT Named Shadow including priorities P4 through P9, system mode, and safety SoC limits. Always call this before modifying any rules.",
+        "operationId": "get_current_schedules",
+        "parameters": [
+          { "name": "site_id", "in": "query", "required": true, "description": "The device or site identifier.", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Schedule rules and system settings.", "content": { "application/json": { "schema": { "type": "object", "properties": { "sch": { "type": "string", "description": "Schedule rules object with p_4 through p_9 arrays." } } } } } } }
+      }
+    },
+    "/send_schedule_rule": {
+      "post": {
+        "description": "Creates or updates a schedule rule. Auto-tags source as AI. Priority must be 4 to 9. The rule_json is a JSON string with optimized format: id, a (action: t=type pw=power pid=use_pid soc=target maxp=max_power maxg=max_grid ming=min_grid str=strategy hth=high_threshold lth=low_threshold), c (conditions: ts=time_start te=time_end sm=soc_min sx=soc_max gpo=grid_operator gpv=grid_value gpx=grid_max), d (days), vf/vu (validity). Requires user confirmation.",
+        "operationId": "send_schedule_rule",
+        "x-requireConfirmation": "ENABLED",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "site_id": { "type": "string", "description": "The device or site identifier." }, "priority": { "type": "integer", "description": "Rule priority level from 4 to 9." }, "rule_json": { "type": "string", "description": "JSON string of the rule object." } }, "required": ["site_id", "priority", "rule_json"] } } } },
+        "responses": { "200": { "description": "Rule saved confirmation.", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "string", "description": "Whether the rule was saved." } } } } } } }
+      }
+    },
+    "/delete_schedule_rule": {
+      "post": {
+        "description": "Deletes a schedule rule by its rule ID and priority level. Requires user confirmation.",
+        "operationId": "delete_schedule_rule",
+        "x-requireConfirmation": "ENABLED",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "site_id": { "type": "string", "description": "The device or site identifier." }, "priority": { "type": "integer", "description": "Rule priority level from 4 to 9." }, "rule_id": { "type": "string", "description": "The unique identifier of the rule to delete." } }, "required": ["site_id", "priority", "rule_id"] } } } },
+        "responses": { "200": { "description": "Rule deleted confirmation.", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "string", "description": "Whether the rule was deleted." } } } } } } }
+      }
+    },
+    "/set_system_mode": {
+      "post": {
+        "description": "Sets the system operating mode to automatic, semi-automatic, or manual. Requires user confirmation.",
+        "operationId": "set_system_mode",
+        "x-requireConfirmation": "ENABLED",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "site_id": { "type": "string", "description": "The device or site identifier." }, "mode": { "type": "string", "description": "The operating mode: automatic, semi-automatic, or manual." } }, "required": ["site_id", "mode"] } } } },
+        "responses": { "200": { "description": "Mode set confirmation.", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "string", "description": "Whether the mode was set." } } } } } } }
+      }
+    },
+    "/set_safety_limits": {
+      "post": {
+        "description": "Sets the battery safety SoC limits at hardware level. soc_min between 1 and 50, soc_max between 50 and 100. Requires user confirmation.",
+        "operationId": "set_safety_limits",
+        "x-requireConfirmation": "ENABLED",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "site_id": { "type": "string", "description": "The device or site identifier." }, "soc_min": { "type": "number", "description": "Minimum battery SoC percentage between 1 and 50." }, "soc_max": { "type": "number", "description": "Maximum battery SoC percentage between 50 and 100." } }, "required": ["site_id", "soc_min", "soc_max"] } } } },
+        "responses": { "200": { "description": "Safety limits set confirmation.", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "string", "description": "Whether the limits were set." } } } } } } }
+      }
+    }
+  }
+}

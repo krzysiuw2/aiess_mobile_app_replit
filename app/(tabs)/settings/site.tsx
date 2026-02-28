@@ -13,31 +13,112 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { ArrowLeft, Shield, Zap, Info, BatteryCharging, Sun, X } from 'lucide-react-native';
+import { ArrowLeft, Shield, Zap, Info, BatteryCharging, Sun, X, MapPin, Battery, Cpu, SunMedium, Plug, DollarSign, BarChart3, Plus, Trash2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useSchedules } from '@/hooks/useSchedules';
+import { useSiteConfig } from '@/hooks/useSiteConfig';
+import { geocodeSiteAddress } from '@/lib/aws-site-config';
+import type { SiteConfigPvArray } from '@/types';
 
 const BELL_CURVE_BARS = [0.08, 0.18, 0.35, 0.58, 0.78, 0.92, 1.0, 0.95, 0.82, 0.62, 0.38, 0.15];
 const BELL_HOURS = ['6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17'];
 
 export default function SiteSettingsScreen() {
-  const { t, settings, setSiteConfig } = useSettings();
+  const { t } = useSettings();
   const { selectedDevice } = useDevices();
-  const { safety, rawSchedules, isLoading, setSafety, setSiteLimit } = useSchedules();
+  const { safety, rawSchedules, isLoading: schedulesLoading, setSafety, setSiteLimit } = useSchedules();
+  const { siteConfig, updateConfig, isLoading: configLoading, isUpdating } = useSiteConfig();
+
+  const isLoading = schedulesLoading || configLoading;
 
   const [socMin, setSocMin] = useState('');
   const [socMax, setSocMax] = useState('');
   const [hth, setHth] = useState('');
   const [lth, setLth] = useState('');
-  const [siteDescription, setSiteDescription] = useState(settings.siteDescription || '');
-  const [maxCharge, setMaxCharge] = useState(settings.maxChargePower?.toString() || '');
-  const [maxDischarge, setMaxDischarge] = useState(settings.maxDischargePower?.toString() || '');
-  const [sunFollow, setSunFollow] = useState(settings.gridExportFollowsSun || false);
+  const [siteDescription, setSiteDescription] = useState('');
+  const [maxCharge, setMaxCharge] = useState('');
+  const [maxDischarge, setMaxDischarge] = useState('');
+  const [sunFollow, setSunFollow] = useState(false);
   const [showSunFollowPopup, setShowSunFollowPopup] = useState(false);
   const [savingSafety, setSavingSafety] = useState(false);
   const [savingSiteLimit, setSavingSiteLimit] = useState(false);
+
+  // Phase 2 state
+  const [battManufacturer, setBattManufacturer] = useState('');
+  const [battModel, setBattModel] = useState('');
+  const [battChemistry, setBattChemistry] = useState('');
+  const [battCapacity, setBattCapacity] = useState('');
+  const [invManufacturer, setInvManufacturer] = useState('');
+  const [invModel, setInvModel] = useState('');
+  const [invPower, setInvPower] = useState('');
+  const [invCount, setInvCount] = useState('1');
+  const [invType, setInvType] = useState('hybrid');
+  const [pvTotalPeak, setPvTotalPeak] = useState('');
+  const [pvArrays, setPvArrays] = useState<SiteConfigPvArray[]>([]);
+  const [gridCapacity, setGridCapacity] = useState('');
+  const [gridVoltage, setGridVoltage] = useState('');
+  const [gridOperator, setGridOperator] = useState('');
+  const [gridContract, setGridContract] = useState('');
+  const [gridExportAllowed, setGridExportAllowed] = useState(true);
+  const [gridMeteringId, setGridMeteringId] = useState('');
+  const [locationAddress, setLocationAddress] = useState('');
+  const [locationLat, setLocationLat] = useState('');
+  const [locationLng, setLocationLng] = useState('');
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [tariffType, setTariffType] = useState('flat');
+  const [tariffCurrency, setTariffCurrency] = useState('PLN');
+  const [tariffDemandCharge, setTariffDemandCharge] = useState('');
+  const [tariffFixed, setTariffFixed] = useState('');
+  const [loadType, setLoadType] = useState('industrial');
+  const [loadPeak, setLoadPeak] = useState('');
+  const [loadBase, setLoadBase] = useState('');
+  const [loadOpStart, setLoadOpStart] = useState('');
+  const [loadOpEnd, setLoadOpEnd] = useState('');
+  const [loadShift, setLoadShift] = useState('');
+  const [loadSeasonal, setLoadSeasonal] = useState('');
+
+  useEffect(() => {
+    if (siteConfig) {
+      setSiteDescription(siteConfig.general?.description || '');
+      setMaxCharge(siteConfig.power_limits?.max_charge_kw?.toString() || '');
+      setMaxDischarge(siteConfig.power_limits?.max_discharge_kw?.toString() || '');
+      setSunFollow(siteConfig.grid_connection?.export_follows_sun || false);
+      // Phase 2
+      setBattManufacturer(siteConfig.battery?.manufacturer || '');
+      setBattModel(siteConfig.battery?.model || '');
+      setBattChemistry(siteConfig.battery?.chemistry || '');
+      setBattCapacity(siteConfig.battery?.capacity_kwh?.toString() || '');
+      setInvManufacturer(siteConfig.inverter?.manufacturer || '');
+      setInvModel(siteConfig.inverter?.model || '');
+      setInvPower(siteConfig.inverter?.power_kw?.toString() || '');
+      setInvCount(siteConfig.inverter?.count?.toString() || '1');
+      setInvType(siteConfig.inverter?.type || 'hybrid');
+      setPvTotalPeak(siteConfig.pv_system?.total_peak_kw?.toString() || '');
+      setPvArrays(siteConfig.pv_system?.arrays || []);
+      setGridCapacity(siteConfig.grid_connection?.capacity_kva?.toString() || '');
+      setGridVoltage(siteConfig.grid_connection?.voltage_level || '');
+      setGridOperator(siteConfig.grid_connection?.operator || '');
+      setGridContract(siteConfig.grid_connection?.contract_type || '');
+      setGridExportAllowed(siteConfig.grid_connection?.export_allowed ?? true);
+      setGridMeteringId(siteConfig.grid_connection?.metering_point_id || '');
+      setLocationAddress(siteConfig.location?.address || '');
+      setLocationLat(siteConfig.location?.latitude?.toString() || '');
+      setLocationLng(siteConfig.location?.longitude?.toString() || '');
+      setTariffType(siteConfig.tariff?.type || 'flat');
+      setTariffCurrency(siteConfig.tariff?.currency || 'PLN');
+      setTariffDemandCharge(siteConfig.tariff?.demand_charge_per_kw?.toString() || '');
+      setTariffFixed(siteConfig.tariff?.fixed_monthly?.toString() || '');
+      setLoadType(siteConfig.load_profile?.type || 'industrial');
+      setLoadPeak(siteConfig.load_profile?.typical_peak_kw?.toString() || '');
+      setLoadBase(siteConfig.load_profile?.typical_base_kw?.toString() || '');
+      setLoadOpStart(siteConfig.load_profile?.operating_hours?.start || '');
+      setLoadOpEnd(siteConfig.load_profile?.operating_hours?.end || '');
+      setLoadShift(siteConfig.load_profile?.shift_pattern || '');
+      setLoadSeasonal(siteConfig.load_profile?.seasonal_notes || '');
+    }
+  }, [siteConfig]);
 
   useEffect(() => {
     if (safety) {
@@ -84,24 +165,32 @@ export default function SiteSettingsScreen() {
     }
   };
 
-  const handleSaveDescription = () => {
+  const handleSaveDescription = async () => {
     if (!siteDescription.trim()) {
       Alert.alert(t.common.error, t.settings.siteConfigIncomplete);
       return;
     }
-    setSiteConfig({ siteDescription: siteDescription.trim() });
-    Alert.alert(t.common.success, t.settings.siteDescSaved);
+    try {
+      await updateConfig({ general: { description: siteDescription.trim() } });
+      Alert.alert(t.common.success, t.settings.siteDescSaved);
+    } catch {
+      Alert.alert(t.common.error, t.settings.failedSaveSiteConfig);
+    }
   };
 
-  const handleSaveDesiredPower = () => {
+  const handleSaveDesiredPower = async () => {
     const ch = parseFloat(maxCharge);
     const dis = parseFloat(maxDischarge);
     if (isNaN(ch) || isNaN(dis) || ch <= 0 || dis <= 0) {
       Alert.alert(t.common.error, t.common.pleaseEnterValidNumbers);
       return;
     }
-    setSiteConfig({ maxChargePower: ch, maxDischargePower: dis });
-    Alert.alert(t.common.success, t.settings.desiredPowerSaved);
+    try {
+      await updateConfig({ power_limits: { max_charge_kw: ch, max_discharge_kw: dis } });
+      Alert.alert(t.common.success, t.settings.desiredPowerSaved);
+    } catch {
+      Alert.alert(t.common.error, t.settings.failedSaveSiteConfig);
+    }
   };
 
   const handleSaveSiteLimit = async () => {
@@ -116,6 +205,7 @@ export default function SiteSettingsScreen() {
     try {
       setSavingSiteLimit(true);
       await setSiteLimit(high, low);
+      await updateConfig({ grid_connection: { export_follows_sun: sunFollow } });
       Alert.alert(t.common.success, t.settings.siteLimitsUpdated);
     } catch (err) {
       Alert.alert(t.common.error, t.settings.failedSaveSiteLimits);
@@ -123,6 +213,147 @@ export default function SiteSettingsScreen() {
       setSavingSiteLimit(false);
     }
   };
+
+  const handleToggleSunFollow = async (v: boolean) => {
+    setSunFollow(v);
+    try {
+      await updateConfig({ grid_connection: { export_follows_sun: v } });
+    } catch {
+      setSunFollow(!v);
+    }
+  };
+
+  const handleSaveBattery = async () => {
+    try {
+      await updateConfig({
+        battery: {
+          manufacturer: battManufacturer || undefined,
+          model: battModel || undefined,
+          chemistry: battChemistry || undefined,
+          capacity_kwh: parseFloat(battCapacity) || undefined,
+        },
+      });
+      Alert.alert(t.common.success, t.settings.batterySpecsSaved);
+    } catch { Alert.alert(t.common.error, t.settings.failedSaveSiteConfig); }
+  };
+
+  const handleSaveInverter = async () => {
+    try {
+      await updateConfig({
+        inverter: {
+          manufacturer: invManufacturer || undefined,
+          model: invModel || undefined,
+          power_kw: parseFloat(invPower) || undefined,
+          count: parseInt(invCount) || 1,
+          type: invType as any,
+        },
+      });
+      Alert.alert(t.common.success, t.settings.inverterSpecsSaved);
+    } catch { Alert.alert(t.common.error, t.settings.failedSaveSiteConfig); }
+  };
+
+  const handleSavePv = async () => {
+    try {
+      await updateConfig({
+        pv_system: {
+          total_peak_kw: parseFloat(pvTotalPeak) || undefined,
+          arrays: pvArrays.length > 0 ? pvArrays : undefined,
+        },
+      });
+      Alert.alert(t.common.success, t.settings.pvSystemSaved);
+    } catch { Alert.alert(t.common.error, t.settings.failedSaveSiteConfig); }
+  };
+
+  const handleSaveGridConnection = async () => {
+    try {
+      await updateConfig({
+        grid_connection: {
+          capacity_kva: parseFloat(gridCapacity) || undefined,
+          voltage_level: gridVoltage || undefined,
+          operator: gridOperator || undefined,
+          contract_type: gridContract || undefined,
+          export_allowed: gridExportAllowed,
+          metering_point_id: gridMeteringId || undefined,
+          export_follows_sun: sunFollow,
+        },
+      });
+      Alert.alert(t.common.success, t.settings.gridConnectionSaved);
+    } catch { Alert.alert(t.common.error, t.settings.failedSaveSiteConfig); }
+  };
+
+  const handleSaveLocation = async () => {
+    try {
+      await updateConfig({
+        location: {
+          address: locationAddress || undefined,
+          latitude: parseFloat(locationLat) || undefined,
+          longitude: parseFloat(locationLng) || undefined,
+        },
+      });
+      Alert.alert(t.common.success, t.settings.locationSaved);
+    } catch { Alert.alert(t.common.error, t.settings.failedSaveSiteConfig); }
+  };
+
+  const handleGeocode = async () => {
+    if (!locationAddress.trim() || !selectedDevice) return;
+    try {
+      setIsGeocoding(true);
+      const coords = await geocodeSiteAddress(selectedDevice.device_id, locationAddress);
+      setLocationLat(coords.latitude.toFixed(6));
+      setLocationLng(coords.longitude.toFixed(6));
+      Alert.alert(t.common.success, t.settings.geocodeSuccess);
+    } catch {
+      Alert.alert(t.common.error, t.settings.geocodeFailed);
+    } finally {
+      setIsGeocoding(false);
+    }
+  };
+
+  const handleSaveTariff = async () => {
+    try {
+      await updateConfig({
+        tariff: {
+          type: tariffType as any,
+          currency: tariffCurrency || 'PLN',
+          demand_charge_per_kw: parseFloat(tariffDemandCharge) || undefined,
+          fixed_monthly: parseFloat(tariffFixed) || undefined,
+        },
+      });
+      Alert.alert(t.common.success, t.settings.tariffSaved);
+    } catch { Alert.alert(t.common.error, t.settings.failedSaveSiteConfig); }
+  };
+
+  const handleSaveLoadProfile = async () => {
+    try {
+      await updateConfig({
+        load_profile: {
+          type: loadType as any,
+          typical_peak_kw: parseFloat(loadPeak) || undefined,
+          typical_base_kw: parseFloat(loadBase) || undefined,
+          operating_hours: (loadOpStart && loadOpEnd) ? { start: loadOpStart, end: loadOpEnd } : undefined,
+          shift_pattern: loadShift || undefined,
+          seasonal_notes: loadSeasonal || undefined,
+        },
+      });
+      Alert.alert(t.common.success, t.settings.loadProfileSaved);
+    } catch { Alert.alert(t.common.error, t.settings.failedSaveSiteConfig); }
+  };
+
+  const addPvArray = () => {
+    setPvArrays(prev => [...prev, { name: `Array ${prev.length + 1}`, peak_kw: 0, tilt_deg: 15, azimuth_deg: 180, tracker: 'fixed', shading_factor: 0.95 }]);
+  };
+
+  const updatePvArray = (index: number, patch: Partial<SiteConfigPvArray>) => {
+    setPvArrays(prev => prev.map((a, i) => i === index ? { ...a, ...patch } : a));
+  };
+
+  const removePvArray = (index: number) => {
+    setPvArrays(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const pcsPower = siteConfig?.inverter?.power_kw ?? selectedDevice?.pcs_power_kw;
+  const batteryCapacity = siteConfig?.battery?.capacity_kwh ?? selectedDevice?.battery_capacity_kwh;
+  const pvPeak = siteConfig?.pv_system?.total_peak_kw ?? selectedDevice?.pv_power_kw;
 
   if (isLoading) {
     return (
@@ -170,7 +401,9 @@ export default function SiteSettingsScreen() {
               </View>
               <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
                 <Text style={styles.infoLabel}>{t.settings.location}</Text>
-                <Text style={styles.infoValue}>{selectedDevice.location || '-'}</Text>
+                <Text style={styles.infoValue}>
+                  {siteConfig?.location?.address || selectedDevice.location || '-'}
+                </Text>
               </View>
             </View>
           </View>
@@ -200,19 +433,19 @@ export default function SiteSettingsScreen() {
               <View style={styles.datasheetRow}>
                 <Text style={styles.datasheetLabel}>{t.settings.datasheetPower}</Text>
                 <Text style={styles.datasheetValue}>
-                  {selectedDevice.pcs_power_kw != null ? `${selectedDevice.pcs_power_kw} kW` : '—'}
+                  {pcsPower != null ? `${pcsPower} kW` : '—'}
                 </Text>
               </View>
               <View style={styles.datasheetRow}>
                 <Text style={styles.datasheetLabel}>{t.settings.datasheetCapacity}</Text>
                 <Text style={styles.datasheetValue}>
-                  {selectedDevice.battery_capacity_kwh != null ? `${selectedDevice.battery_capacity_kwh} kWh` : '—'}
+                  {batteryCapacity != null ? `${batteryCapacity} kWh` : '—'}
                 </Text>
               </View>
               <View style={[styles.datasheetRow, { borderBottomWidth: 0 }]}>
                 <Text style={styles.datasheetLabel}>{t.settings.datasheetPv}</Text>
                 <Text style={styles.datasheetValue}>
-                  {selectedDevice.pv_power_kw != null ? `${selectedDevice.pv_power_kw} kWp` : '—'}
+                  {pvPeak != null ? `${pvPeak} kWp` : '—'}
                 </Text>
               </View>
               <Text style={styles.datasheetHint}>{t.settings.datasheetAutoNote}</Text>
@@ -232,8 +465,13 @@ export default function SiteSettingsScreen() {
           <TouchableOpacity
             style={[styles.saveButton, { marginTop: 12 }]}
             onPress={handleSaveDescription}
+            disabled={isUpdating}
           >
-            <Text style={styles.saveButtonText}>{t.settings.saveSiteDesc}</Text>
+            {isUpdating ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.saveButtonText}>{t.settings.saveSiteDesc}</Text>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -335,10 +573,7 @@ export default function SiteSettingsScreen() {
             </View>
             <Switch
               value={sunFollow}
-              onValueChange={(v) => {
-                setSunFollow(v);
-                setSiteConfig({ gridExportFollowsSun: v });
-              }}
+              onValueChange={handleToggleSunFollow}
               trackColor={{ false: Colors.border, true: Colors.primaryLight }}
               thumbColor={sunFollow ? Colors.primary : Colors.textSecondary}
             />
@@ -395,8 +630,300 @@ export default function SiteSettingsScreen() {
           <TouchableOpacity
             style={styles.saveButton}
             onPress={handleSaveDesiredPower}
+            disabled={isUpdating}
           >
-            <Text style={styles.saveButtonText}>{t.settings.saveDesiredPower}</Text>
+            {isUpdating ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.saveButtonText}>{t.settings.saveDesiredPower}</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Location & Address */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <MapPin size={20} color={Colors.primary} />
+            <Text style={styles.sectionTitle}>{t.settings.locationAddress}</Text>
+          </View>
+          <Text style={styles.sectionDescription}>{t.settings.locationAddressDesc}</Text>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>{t.settings.address}</Text>
+            <TextInput style={styles.textInput} value={locationAddress} onChangeText={setLocationAddress} placeholder={t.settings.addressPlaceholder} placeholderTextColor={Colors.textSecondary} />
+          </View>
+
+          <View style={styles.rowInputs}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.latitude}</Text>
+              <TextInput style={styles.textInput} value={locationLat} onChangeText={setLocationLat} keyboardType="decimal-pad" placeholder="50.0647" placeholderTextColor={Colors.textSecondary} />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.longitude}</Text>
+              <TextInput style={styles.textInput} value={locationLng} onChangeText={setLocationLng} keyboardType="decimal-pad" placeholder="19.9450" placeholderTextColor={Colors.textSecondary} />
+            </View>
+          </View>
+
+          <TouchableOpacity style={[styles.saveButton, { backgroundColor: Colors.warning, marginBottom: 12 }]} onPress={handleGeocode} disabled={isGeocoding || !locationAddress.trim()}>
+            {isGeocoding ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.saveButtonText}>{t.settings.autoDetectGps}</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveLocation} disabled={isUpdating}>
+            <Text style={styles.saveButtonText}>{t.settings.saveLocation}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Battery Specs */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Battery size={20} color={Colors.success} />
+            <Text style={styles.sectionTitle}>{t.settings.batterySpecs}</Text>
+          </View>
+          <Text style={styles.sectionDescription}>{t.settings.batterySpecsDesc}</Text>
+
+          <View style={styles.rowInputs}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.manufacturer}</Text>
+              <TextInput style={styles.textInput} value={battManufacturer} onChangeText={setBattManufacturer} placeholder="BYD" placeholderTextColor={Colors.textSecondary} />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.model}</Text>
+              <TextInput style={styles.textInput} value={battModel} onChangeText={setBattModel} placeholder="MC-Series" placeholderTextColor={Colors.textSecondary} />
+            </View>
+          </View>
+          <View style={styles.rowInputs}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.chemistry}</Text>
+              <TextInput style={styles.textInput} value={battChemistry} onChangeText={setBattChemistry} placeholder="LFP" placeholderTextColor={Colors.textSecondary} />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.capacityKwh}</Text>
+              <TextInput style={styles.textInput} value={battCapacity} onChangeText={v => setBattCapacity(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="568" placeholderTextColor={Colors.textSecondary} />
+            </View>
+          </View>
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveBattery} disabled={isUpdating}>
+            <Text style={styles.saveButtonText}>{t.settings.saveBatterySpecs}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Inverter Specs */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Cpu size={20} color={Colors.primary} />
+            <Text style={styles.sectionTitle}>{t.settings.inverterSpecs}</Text>
+          </View>
+          <Text style={styles.sectionDescription}>{t.settings.inverterSpecsDesc}</Text>
+
+          <View style={styles.rowInputs}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.manufacturer}</Text>
+              <TextInput style={styles.textInput} value={invManufacturer} onChangeText={setInvManufacturer} placeholder="SMA" placeholderTextColor={Colors.textSecondary} />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.model}</Text>
+              <TextInput style={styles.textInput} value={invModel} onChangeText={setInvModel} placeholder="Sunny Tripower X 25" placeholderTextColor={Colors.textSecondary} />
+            </View>
+          </View>
+          <View style={styles.rowInputs}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.powerKw}</Text>
+              <TextInput style={styles.textInput} value={invPower} onChangeText={v => setInvPower(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="305" placeholderTextColor={Colors.textSecondary} />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.count}</Text>
+              <TextInput style={styles.textInput} value={invCount} onChangeText={v => setInvCount(v.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholder="1" placeholderTextColor={Colors.textSecondary} />
+            </View>
+          </View>
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveInverter} disabled={isUpdating}>
+            <Text style={styles.saveButtonText}>{t.settings.saveInverterSpecs}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* PV System */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <SunMedium size={20} color={Colors.warning} />
+            <Text style={styles.sectionTitle}>{t.settings.pvSystem}</Text>
+          </View>
+          <Text style={styles.sectionDescription}>{t.settings.pvSystemDesc}</Text>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>{t.settings.totalPeakKw}</Text>
+            <TextInput style={styles.textInput} value={pvTotalPeak} onChangeText={v => setPvTotalPeak(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="200" placeholderTextColor={Colors.textSecondary} />
+          </View>
+
+          <Text style={[styles.inputLabel, { marginBottom: 8 }]}>{t.settings.arrays}</Text>
+          {pvArrays.map((arr, idx) => (
+            <View key={idx} style={styles.arrayCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                <TextInput style={[styles.textInput, { flex: 1, marginRight: 8 }]} value={arr.name || ''} onChangeText={v => updatePvArray(idx, { name: v })} placeholder={t.settings.arrayName} placeholderTextColor={Colors.textSecondary} />
+                <TouchableOpacity style={styles.removeArrayBtn} onPress={() => removePvArray(idx)}>
+                  <Trash2 size={16} color={Colors.error} />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.rowInputs}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.arrayFieldLabel}>{t.settings.peakKw}</Text>
+                  <TextInput style={styles.textInput} value={arr.peak_kw?.toString() || ''} onChangeText={v => updatePvArray(idx, { peak_kw: parseFloat(v) || 0 })} keyboardType="decimal-pad" placeholderTextColor={Colors.textSecondary} />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.arrayFieldLabel}>{t.settings.panelCount}</Text>
+                  <TextInput style={styles.textInput} value={arr.panel_count?.toString() || ''} onChangeText={v => updatePvArray(idx, { panel_count: parseInt(v) || 0 })} keyboardType="number-pad" placeholderTextColor={Colors.textSecondary} />
+                </View>
+              </View>
+              <View style={styles.rowInputs}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.arrayFieldLabel}>{t.settings.tiltDeg}</Text>
+                  <TextInput style={styles.textInput} value={arr.tilt_deg?.toString() || ''} onChangeText={v => updatePvArray(idx, { tilt_deg: parseFloat(v) || 0 })} keyboardType="decimal-pad" placeholderTextColor={Colors.textSecondary} />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.arrayFieldLabel}>{t.settings.azimuthDeg}</Text>
+                  <TextInput style={styles.textInput} value={arr.azimuth_deg?.toString() || ''} onChangeText={v => updatePvArray(idx, { azimuth_deg: parseFloat(v) || 0 })} keyboardType="decimal-pad" placeholderTextColor={Colors.textSecondary} />
+                </View>
+              </View>
+            </View>
+          ))}
+
+          <TouchableOpacity style={[styles.saveButton, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, marginBottom: 12 }]} onPress={addPvArray}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Plus size={18} color={Colors.primary} />
+              <Text style={[styles.saveButtonText, { color: Colors.primary }]}>{t.settings.addArray}</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.saveButton} onPress={handleSavePv} disabled={isUpdating}>
+            <Text style={styles.saveButtonText}>{t.settings.savePvSystem}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Grid Connection Details */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Plug size={20} color={Colors.error} />
+            <Text style={styles.sectionTitle}>{t.settings.gridConnection}</Text>
+          </View>
+          <Text style={styles.sectionDescription}>{t.settings.gridConnectionDetailDesc}</Text>
+
+          <View style={styles.rowInputs}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.capacityKva}</Text>
+              <TextInput style={styles.textInput} value={gridCapacity} onChangeText={v => setGridCapacity(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="200" placeholderTextColor={Colors.textSecondary} />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.voltageLevel}</Text>
+              <TextInput style={styles.textInput} value={gridVoltage} onChangeText={setGridVoltage} placeholder="LV" placeholderTextColor={Colors.textSecondary} />
+            </View>
+          </View>
+          <View style={styles.rowInputs}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.gridOperatorName}</Text>
+              <TextInput style={styles.textInput} value={gridOperator} onChangeText={setGridOperator} placeholder="Tauron" placeholderTextColor={Colors.textSecondary} />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.contractType}</Text>
+              <TextInput style={styles.textInput} value={gridContract} onChangeText={setGridContract} placeholder="prosumer" placeholderTextColor={Colors.textSecondary} />
+            </View>
+          </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>{t.settings.meteringPointId}</Text>
+            <TextInput style={styles.textInput} value={gridMeteringId} onChangeText={setGridMeteringId} placeholder="PL-TAURON-12345" placeholderTextColor={Colors.textSecondary} />
+          </View>
+          <View style={[styles.switchRow, { marginBottom: 16 }]}>
+            <Text style={styles.inputLabel}>{t.settings.exportAllowed}</Text>
+            <Switch value={gridExportAllowed} onValueChange={setGridExportAllowed} trackColor={{ false: Colors.border, true: Colors.primaryLight }} thumbColor={gridExportAllowed ? Colors.primary : Colors.textSecondary} />
+          </View>
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveGridConnection} disabled={isUpdating}>
+            <Text style={styles.saveButtonText}>{t.settings.saveGridConnection}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Tariff & Pricing */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <DollarSign size={20} color={Colors.success} />
+            <Text style={styles.sectionTitle}>{t.settings.tariff}</Text>
+          </View>
+          <Text style={styles.sectionDescription}>{t.settings.tariffDesc}</Text>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>{t.settings.tariffType}</Text>
+            <View style={styles.chipRow}>
+              {(['flat', 'time_of_use', 'dynamic'] as const).map(tt => (
+                <TouchableOpacity key={tt} style={[styles.chip3, tariffType === tt && styles.chip3Active]} onPress={() => setTariffType(tt)}>
+                  <Text style={[styles.chip3Text, tariffType === tt && styles.chip3TextActive]}>
+                    {tt === 'flat' ? t.settings.tariffFlat : tt === 'time_of_use' ? t.settings.tariffTou : t.settings.tariffDynamic}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+          <View style={styles.rowInputs}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.currency}</Text>
+              <TextInput style={styles.textInput} value={tariffCurrency} onChangeText={setTariffCurrency} placeholder="PLN" placeholderTextColor={Colors.textSecondary} />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.demandCharge}</Text>
+              <TextInput style={styles.textInput} value={tariffDemandCharge} onChangeText={v => setTariffDemandCharge(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="25" placeholderTextColor={Colors.textSecondary} />
+            </View>
+          </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>{t.settings.fixedMonthly}</Text>
+            <TextInput style={styles.textInput} value={tariffFixed} onChangeText={v => setTariffFixed(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="150" placeholderTextColor={Colors.textSecondary} />
+          </View>
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveTariff} disabled={isUpdating}>
+            <Text style={styles.saveButtonText}>{t.settings.saveTariff}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Load Profile */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <BarChart3 size={20} color={Colors.primary} />
+            <Text style={styles.sectionTitle}>{t.settings.loadProfile}</Text>
+          </View>
+          <Text style={styles.sectionDescription}>{t.settings.loadProfileDesc}</Text>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>{t.settings.profileType}</Text>
+            <View style={styles.chipRow}>
+              {(['industrial', 'commercial', 'residential'] as const).map(lt => (
+                <TouchableOpacity key={lt} style={[styles.chip3, loadType === lt && styles.chip3Active]} onPress={() => setLoadType(lt)}>
+                  <Text style={[styles.chip3Text, loadType === lt && styles.chip3TextActive]}>
+                    {lt === 'industrial' ? t.settings.industrial : lt === 'commercial' ? t.settings.commercial : t.settings.residential}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+          <View style={styles.rowInputs}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.typicalPeakKw}</Text>
+              <TextInput style={styles.textInput} value={loadPeak} onChangeText={v => setLoadPeak(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="150" placeholderTextColor={Colors.textSecondary} />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.typicalBaseKw}</Text>
+              <TextInput style={styles.textInput} value={loadBase} onChangeText={v => setLoadBase(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="30" placeholderTextColor={Colors.textSecondary} />
+            </View>
+          </View>
+          <View style={styles.rowInputs}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.operatingStart}</Text>
+              <TextInput style={styles.textInput} value={loadOpStart} onChangeText={setLoadOpStart} placeholder="06:00" placeholderTextColor={Colors.textSecondary} />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>{t.settings.operatingEnd}</Text>
+              <TextInput style={styles.textInput} value={loadOpEnd} onChangeText={setLoadOpEnd} placeholder="22:00" placeholderTextColor={Colors.textSecondary} />
+            </View>
+          </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>{t.settings.shiftPattern}</Text>
+            <TextInput style={styles.textInput} value={loadShift} onChangeText={setLoadShift} placeholder="two_shift" placeholderTextColor={Colors.textSecondary} />
+          </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>{t.settings.seasonalNotes}</Text>
+            <TextInput style={[styles.textInput, styles.textArea]} value={loadSeasonal} onChangeText={setLoadSeasonal} placeholder="Higher load in summer due to cooling" placeholderTextColor={Colors.textSecondary} multiline numberOfLines={3} />
+          </View>
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveLoadProfile} disabled={isUpdating}>
+            <Text style={styles.saveButtonText}>{t.settings.saveLoadProfile}</Text>
           </TouchableOpacity>
         </View>
 
@@ -725,5 +1252,57 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     marginTop: 8,
+  },
+  arrayCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 12,
+    marginBottom: 10,
+  },
+  removeArrayBtn: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+    backgroundColor: 'rgba(244, 67, 54, 0.08)',
+  },
+  arrayFieldLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  chip3: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+  },
+  chip3Active: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  chip3Text: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  chip3TextActive: {
+    color: '#fff',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
 });

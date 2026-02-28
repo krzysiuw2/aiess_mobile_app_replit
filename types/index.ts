@@ -160,8 +160,125 @@ export type Language = 'en' | 'pl';
 
 export interface AppSettings {
   language: Language;
-  siteDescription?: string;
-  maxChargePower?: number;
-  maxDischargePower?: number;
-  gridExportFollowsSun?: boolean;
+}
+
+// ─── Site Config (DynamoDB) ─────────────────────────────────────
+
+export interface SiteConfigGeneral {
+  name?: string;
+  status?: 'active' | 'inactive' | 'commissioning';
+  system_type?: 'hybrid' | 'on_grid' | 'off_grid';
+  description?: string;
+  commissioned_at?: string;
+  timezone?: string;
+}
+
+export interface SiteConfigLocation {
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  elevation_m?: number;
+  climate_zone?: string;
+}
+
+export interface SiteConfigBattery {
+  manufacturer?: string;
+  model?: string;
+  chemistry?: string;
+  capacity_kwh?: number;
+  nominal_voltage_v?: number;
+  modules_count?: number;
+  racks_count?: number;
+  c_rate_charge?: number;
+  c_rate_discharge?: number;
+  cycle_warranty?: number;
+  temp_min_c?: number;
+  temp_max_c?: number;
+}
+
+export interface SiteConfigInverter {
+  manufacturer?: string;
+  model?: string;
+  power_kw?: number;
+  count?: number;
+  type?: 'hybrid' | 'string' | 'central';
+}
+
+export interface SiteConfigPvArray {
+  name?: string;
+  peak_kw?: number;
+  panel_count?: number;
+  panel_watt?: number;
+  tilt_deg?: number;
+  azimuth_deg?: number;
+  tracker?: 'fixed' | 'single_axis' | 'dual_axis';
+  shading_factor?: number;
+}
+
+export interface SiteConfigPvSystem {
+  total_peak_kw?: number;
+  arrays?: SiteConfigPvArray[];
+}
+
+export interface SiteConfigGridConnection {
+  capacity_kva?: number;
+  voltage_level?: string;
+  operator?: string;
+  contract_type?: string;
+  export_allowed?: boolean;
+  export_follows_sun?: boolean;
+  metering_point_id?: string;
+}
+
+export interface SiteConfigTariffPeriod {
+  name: string;
+  start: string;
+  end: string;
+  days: number[];
+  import_rate?: number;
+  export_rate?: number;
+}
+
+export interface SiteConfigTariff {
+  type?: 'flat' | 'time_of_use' | 'dynamic';
+  currency?: string;
+  periods?: SiteConfigTariffPeriod[];
+  demand_charge_per_kw?: number;
+  fixed_monthly?: number;
+}
+
+export interface SiteConfigLoadProfile {
+  type?: 'industrial' | 'commercial' | 'residential';
+  typical_peak_kw?: number;
+  typical_base_kw?: number;
+  operating_hours?: { start: string; end: string };
+  shift_pattern?: string;
+  seasonal_notes?: string;
+}
+
+export interface SiteConfigPowerLimits {
+  max_charge_kw?: number;
+  max_discharge_kw?: number;
+}
+
+export interface SiteConfigInfluxDb {
+  bucket?: string;
+  measurement?: string;
+}
+
+export interface SiteConfig {
+  site_id: string;
+  general?: SiteConfigGeneral;
+  location?: SiteConfigLocation;
+  battery?: SiteConfigBattery;
+  inverter?: SiteConfigInverter;
+  pv_system?: SiteConfigPvSystem;
+  grid_connection?: SiteConfigGridConnection;
+  tariff?: SiteConfigTariff;
+  load_profile?: SiteConfigLoadProfile;
+  power_limits?: SiteConfigPowerLimits;
+  influxdb?: SiteConfigInfluxDb;
+  updated_at?: string;
+  updated_by?: string;
+  created_at?: string;
 }

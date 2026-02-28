@@ -11,21 +11,17 @@ export const CHART_COLORS = {
     line: '#4CAF50',        // Line color
   },
   battery: {
-    discharge: '#FF9800',   // Orange (battery discharge)
-    charge: '#FFB74D',      // Light orange (battery charge)
-    line: '#FF9800',        // Line color
+    discharge: '#008cff',   // AIESS blue (battery discharge)
+    charge: '#64B5F6',      // Light blue (battery charge)
+    line: '#008cff',        // Line color
   },
   pv: {
-    production: '#008cff',  // AIESS primary blue
-    area: '#64B5F6',        // Light blue for fills
-  },
-  factory: {
-    load: '#F44336',        // Red (factory load)
-    area: '#EF5350',        // Light red
+    production: '#FF9800',  // Orange (PV production)
+    area: '#FFB74D',        // Light orange for fills
   },
   load: {
-    line: '#009688',        // Teal (compensated/load)
-    area: '#4DB6AC',        // Light teal
+    line: '#F44336',        // Red (measured load / compensated_power)
+    area: '#EF5350',        // Light red
   },
   soc: {
     line: '#9C27B0',        // Purple
@@ -34,7 +30,7 @@ export const CHART_COLORS = {
   
   // Chart UI colors
   axis: '#9ca3af',          // Light gray for axes
-  grid: '#e5e7eb',          // Very light gray for grid lines
+  gridLines: '#e5e7eb',     // Very light gray for grid lines
   tooltip: '#1a1a2e',       // Dark text
   tooltipBg: '#ffffff',     // White background
   tooltipBorder: '#e5e7eb', // Light border
@@ -43,8 +39,8 @@ export const CHART_COLORS = {
   // Donut chart segments
   donut: {
     grid: '#4CAF50',        // Green
-    pv: '#008cff',          // Blue
-    battery: '#FF9800',     // Orange
+    pv: '#FF9800',          // Orange
+    battery: '#008cff',     // Blue
     center: '#f8f9fa',      // Light gray center
   },
   
@@ -61,7 +57,6 @@ export const FIELD_COLORS = {
   gridPower: { label: 'Grid', color: CHART_COLORS.grid.line, unit: 'kW' },
   batteryPower: { label: 'Battery', color: CHART_COLORS.battery.line, unit: 'kW' },
   pvPower: { label: 'PV', color: CHART_COLORS.pv.production, unit: 'kW' },
-  factoryLoad: { label: 'Factory', color: CHART_COLORS.factory.load, unit: 'kW' },
   compensatedPower: { label: 'Load', color: CHART_COLORS.load.line, unit: 'kW' },
   soc: { label: 'SoC', color: CHART_COLORS.soc.line, unit: '%', isSecondary: true },
 } as const;

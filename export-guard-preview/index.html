@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Export Guard – podgląd</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 1rem; }
+    h1 { font-size: 1.25rem; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    .row { display: flex; justify-content: space-between; margin: 0.5rem 0; }
+    .value { font-weight: 600; }
+    .ok { color: #0a0; }
+    .warn { color: #c60; }
+    .err { color: #c00; }
+    label { display: block; margin-top: 0.75rem; font-size: 0.9rem; }
+    input { width: 100%; padding: 0.5rem; margin-top: 0.25rem; }
+    button { margin-top: 0.75rem; padding: 0.5rem 1rem; cursor: pointer; }
+    .muted { font-size: 0.85rem; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Export Guard – podgląd</h1>
+  <div class="card">
+    <div class="row"><span>Eksport do sieci (grid)</span><span class="value" id="grid">—</span></div>
+    <div class="row"><span>Falownik</span><span class="value" id="inverter">—</span></div>
+    <div class="row"><span>Status guarda</span><span class="value" id="guard">—</span></div>
+    <div class="row muted"><span>Następna kontrola</span><span id="next">—</span></div>
+  </div>
+  <div class="card">
+    <h2 style="margin:0 0 0.5rem 0; font-size:1rem;">Progi (kW)</h2>
+    <label>Wyłącz falownik gdy eksport &lt; <input type="number" id="exportThreshold" step="1" placeholder="-40" /> kW</label>
+    <label>Włącz falownik gdy eksport ≥ <input type="number" id="restartThreshold" step="1" placeholder="-20" /> kW</label>
+    <button id="save">Zapisz progi</button>
+    <p class="muted" id="saveStatus"></p>
+  </div>
+  <p class="muted" id="updated">—</p>
+  <!-- URL API Export Guard (Lambda Function URL) -->
+  <script>window.__EXPORT_GUARD_API__ = 'https://tpanuwnx4hcmb3toorsifxqjte0vmlts.lambda-url.eu-central-1.on.aws/';</script>
+  <script src="app.js"></script>
+</body>
+</html>

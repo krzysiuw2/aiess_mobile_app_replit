@@ -278,10 +278,10 @@ export function calculateEfficiencyMetrics(
   let loadFromPvAndBattery = 0;
   
   chartData.forEach(point => {
-    const factoryLoad = point.factoryLoad;
+    const load = point.compensatedPower || point.factoryLoad;
     
     totalPvProduction += point.pvPower;
-    totalLoad += factoryLoad;
+    totalLoad += load;
     
     // PV self-consumed = PV - grid export
     const gridExport = Math.max(0, -point.gridPower);
@@ -290,7 +290,7 @@ export function calculateEfficiencyMetrics(
     // Load covered by PV + battery discharge
     const batteryDischarge = Math.max(0, point.batteryPower);
     loadFromPvAndBattery += Math.min(
-      factoryLoad,
+      load,
       point.pvPower + batteryDischarge
     );
   });
@@ -331,14 +331,14 @@ export function findPeakDemand(
   
   chartData.forEach(point => {
     const gridImport = Math.max(0, point.gridPower);
-    const factoryLoad = point.factoryLoad;
+    const load = point.compensatedPower || point.factoryLoad;
     
     if (gridImport > maxGrid.value) {
       maxGrid = { value: gridImport, timestamp: point.time };
     }
     
-    if (factoryLoad > maxFactory.value) {
-      maxFactory = { value: factoryLoad, timestamp: point.time };
+    if (load > maxFactory.value) {
+      maxFactory = { value: load, timestamp: point.time };
     }
   });
   
@@ -431,11 +431,15 @@ export function formatTimeLabel(value: any, timeRange: string): string {
   
   switch (timeRange) {
     case '24h':
-    case '7d':
       return date.toLocaleTimeString('en-US', { 
         hour: '2-digit', 
         minute: '2-digit',
         hour12: false 
+      });
+    case '7d':
+      return date.toLocaleDateString('en-US', {
+        weekday: 'short',
+        day: 'numeric',
       });
     case '30d':
       return date.toLocaleDateString('en-US', { 

@@ -354,44 +354,76 @@ async function queryInflux(query: string): Promise<string> {
 }
 
 /**
+ * Compute calendar-aligned period boundaries for a given date and range.
+ * - 24h: midnight of that day  ->  next midnight
+ * - 7d:  midnight of that day  ->  +7 days midnight
+ * - 30d: 1st of that month 00:00  ->  1st of next month 00:00
+ * - 365d: Jan 1 of that year 00:00  ->  Jan 1 of next year 00:00
+ * The end is capped at `now` so we never query into the future.
+ */
+function computePeriodRange(selectedDate: Date, timeRange: TimeRange): { start: Date; stop: Date } {
+  const s = new Date(selectedDate);
+  const e = new Date(selectedDate);
+
+  switch (timeRange) {
+    case 'hour':
+      s.setMinutes(0, 0, 0);
+      e.setMinutes(0, 0, 0);
+      e.setHours(e.getHours() + 1);
+      break;
+    case 'day':
+    case '24h':
+      s.setHours(0, 0, 0, 0);
+      e.setHours(0, 0, 0, 0);
+      e.setDate(e.getDate() + 1);
+      break;
+    case 'week':
+    case '7d':
+      s.setHours(0, 0, 0, 0);
+      e.setHours(0, 0, 0, 0);
+      e.setDate(e.getDate() + 7);
+      break;
+    case 'month':
+    case '30d':
+      s.setDate(1);
+      s.setHours(0, 0, 0, 0);
+      e.setDate(1);
+      e.setHours(0, 0, 0, 0);
+      e.setMonth(e.getMonth() + 1);
+      break;
+    case '365d':
+      s.setMonth(0, 1);
+      s.setHours(0, 0, 0, 0);
+      e.setMonth(0, 1);
+      e.setHours(0, 0, 0, 0);
+      e.setFullYear(e.getFullYear() + 1);
+      break;
+    default:
+      s.setHours(0, 0, 0, 0);
+      e.setHours(0, 0, 0, 0);
+      e.setDate(e.getDate() + 1);
+  }
+
+  const now = new Date();
+  if (e.getTime() > now.getTime()) {
+    e.setTime(now.getTime());
+  }
+
+  return { start: s, stop: e };
+}
+
+/**
  * Fetch chart data for analytics
  */
 export async function fetchChartData(
   siteId: string,
   timeRange: TimeRange,
-  startDate?: Date
+  selectedDate: Date
 ): Promise<ChartDataPoint[]> {
   const config = ANALYTICS_CONFIG[timeRange];
-  
-  let rangeClause: string;
-  if (startDate) {
-    const endDate = new Date(startDate);
-    switch (timeRange) {
-      case 'hour':
-        endDate.setHours(endDate.getHours() + 1);
-        break;
-      case 'day':
-      case '24h':
-        endDate.setDate(endDate.getDate() + 1);
-        break;
-      case 'week':
-      case '7d':
-        endDate.setDate(endDate.getDate() + 7);
-        break;
-      case 'month':
-      case '30d':
-        endDate.setMonth(endDate.getMonth() + 1);
-        break;
-      case '365d':
-        endDate.setFullYear(endDate.getFullYear() + 1);
-        break;
-      default:
-        endDate.setDate(endDate.getDate() + 1);
-    }
-    rangeClause = `range(start: ${startDate.toISOString()}, stop: ${endDate.toISOString()})`;
-  } else {
-    rangeClause = `range(start: ${config.rangeStart})`;
-  }
+
+  const { start, stop } = computePeriodRange(selectedDate, timeRange);
+  const rangeClause = `range(start: ${start.toISOString()}, stop: ${stop.toISOString()})`;
 
   const aggFilter = config.aggregation 
     ? `|> filter(fn: (r) => r.aggregation == "${config.aggregation}")` 
@@ -419,7 +451,7 @@ export async function fetchChartData(
       |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
   `;
 
-  console.log('[Analytics] Fetching chart data for:', timeRange, siteId);
+  console.log('[Analytics] Fetching chart data:', timeRange, siteId, 'range:', start.toISOString(), '->', stop.toISOString());
 
   try {
     const csv = await queryInflux(query);
@@ -470,8 +502,12 @@ export function calculateEnergyStats(data: ChartDataPoint[], timeRange: TimeRang
     };
   }
 
-  const config = ANALYTICS_CONFIG[timeRange];
-  const hoursPerPoint = config.hours / Math.max(data.length, 1);
+  // Compute actual time span from the data rather than assuming fixed hours,
+  // since partial periods (e.g. "today" at 10 AM) have fewer hours.
+  const firstTime = data[0].time.getTime();
+  const lastTime = data[data.length - 1].time.getTime();
+  const actualHours = Math.max((lastTime - firstTime) / 3_600_000, 0.1);
+  const hoursPerPoint = actualHours / Math.max(data.length, 1);
 
   let gridImportSum = 0;
   let gridExportSum = 0;

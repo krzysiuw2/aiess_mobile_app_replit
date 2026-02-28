@@ -1,0 +1,40 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "AIESS Test",
+    "description": "Test schema",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/get_site_config": {
+      "get": {
+        "description": "Get site configuration from DynamoDB.",
+        "operationId": "get_site_config",
+        "parameters": [
+          {
+            "name": "site_id",
+            "in": "query",
+            "required": true,
+            "description": "The device identifier.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Site configuration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "site_id": { "type": "string", "description": "The site identifier." }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

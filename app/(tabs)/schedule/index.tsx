@@ -26,6 +26,7 @@ import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useSchedules } from '@/hooks/useSchedules';
+import { useSiteConfig } from '@/hooks/useSiteConfig';
 import {
   getActionTypeLabel,
   formatTime,
@@ -141,18 +142,15 @@ function RuleCard({ rule, onEdit, onDelete, onToggle }: RuleCardProps) {
 }
 
 export default function ScheduleListScreen() {
-  const { t, settings } = useSettings();
+  const { t } = useSettings();
   const { selectedDevice } = useDevices();
   const { rules, rawSchedules, isLoading, error, refetch, deleteRule, toggleRule } = useSchedules();
+  const { siteConfigComplete } = useSiteConfig();
 
   const scheduleRules = rules.filter(rule => rule.priority !== 9);
 
   const p9SiteLimit = rawSchedules?.sch?.p_9?.find(r => r.a.t === 'sl');
-  const siteConfigComplete =
-    !!settings.siteDescription?.trim() &&
-    settings.maxChargePower !== undefined &&
-    settings.maxDischargePower !== undefined &&
-    p9SiteLimit !== undefined;
+  const configReady = siteConfigComplete && p9SiteLimit !== undefined;
 
   const handleEditRule = (rule: ScheduleRuleWithPriority) => {
     router.push({
@@ -191,7 +189,7 @@ export default function ScheduleListScreen() {
   };
 
   const handleAddRule = () => {
-    if (!siteConfigComplete) {
+    if (!configReady) {
       Alert.alert(t.settings.siteConfigIncompleteTitle, t.settings.siteConfigIncomplete);
       return;
     }

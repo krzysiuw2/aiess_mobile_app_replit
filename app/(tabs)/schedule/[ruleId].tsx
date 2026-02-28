@@ -17,6 +17,7 @@ import { X, Save, Clock, Calendar, Bot } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useSchedules } from '@/hooks/useSchedules';
+import { useSiteConfig } from '@/hooks/useSiteConfig';
 import {
   formDataToOptimizedRule,
   optimizedRuleToFormData,
@@ -284,23 +285,20 @@ const DEFAULT_FORM: FormState = {
 // ─── Main Component ─────────────────────────────────────────────
 
 export default function RuleBuilderScreen() {
-  const { t, settings } = useSettings();
+  const { t } = useSettings();
   const { ruleId, priority } = useLocalSearchParams<{ ruleId: string; priority?: string }>();
   const { rules, rawSchedules, safety, createRule, updateRule } = useSchedules();
+  const { siteConfig, siteConfigComplete } = useSiteConfig();
   const isNew = ruleId === 'new';
 
   const p9SiteLimit = rawSchedules?.sch?.p_9?.find(r => r.a.t === 'sl');
   const siteHth = p9SiteLimit?.a.hth ?? 9999;
   const siteLth = p9SiteLimit?.a.lth ?? -9999;
 
-  const maxCharge = settings.maxChargePower ?? 9999;
-  const maxDischarge = settings.maxDischargePower ?? 9999;
+  const maxCharge = siteConfig?.power_limits?.max_charge_kw ?? 9999;
+  const maxDischarge = siteConfig?.power_limits?.max_discharge_kw ?? 9999;
 
-  const siteConfigComplete =
-    !!settings.siteDescription?.trim() &&
-    settings.maxChargePower !== undefined &&
-    settings.maxDischargePower !== undefined &&
-    p9SiteLimit !== undefined;
+  const configReady = siteConfigComplete && p9SiteLimit !== undefined;
 
   const clamp = (val: number, min: number, max: number) =>
     Math.max(min, Math.min(max, val));
@@ -467,7 +465,7 @@ export default function RuleBuilderScreen() {
   };
 
   const handleSave = async () => {
-    if (!siteConfigComplete) {
+    if (!configReady) {
       Alert.alert(t.settings.siteConfigIncompleteTitle, t.settings.siteConfigIncomplete);
       return;
     }

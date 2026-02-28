@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
 import { useSettings } from '@/contexts/SettingsContext';
 import Colors from '@/constants/colors';
@@ -12,8 +12,20 @@ interface SocBandChartProps {
   timeRange: string;
 }
 
+const Y_AXIS_WIDTH = 50;
+const CHART_H_PADDING = 16 * 2;
+const PARENT_H_PADDING = 16 * 2;
+const INITIAL_SPACING = 10;
+const END_SPACING = 10;
+
 export function SocBandChart({ data, timeRange }: SocBandChartProps) {
   const { t } = useSettings();
+  const { width: screenWidth } = useWindowDimensions();
+
+  const chartWidth = screenWidth - PARENT_H_PADDING - CHART_H_PADDING - Y_AXIS_WIDTH - END_SPACING;
+  const autoSpacing = data.length > 1
+    ? Math.max(1, (chartWidth - INITIAL_SPACING) / (data.length - 1))
+    : chartWidth;
 
   if (data.length === 0) {
     return (
@@ -24,7 +36,10 @@ export function SocBandChart({ data, timeRange }: SocBandChartProps) {
   }
 
   const hasMinMax = data.some(p => p.socMin !== undefined && p.socMax !== undefined);
-  const labelInterval = Math.max(1, Math.floor(data.length / 6));
+  const minLabelWidthPx = 52;
+  const maxLabelsBySpace = Math.floor((data.length * autoSpacing) / minLabelWidthPx);
+  const targetLabels = Math.min(6, Math.max(2, maxLabelsBySpace));
+  const labelInterval = Math.max(1, Math.floor(data.length / targetLabels));
 
   const socMeanData = data.map((point, i) => ({
     value: point.soc,
@@ -81,10 +96,12 @@ export function SocBandChart({ data, timeRange }: SocBandChartProps) {
           data={socMeanData}
           data2={socMaxData}
           data3={socMinData}
+          width={chartWidth}
           height={200}
-          spacing={data.length > 50 ? 8 : 15}
-          initialSpacing={10}
-          endSpacing={10}
+          spacing={autoSpacing}
+          initialSpacing={INITIAL_SPACING}
+          endSpacing={END_SPACING}
+          disableScroll
           maxValue={100}
           noOfSections={5}
           color1={CHART_COLORS.soc.line}
@@ -93,6 +110,8 @@ export function SocBandChart({ data, timeRange }: SocBandChartProps) {
           thickness1={2}
           thickness2={1}
           thickness3={1}
+          dashWidth={6}
+          dashGap={4}
           curved
           areaChart={hasMinMax}
           areaChart2={hasMinMax}
