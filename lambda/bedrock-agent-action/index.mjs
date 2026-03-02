@@ -84,12 +84,16 @@ const handlers = {
   },
 
   async set_system_mode({ site_id, mode }) {
-    const res = await fetch(`${SCHEDULES_API}/schedules/${site_id}`, {
-      method: 'POST',
-      headers: { 'x-api-key': SCHEDULES_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_id, sch: {}, mode }),
-    });
-    return res.json();
+    const existing = await ddb.send(new GetItemCommand({ TableName: SITE_CONFIG_TABLE, Key: marshall({ site_id }) }));
+    const current = existing.Item ? unmarshall(existing.Item) : {};
+    const automation = { ...(current.automation || {}), mode };
+    await ddb.send(new UpdateItemCommand({
+      TableName: SITE_CONFIG_TABLE,
+      Key: marshall({ site_id }),
+      UpdateExpression: 'SET automation = :a, updated_at = :ts',
+      ExpressionAttributeValues: marshall({ ':a': automation, ':ts': new Date().toISOString() }),
+    }));
+    return { success: true, mode };
   },
 
   async set_safety_limits({ site_id, soc_min, soc_max }) {
@@ -156,19 +160,30 @@ const handlers = {
   },
 
   async get_tge_price({ site_id }) {
-    const q = `from(bucket: "tge_energy_prices") |> range(start: -2h) |> filter(fn: (r) => r._measurement == "energy_prices") |> last() |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")`;
+    const q = `from(bucket: "tge_energy_prices") |> range(start: -2h) |> filter(fn: (r) => r._measurement == "energy_prices" and r._field == "price") |> last()`;
     const csv = await fluxQuery(q);
     const rows = parseCsv(csv);
     if (rows.length === 0) return { error: 'No TGE price data' };
     const r = rows[rows.length - 1];
-    const pln_mwh = parseFloat(r.price_pln_mwh || r.fixing_i_price) || 0;
+    const pln_mwh = parseFloat(r._value) || 0;
     return { price_pln_mwh: pln_mwh, price_pln_kwh: pln_mwh / 1000, timestamp: r._time };
   },
 
   async get_tge_price_history({ hours = 24 }) {
-    const q = `from(bucket: "tge_energy_prices") |> range(start: -${hours}h) |> filter(fn: (r) => r._measurement == "energy_prices") |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value") |> sort(columns: ["_time"])`;
+    const q = `from(bucket: "tge_energy_prices") |> range(start: -${hours}h) |> filter(fn: (r) => r._measurement == "energy_prices" and r._field == "price") |> sort(columns: ["_time"])`;
     const csv = await fluxQuery(q);
-    return { period_hours: hours, data: parseCsv(csv) };
+    const rows = parseCsv(csv);
+    const labels = rows.map(r => r._time);
+    const data = rows.map(r => parseFloat(r._value) || 0);
+    return {
+      _chart: true,
+      chart_type: 'bar',
+      title: `Ceny energii TGE — ${new Date().toLocaleDateString('pl-PL')} (PLN/MWh)`,
+      labels,
+      datasets: [{ label: 'Cena TGE', data, color: '#f59e0b' }],
+      point_count: rows.length,
+      hours,
+    };
   },
 
   async get_tge_prices({ site_id, hours }) {
@@ -176,25 +191,32 @@ const handlers = {
       return handlers.get_tge_price({ site_id });
     }
     const current = await handlers.get_tge_price({ site_id });
-    const history = await handlers.get_tge_price_history({ hours });
-    return { current_price: current, history: history.data, period_hours: hours };
+    const chart = await handlers.get_tge_price_history({ hours: parseInt(hours) || 24 });
+    return { current_price: current, ...chart };
   },
 
   async get_chart_data({ site_id, fields, hours = 24, chart_type = 'line', title }) {
+    const h = parseInt(hours) || 24;
     const fieldList = typeof fields === 'string' ? fields.split(',').map(f => f.trim()) : fields;
-    const bucket = hours <= 1 ? 'aiess_v1' : hours <= 24 ? 'aiess_v1_1m' : hours <= 168 ? 'aiess_v1_15m' : 'aiess_v1_1h';
-    const fieldFilter = fieldList.map(f => `r._field == "${f}_mean" or r._field == "${f}"`).join(' or ');
-    const q = `from(bucket: "${bucket}") |> range(start: -${hours}h) |> filter(fn: (r) => r.site_id == "${site_id}" and r._measurement == "energy_telemetry") |> filter(fn: (r) => ${fieldFilter}) |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value") |> sort(columns: ["_time"]) |> limit(n: 500)`;
+    const { bucket, window: agg, suffix } = h <= 1
+      ? { bucket: 'aiess_v1', window: '1m', suffix: '' }
+      : h <= 24
+        ? { bucket: 'aiess_v1_1m', window: '10m', suffix: '_mean' }
+        : h <= 168
+          ? { bucket: 'aiess_v1_15m', window: '1h', suffix: '_mean' }
+          : { bucket: 'aiess_v1_1h', window: '4h', suffix: '_mean' };
+    const fieldFilter = fieldList.map(f => `r._field == "${f}${suffix}" or r._field == "${f}"`).join(' or ');
+    const q = `from(bucket: "${bucket}") |> range(start: -${h}h) |> filter(fn: (r) => r.site_id == "${site_id}" and r._measurement == "energy_telemetry") |> filter(fn: (r) => ${fieldFilter}) |> aggregateWindow(every: ${agg}, fn: mean, createEmpty: false) |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value") |> sort(columns: ["_time"]) |> limit(n: 200)`;
     const csv = await fluxQuery(q);
     const rows = parseCsv(csv);
     const labels = rows.map(r => r._time);
     const colorMap = { grid_power: '#ef4444', pcs_power: '#3b82f6', soc: '#22c55e', total_pv_power: '#f59e0b', compensated_power: '#8b5cf6' };
     const datasets = fieldList.map(f => ({
       label: f.replace(/_/g, ' '),
-      data: rows.map(r => parseFloat(r[`${f}_mean`] || r[f]) || 0),
+      data: rows.map(r => parseFloat(r[`${f}${suffix}`] || r[f]) || 0),
       color: colorMap[f] || '#6b7280',
     }));
-    return { _chart: true, chart_type, title: title || `${fieldList.join(', ')} (${hours}h)`, labels, datasets, point_count: rows.length, hours };
+    return { _chart: true, chart_type, title: title || `${fieldList.join(', ')} (${h}h)`, labels, datasets, point_count: rows.length, hours: h };
   },
 
   async get_rule_config_history({ site_id, hours = 24 }) {

@@ -3,7 +3,6 @@ import type {
   GridOperator,
   Strategy,
   Priority,
-  SystemMode,
   OptimizedAction,
   OptimizedConditions,
   OptimizedScheduleRule,
@@ -41,7 +40,6 @@ export async function saveSchedules(
   siteId: string,
   schedules: Record<string, OptimizedScheduleRule[]>,
   options?: {
-    mode?: SystemMode;
     safety?: { soc_min: number; soc_max: number };
   }
 ): Promise<SaveSchedulesResponse> {
@@ -50,7 +48,6 @@ export async function saveSchedules(
   }
 
   const body: any = { site_id: siteId, sch: schedules };
-  if (options?.mode) body.mode = options.mode;
   if (options?.safety) body.safety = options.safety;
 
   const response = await fetch(`${API_ENDPOINT}/schedules/${siteId}`, {

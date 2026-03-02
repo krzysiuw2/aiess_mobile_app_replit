@@ -46,7 +46,12 @@ export async function sendChatMessage(
   const response = await fetch(`${API_ENDPOINT}/chat`, {
     method: 'POST',
     headers: { 'x-api-key': API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, session_id: sessionId, site_id: siteId }),
+    body: JSON.stringify({
+      message,
+      session_id: sessionId,
+      site_id: siteId,
+      current_datetime: new Date().toISOString(),
+    }),
   });
 
   if (!response.ok) {
@@ -64,6 +69,7 @@ export async function sendConfirmationResult(
   toolName: string,
   actionGroup?: string,
   httpMethod?: string,
+  siteId?: string,
 ): Promise<ChatResponse> {
   if (!API_ENDPOINT || !API_KEY) {
     throw new Error('AWS API configuration missing');
@@ -90,7 +96,7 @@ export async function sendConfirmationResult(
   const response = await fetch(`${API_ENDPOINT}/chat`, {
     method: 'POST',
     headers: { 'x-api-key': API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, return_control_results: returnControlResults }),
+    body: JSON.stringify({ session_id: sessionId, site_id: siteId, return_control_results: returnControlResults }),
   });
 
   if (!response.ok) {

@@ -1,6 +1,6 @@
 import createContextHook from '@nkzw/create-context-hook';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Session, User } from '@supabase/supabase-js';
 import { UserProfile } from '@/types';
@@ -11,34 +11,64 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const initializedRef = useRef(false);
 
-  // Initialize auth state and listen for changes
+  const markInitialized = useCallback(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    setIsInitialized(true);
+  }, []);
+
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('[Auth] Initial session:', session?.user?.email || 'none');
-      setSession(session);
-      setUser(session?.user ?? null);
-      setIsInitialized(true);
-    });
+    const t0 = Date.now();
+    const timeout = setTimeout(() => {
+      console.warn(`[Auth] Init timed out after 10s — treating as unauthenticated (+${Date.now() - t0}ms)`);
+      markInitialized();
+    }, 10_000);
 
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('[Auth] Auth state changed:', event, session?.user?.email);
+    console.log(`[Auth] Starting getSession... (+${Date.now() - t0}ms)`);
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        console.log(`[Auth] getSession resolved: ${session?.user?.email || 'none'} (+${Date.now() - t0}ms)`);
+        if (initializedRef.current) return;
+        clearTimeout(timeout);
         setSession(session);
         setUser(session?.user ?? null);
+        markInitialized();
+      })
+      .catch((err) => {
+        console.error(`[Auth] getSession failed (+${Date.now() - t0}ms):`, err);
+        if (initializedRef.current) return;
+        clearTimeout(timeout);
+        markInitialized();
+      });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log(`[Auth] onAuthStateChange: ${event} ${session?.user?.email || 'none'} (+${Date.now() - t0}ms)`);
+        setSession(session);
+        setUser(session?.user ?? null);
+
+        if (!initializedRef.current) {
+          clearTimeout(timeout);
+          console.log(`[Auth] Initialized via onAuthStateChange (${event}) (+${Date.now() - t0}ms)`);
+          markInitialized();
+        }
         
         if (session?.user) {
-          // Fetch or create user profile
+          const profileStart = Date.now();
           await fetchOrCreateProfile(session.user.id, session.user.email);
+          console.log(`[Auth] fetchOrCreateProfile done (+${Date.now() - profileStart}ms)`);
         } else {
           setProfile(null);
         }
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Fetch or create user profile

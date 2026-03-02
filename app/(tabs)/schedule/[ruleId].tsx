@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { X, Save, Clock, Calendar, Bot } from 'lucide-react-native';
+import { X, Save, Clock, Calendar, Bot, AlertTriangle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useSchedules } from '@/hooks/useSchedules';
@@ -530,6 +530,13 @@ export default function RuleBuilderScreen() {
         </TouchableOpacity>
       </View>
 
+      {siteConfig?.automation?.mode === 'automatic' && (
+        <View style={styles.autoWarningBanner}>
+          <AlertTriangle size={16} color="#92400E" />
+          <Text style={styles.autoWarningText}>{t.settings.automationWarning}</Text>
+        </View>
+      )}
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -1007,6 +1014,8 @@ export default function RuleBuilderScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
+  autoWarningBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF3C7', borderRadius: 10, marginHorizontal: 16, marginBottom: 4, padding: 12 },
+  autoWarningText: { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 17 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
   headerButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', borderRadius: 20 },
   saveHeaderButton: { backgroundColor: Colors.primary },

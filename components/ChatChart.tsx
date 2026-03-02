@@ -4,9 +4,13 @@ import { LineChart, BarChart } from 'react-native-gifted-charts';
 import Colors from '@/constants/colors';
 import type { ChartData } from '@/lib/aws-chat';
 
-const CHART_WIDTH = Dimensions.get('window').width - 120;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CHART_WIDTH = SCREEN_WIDTH - 120;
+const Y_AXIS_WIDTH = 40;
+const DRAWABLE_WIDTH = CHART_WIDTH - Y_AXIS_WIDTH;
 
 function formatTimeLabel(iso: string, hours: number): string {
+  if (!iso) return '';
   const d = new Date(iso);
   if (hours <= 24) return d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', hour12: false });
   if (hours <= 168) return d.toLocaleDateString('pl-PL', { weekday: 'short', hour: '2-digit', hour12: false });
@@ -20,9 +24,16 @@ interface ChatChartProps {
 export function ChatChart({ data }: ChatChartProps) {
   const { datasets, labels, chart_type, title, hours } = data;
 
+  const numPoints = datasets?.[0]?.data?.length || 0;
+
   const labelInterval = useMemo(
     () => Math.max(1, Math.floor(labels.length / 5)),
     [labels.length],
+  );
+
+  const lineSpacing = useMemo(
+    () => numPoints > 1 ? Math.max(1, DRAWABLE_WIDTH / (numPoints - 1)) : 10,
+    [numPoints],
   );
 
   const lineDataSets = useMemo(() => {
@@ -48,6 +59,17 @@ export function ChatChart({ data }: ChatChartProps) {
     }));
   }, [chart_type, datasets, labels, labelInterval, hours]);
 
+  const barSpacing = useMemo(() => {
+    if (barData.length === 0) return 2;
+    const barW = Math.max(2, DRAWABLE_WIDTH / barData.length * 0.7);
+    return Math.max(1, (DRAWABLE_WIDTH / barData.length) - barW);
+  }, [barData.length]);
+
+  const barWidth = useMemo(() => {
+    if (barData.length === 0) return 8;
+    return Math.max(2, (DRAWABLE_WIDTH / barData.length) - barSpacing);
+  }, [barData.length, barSpacing]);
+
   if (!datasets || datasets.length === 0) return null;
 
   return (
@@ -59,8 +81,10 @@ export function ChatChart({ data }: ChatChartProps) {
           data={barData}
           width={CHART_WIDTH}
           height={160}
-          barWidth={Math.max(2, CHART_WIDTH / barData.length - 2)}
-          spacing={2}
+          barWidth={barWidth}
+          spacing={barSpacing}
+          initialSpacing={5}
+          endSpacing={5}
           hideRules
           xAxisColor={Colors.border}
           yAxisColor={Colors.border}
@@ -83,6 +107,9 @@ export function ChatChart({ data }: ChatChartProps) {
           color5={lineDataSets[4]?.color}
           width={CHART_WIDTH}
           height={160}
+          spacing={lineSpacing}
+          initialSpacing={5}
+          endSpacing={5}
           curved
           hideDataPoints
           thickness={2}

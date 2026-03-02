@@ -80,19 +80,18 @@ export const [DeviceProvider, useDevices] = createContextHook(() => {
     },
   });
 
-  // Set selected device when data loads
+  // Set selected device on initial load only
   useEffect(() => {
+    if (selectedDeviceId) return;
     const devices = devicesQuery.data;
     const storedDeviceId = selectedDeviceQuery.data;
 
     if (storedDeviceId && devices?.some(d => d.id === storedDeviceId)) {
-      // Use stored device if it's valid
       setSelectedDeviceId(storedDeviceId);
-    } else if (devices && devices.length > 0 && !selectedDeviceId) {
-      // Default to first device
+    } else if (devices && devices.length > 0) {
       setSelectedDeviceId(devices[0].id);
     }
-  }, [selectedDeviceQuery.data, devicesQuery.data, selectedDeviceId]);
+  }, [selectedDeviceQuery.data, devicesQuery.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear devices when user logs out
   useEffect(() => {

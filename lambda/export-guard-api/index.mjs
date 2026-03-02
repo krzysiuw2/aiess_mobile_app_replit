@@ -15,7 +15,7 @@ const CONFIG_KEY = `${SITE_ID}_config`;
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Methods': 'GET,PATCH,OPTIONS',
+  'Access-Control-Allow-Methods': 'GET,PATCH,POST,OPTIONS',
 };
 
 function json(status, body) {
@@ -95,11 +95,47 @@ async function getSuplaState() {
   }
 }
 
+async function suplaTurnOn() {
+  if (!SUPLA_BASE) return false;
+  try {
+    const res = await fetch(`${SUPLA_BASE}/turn-on`);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function clearGuardState() {
+  await ddb.send(new PutItemCommand({
+    TableName: GUARD_TABLE,
+    Item: marshall({
+      guard_id: SITE_ID,
+      inverter_off: false,
+      updated_at: new Date().toISOString(),
+    }, { removeUndefinedValues: true }),
+  }));
+}
+
 export const handler = async (event) => {
   const method = event.requestContext?.http?.method || event.httpMethod || 'GET';
 
   if (method === 'OPTIONS') {
     return { statusCode: 204, headers: CORS, body: '' };
+  }
+
+  if (method === 'POST') {
+    let body = {};
+    try {
+      body = (event.body && (typeof event.body === 'string' ? JSON.parse(event.body) : event.body)) || {};
+    } catch {
+      return json(400, { error: 'Invalid JSON' });
+    }
+    if (body.action === 'turn_on') {
+      const ok = await suplaTurnOn();
+      if (ok) await clearGuardState();
+      return json(200, { ok, message: ok ? 'Falownik włączony (cooldown pominięty).' : 'Błąd Supla – sprawdź połączenie.' });
+    }
+    return json(400, { error: 'Użyj { "action": "turn_on" }' });
   }
 
   if (method === 'PATCH') {

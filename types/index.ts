@@ -88,7 +88,6 @@ export interface ScheduleRuleWithPriority extends OptimizedScheduleRule {
 export interface SchedulesResponse {
   site_id: string;
   v: string;
-  mode?: SystemMode;
   safety?: {
     soc_min?: number;
     soc_max?: number;
@@ -266,6 +265,15 @@ export interface SiteConfigInfluxDb {
   measurement?: string;
 }
 
+export interface SiteConfigAutomation {
+  mode?: SystemMode;
+  enabled?: boolean;
+  intraday_interval_min?: number;
+  daily_time?: string;
+  weekly_day?: number;
+  weekly_time?: string;
+}
+
 export interface SiteConfig {
   site_id: string;
   general?: SiteConfigGeneral;
@@ -278,6 +286,7 @@ export interface SiteConfig {
   load_profile?: SiteConfigLoadProfile;
   power_limits?: SiteConfigPowerLimits;
   influxdb?: SiteConfigInfluxDb;
+  automation?: SiteConfigAutomation;
   updated_at?: string;
   updated_by?: string;
   created_at?: string;

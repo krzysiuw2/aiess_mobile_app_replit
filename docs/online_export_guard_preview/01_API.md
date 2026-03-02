@@ -103,10 +103,33 @@ Po zapisie Lambda Export Guard przy kolejnym odczycie konfiguracji z DynamoDB u�
 
 ---
 
+## POST – włącz falownik (pomiń oczekiwanie)
+
+**Request:** `POST {baseUrl}`  
+**Headers:** `Content-Type: application/json`  
+**Body:** `{ "action": "turn_on" }`
+
+Włącza falownik przez Supla i czyści stan cooldownu w DynamoDB, więc guard przechodzi od razu w tryb „monitoring” zamiast czekać do następnej kontroli.
+
+**Response 200:**
+
+```json
+{
+  "ok": true,
+  "message": "Falownik włączony (cooldown pominięty)."
+}
+```
+
+Lub przy błędzie Supla: `"ok": false`, `"message": "Błąd Supla – sprawdź połączenie."`
+
+**Response 400:** np. `{ "error": "Użyj { \"action\": \"turn_on\" }" }`
+
+---
+
 ## CORS
 
 - `Access-Control-Allow-Origin: *`
-- `Access-Control-Allow-Methods: GET, PATCH, OPTIONS`
+- `Access-Control-Allow-Methods: GET, PATCH, POST, OPTIONS`
 - `Access-Control-Allow-Headers: Content-Type`
 
 Odpyty z przeglądarki (np. z aiess.pl lub Vercel) są dozwolone.

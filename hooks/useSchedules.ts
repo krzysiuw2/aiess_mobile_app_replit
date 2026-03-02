@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useDevices } from '@/contexts/DeviceContext';
 import {
   getSchedules,
@@ -10,13 +10,11 @@ import type {
   ScheduleRuleWithPriority,
   SchedulesResponse,
   Priority,
-  SystemMode,
 } from '@/types';
 
 interface UseSchedulesReturn {
   rules: ScheduleRuleWithPriority[];
   rawSchedules: SchedulesResponse | null;
-  mode: SystemMode;
   safety: { soc_min: number; soc_max: number };
   isLoading: boolean;
   error: string | null;
@@ -26,7 +24,6 @@ interface UseSchedulesReturn {
   deleteRule: (ruleId: string, priority: Priority) => Promise<void>;
   toggleRule: (ruleId: string, priority: Priority) => Promise<void>;
   setSafety: (socMin: number, socMax: number) => Promise<void>;
-  setMode: (mode: SystemMode) => Promise<void>;
   setSiteLimit: (hth: number, lth: number) => Promise<void>;
 }
 
@@ -61,12 +58,11 @@ export function useSchedules(): UseSchedulesReturn {
     fetchSchedules();
   }, [fetchSchedules]);
 
-  const rules = rawSchedules ? flattenRules(rawSchedules.sch) : [];
-  const mode: SystemMode = rawSchedules?.mode || 'automatic';
-  const safety = {
+  const rules = useMemo(() => rawSchedules ? flattenRules(rawSchedules.sch) : [], [rawSchedules]);
+  const safety = useMemo(() => ({
     soc_min: rawSchedules?.safety?.soc_min ?? 5,
     soc_max: rawSchedules?.safety?.soc_max ?? 100,
-  };
+  }), [rawSchedules]);
 
   const siteId = selectedDevice?.device_id;
 
@@ -139,13 +135,6 @@ export function useSchedules(): UseSchedulesReturn {
     await fetchSchedules();
   }, [siteId, fetchSchedules]);
 
-  const setMode = useCallback(async (newMode: SystemMode) => {
-    if (!siteId) throw new Error('No site selected');
-
-    await saveSchedules(siteId, {}, { mode: newMode });
-    await fetchSchedules();
-  }, [siteId, fetchSchedules]);
-
   const setSiteLimit = useCallback(async (hth: number, lth: number) => {
     if (!siteId || !rawSchedules) throw new Error('No site selected');
 
@@ -164,7 +153,6 @@ export function useSchedules(): UseSchedulesReturn {
   return {
     rules,
     rawSchedules,
-    mode,
     safety,
     isLoading,
     error,
@@ -174,7 +162,6 @@ export function useSchedules(): UseSchedulesReturn {
     deleteRule,
     toggleRule,
     setSafety,
-    setMode,
     setSiteLimit,
   };
 }

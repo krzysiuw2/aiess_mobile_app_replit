@@ -13,6 +13,7 @@ export async function getSiteConfig(siteId: string): Promise<SiteConfig | null> 
     headers: { 'x-api-key': API_KEY },
   });
 
+  if (response.status === 404) return null;
   if (!response.ok) {
     const errorText = await response.text();
     console.error('[SiteConfig] GET error:', response.status, errorText);

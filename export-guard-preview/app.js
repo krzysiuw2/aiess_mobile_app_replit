@@ -15,6 +15,15 @@
   function setGuard(status, next, lastPower) {
     el('guard').textContent = status === 'cooldown' ? 'Cooldown' : 'Monitoring';
     el('next').textContent = next ? new Date(next).toLocaleString('pl-PL') : '—';
+    var wrap = el('turnOnWrap');
+    var btn = el('turnOnBtn');
+    if (status === 'cooldown') {
+      wrap.style.display = 'block';
+      btn.disabled = false;
+      el('turnOnStatus').textContent = '';
+    } else {
+      wrap.style.display = 'none';
+    }
   }
   function setConfig(exportT, restartT) {
     if (exportT != null) el('exportThreshold').value = exportT;
@@ -41,6 +50,27 @@
         el('guard').textContent = 'Błąd połączenia';
       });
   }
+
+  el('turnOnBtn').onclick = function () {
+    if (!API) return;
+    var btn = el('turnOnBtn');
+    btn.disabled = true;
+    el('turnOnStatus').textContent = 'Włączanie…';
+    fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'turn_on' }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        el('turnOnStatus').textContent = d.message || (d.ok ? 'Włączono.' : d.error || 'Błąd.');
+        if (d.ok) fetchState(); else btn.disabled = false;
+      })
+      .catch(function () {
+        el('turnOnStatus').textContent = 'Błąd połączenia.';
+        btn.disabled = false;
+      });
+  };
 
   el('save').onclick = function () {
     var exportT = parseFloat(el('exportThreshold').value);

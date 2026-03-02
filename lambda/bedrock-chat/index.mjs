@@ -20,7 +20,11 @@ export const handler = async (event) => {
 
   try {
     const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-    const { message, session_id, site_id, return_control_results } = body;
+    const { message, session_id, site_id, current_datetime, return_control_results } = body;
+
+    const now = current_datetime || new Date().toISOString();
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const currentDay = dayNames[new Date(now).getUTCDay()];
 
     if (!session_id) return response(400, { error: 'session_id required' });
 
@@ -31,23 +35,26 @@ export const handler = async (event) => {
       enableTrace: true,
     };
 
+    const sessionAttrs = {};
+    const promptAttrs = { current_datetime: now, current_day_of_week: currentDay };
+    if (site_id) {
+      sessionAttrs.site_id = site_id;
+      promptAttrs.site_id = site_id;
+    }
+
     if (return_control_results) {
       params.sessionState = {
         returnControlInvocationResults: return_control_results,
+        sessionAttributes: sessionAttrs,
+        promptSessionAttributes: promptAttrs,
       };
-      if (site_id) {
-        params.sessionState.sessionAttributes = { site_id };
-        params.sessionState.promptSessionAttributes = { site_id };
-      }
     } else {
       if (!message) return response(400, { error: 'message required' });
       params.inputText = message;
-      if (site_id) {
-        params.sessionState = {
-          sessionAttributes: { site_id },
-          promptSessionAttributes: { site_id },
-        };
-      }
+      params.sessionState = {
+        sessionAttributes: sessionAttrs,
+        promptSessionAttributes: promptAttrs,
+      };
     }
 
     const command = new InvokeAgentCommand(params);

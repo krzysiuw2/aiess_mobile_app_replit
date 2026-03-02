@@ -160,6 +160,7 @@ export default function AIScreen() {
         msg.confirmation.tool_name,
         msg.confirmation.action_group,
         msg.confirmation.http_method,
+        selectedDevice?.device_id,
       );
       addMessage({ text: res.text || (accepted ? 'Action confirmed.' : 'Action rejected.'), isUser: false });
     } catch (err) {
@@ -167,12 +168,77 @@ export default function AIScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [addMessage, t]);
+  }, [addMessage, t, selectedDevice]);
 
   const getConfirmLabel = (toolName: string) => {
     const labels = CONFIRM_LABELS[toolName];
     return labels ? labels[language] || labels.en : toolName;
   };
+
+  const ACTION_LABELS: Record<string, string> = useMemo(() => ({
+    ch: t.ai.actionCh, dis: t.ai.actionDis, sb: t.ai.actionSb,
+    ct: t.ai.actionCt, dt: t.ai.actionDt, sl: t.ai.actionSl,
+  }), [t]);
+
+  const DAY_NAMES = useMemo(() => language === 'pl'
+    ? ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb']
+    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+  [language]);
+
+  const formatHhmm = (v: number) => {
+    const s = String(v).padStart(4, '0');
+    return `${s.slice(0, 2)}:${s.slice(2)}`;
+  };
+
+  const formatDays = (d: any): string => {
+    if (!d) return t.ai.daysEveryday;
+    if (d === 'ed' || d === 'everyday' || d === 'all') return t.ai.daysEveryday;
+    if (d === 'wd' || d === 'weekdays') return t.ai.daysWeekdays;
+    if (d === 'we' || d === 'weekend') return t.ai.daysWeekend;
+    if (Array.isArray(d)) return d.map((i: number) => DAY_NAMES[i] ?? i).join(', ');
+    return String(d);
+  };
+
+  const formatRuleParams = useCallback((params: Record<string, any>): Array<[string, string]> => {
+    const rule = params.rule_json ?? params.rule;
+    if (!rule || typeof rule !== 'object') {
+      return Object.entries(params)
+        .filter(([k]) => k !== 'site_id' && k !== 'priority')
+        .map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : String(v)]);
+    }
+
+    const lines: Array<[string, string]> = [];
+    const a = rule.a;
+    if (a?.t) {
+      const label = ACTION_LABELS[a.t] || a.t;
+      lines.push([t.ai.ruleAction, a.pw ? `${label} — ${a.pw} kW` : label]);
+    }
+
+    const c = rule.c;
+    if (c?.ts != null || c?.te != null) {
+      const ts = c.ts != null ? formatHhmm(c.ts) : '00:00';
+      const te = c.te != null ? formatHhmm(c.te) : '24:00';
+      lines.push([t.ai.ruleTime, `${ts} – ${te}`]);
+    } else {
+      lines.push([t.ai.ruleTime, t.ai.allDay]);
+    }
+
+    if (rule.d) lines.push([t.ai.ruleDays, formatDays(rule.d)]);
+
+    if (c?.sm != null || c?.sx != null) {
+      lines.push([t.ai.ruleSoc, `${c.sm ?? 0}% – ${c.sx ?? 100}%`]);
+    }
+    if (a?.soc != null) lines.push([t.ai.ruleTargetSoc, `${a.soc}%`]);
+    if (a?.maxp != null) lines.push([t.ai.rulePower, `max ${a.maxp} kW`]);
+    if (a?.maxg != null || a?.ming != null) {
+      const parts: string[] = [];
+      if (a.ming != null) parts.push(`min ${a.ming} kW`);
+      if (a.maxg != null) parts.push(`max ${a.maxg} kW`);
+      lines.push([t.ai.ruleGridTrigger, parts.join(', ')]);
+    }
+
+    return lines;
+  }, [t, ACTION_LABELS, DAY_NAMES]);
 
   const confirmParamsToShow = useCallback((params: Record<string, any>) => {
     return Object.entries(params).filter(([k]) => k !== 'site_id');
@@ -203,9 +269,14 @@ export default function AIScreen() {
             <View style={styles.confirmCard}>
               <Text style={styles.confirmTitle}>{t.ai.confirmTitle}</Text>
               <Text style={styles.confirmAction}>{getConfirmLabel(item.confirmation!.tool_name)}</Text>
-              {confirmParamsToShow(item.confirmation!.parameters).map(([k, v]) => (
+              {(item.confirmation!.tool_name === 'send_schedule_rule'
+                ? formatRuleParams(item.confirmation!.parameters)
+                : confirmParamsToShow(item.confirmation!.parameters).map(([k, v]) =>
+                    [k, typeof v === 'object' ? JSON.stringify(v) : String(v)] as [string, string]
+                  )
+              ).map(([k, v]) => (
                 <Text key={k} style={styles.confirmParam}>
-                  {k}: {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                  {k}: {v}
                 </Text>
               ))}
               <View style={styles.confirmButtons}>

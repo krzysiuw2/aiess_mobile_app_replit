@@ -11,14 +11,16 @@
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#008cff"
+      "backgroundColor": "#ffffff"
     },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.aiess.mobile",
       "buildNumber": "1",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSSpeechRecognitionUsageDescription": "Allow $(PRODUCT_NAME) to use speech recognition.",
+        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use the microphone."
       }
     },
     "android": {
@@ -27,7 +29,10 @@
         "backgroundColor": "#008cff"
       },
       "package": "com.aiess.mobile",
-      "versionCode": 1
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
@@ -63,14 +68,15 @@
       "expo-font",
       "expo-web-browser",
       "expo-secure-store",
-      "expo-speech-recognition"
+      "expo-speech-recognition",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
       "eas": {
-        "projectId": "db4e36fb-f053-42ad-bd91-3c3082773c35"
+        "projectId": "7876f371-52f5-4f41-923d-bc1ec284b2a9"
       },
       "router": {
         "origin": "https://aiess.app/"
