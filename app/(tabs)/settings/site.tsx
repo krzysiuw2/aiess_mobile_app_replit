@@ -340,7 +340,7 @@ export default function SiteSettingsScreen() {
   };
 
   const addPvArray = () => {
-    setPvArrays(prev => [...prev, { name: `Array ${prev.length + 1}`, peak_kw: 0, tilt_deg: 15, azimuth_deg: 180, tracker: 'fixed', shading_factor: 0.95 }]);
+    setPvArrays(prev => [...prev, { name: `Array ${prev.length + 1}`, peak_kw: 0, tilt_deg: 15, azimuth_deg: 180, tracker: 'fixed', shading_factor: 0.95, monitored: false, efficiency_factor: 1.0 }]);
   };
 
   const updatePvArray = (index: number, patch: Partial<SiteConfigPvArray>) => {
@@ -778,6 +778,25 @@ export default function SiteSettingsScreen() {
                 <View style={[styles.inputGroup, { flex: 1 }]}>
                   <Text style={styles.arrayFieldLabel}>{t.settings.azimuthDeg}</Text>
                   <TextInput style={styles.textInput} value={arr.azimuth_deg?.toString() || ''} onChangeText={v => updatePvArray(idx, { azimuth_deg: parseFloat(v) || 0 })} keyboardType="decimal-pad" placeholderTextColor={Colors.textSecondary} />
+                </View>
+              </View>
+              <View style={styles.rowInputs}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.arrayFieldLabel}>{t.settings.efficiencyFactor}</Text>
+                  <TextInput style={styles.textInput} value={arr.efficiency_factor?.toString() || '1.0'} onChangeText={v => updatePvArray(idx, { efficiency_factor: parseFloat(v) || 1.0 })} keyboardType="decimal-pad" placeholderTextColor={Colors.textSecondary} />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1, justifyContent: 'center' }]}>
+                  <Text style={styles.arrayFieldLabel}>{t.settings.monitored}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                    <Switch
+                      value={arr.monitored ?? false}
+                      onValueChange={v => updatePvArray(idx, { monitored: v })}
+                      trackColor={{ false: Colors.border, true: Colors.primary }}
+                    />
+                    <Text style={{ color: arr.monitored ? Colors.primary : Colors.textSecondary, fontSize: 12 }}>
+                      {arr.monitored ? t.monitor.metered : t.monitor.estimated}
+                    </Text>
+                  </View>
                 </View>
               </View>
             </View>

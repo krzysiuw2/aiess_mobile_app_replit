@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  AIESS Forecast Engine — Lambda + EventBridge scheduling.
+  Estimated cost: <$1/site/month.
+
+Parameters:
+  InfluxUrl:
+    Type: String
+    Description: InfluxDB Cloud URL
+  InfluxToken:
+    Type: String
+    NoEcho: true
+    Description: InfluxDB API Token
+  InfluxOrg:
+    Type: String
+    Default: aiess
+  InfluxBucket:
+    Type: String
+    Default: aiess_v1_1h
+  SiteConfigTable:
+    Type: String
+    Default: site_config
+  OpenMeteoApiKey:
+    Type: String
+    Default: ''
+    Description: Optional Open-Meteo commercial API key
+  EnergaS3Bucket:
+    Type: String
+    Default: ''
+    Description: S3 bucket for Energa CSV files (backfill only)
+
+Resources:
+  ForecastEngineLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ForecastEngineLambdaRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ForecastEngineAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Scan
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${SiteConfigTable}'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub 'arn:aws:s3:::${EnergaS3Bucket}/*'
+                Condition:
+                  StringNotEquals:
+                    'aws:ResourceAccount': ''
+
+  ForecastEngineLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: aiess-forecast-engine
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Timeout: 60
+      MemorySize: 256
+      ReservedConcurrentExecutions: 5
+      Role: !GetAtt ForecastEngineLambdaRole.Arn
+      Environment:
+        Variables:
+          INFLUX_URL: !Ref InfluxUrl
+          INFLUX_TOKEN: !Ref InfluxToken
+          INFLUX_ORG: !Ref InfluxOrg
+          INFLUX_BUCKET: !Ref InfluxBucket
+          SITE_CONFIG_TABLE: !Ref SiteConfigTable
+          OPEN_METEO_API_KEY: !Ref OpenMeteoApiKey
+          ENERGA_S3_BUCKET: !Ref EnergaS3Bucket
+
+  # 48-hour forecast: every 3 hours
+  Forecast48hRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: aiess-forecast-48h
+      Description: Run 48-hour energy forecast every 3 hours
+      ScheduleExpression: 'rate(3 hours)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt ForecastEngineLambda.Arn
+          Id: Forecast48h
+          Input: '{"mode": "forecast_48h"}'
+          RetryPolicy:
+            MaximumRetryAttempts: 0
+
+  Forecast48hPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ForecastEngineLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt Forecast48hRule.Arn
+
+  # 7-day forecast: daily at 06:00 UTC
+  Forecast7dRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: aiess-forecast-7d
+      Description: Run 7-day energy forecast daily at 06:00 UTC
+      ScheduleExpression: 'cron(0 6 * * ? *)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt ForecastEngineLambda.Arn
+          Id: Forecast7d
+          Input: '{"mode": "forecast_7d"}'
+          RetryPolicy:
+            MaximumRetryAttempts: 0
+
+  Forecast7dPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ForecastEngineLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt Forecast7dRule.Arn
+
+Outputs:
+  LambdaArn:
+    Value: !GetAtt ForecastEngineLambda.Arn
+  LambdaName:
+    Value: !Ref ForecastEngineLambda
+  EstimatedMonthlyCost:
+    Value: '<$1/site/month (Lambda: ~$0.03, EventBridge: $0.01, InfluxDB writes: negligible)'

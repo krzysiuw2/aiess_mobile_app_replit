@@ -1,0 +1,12 @@
+{
+  "name": "forecast-engine",
+  "version": "1.0.0",
+  "description": "AIESS Energy Forecast Engine - PV estimation, load forecasting, backfill",
+  "type": "module",
+  "main": "index.mjs",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/util-dynamodb": "^3.0.0",
+    "@aws-sdk/client-s3": "^3.0.0"
+  }
+}

@@ -24,6 +24,8 @@ export interface LiveData {
   batterySoc: number;
   batteryStatus: 'Charging' | 'Discharging' | 'Standby';
   pvPower: number;
+  pvEstimated: number;
+  pvTotal: number;
   factoryLoad: number;
   lastUpdate: Date;
   activeRuleId?: string;
@@ -212,6 +214,8 @@ export interface SiteConfigPvArray {
   azimuth_deg?: number;
   tracker?: 'fixed' | 'single_axis' | 'dual_axis';
   shading_factor?: number;
+  monitored?: boolean;
+  efficiency_factor?: number;
 }
 
 export interface SiteConfigPvSystem {
@@ -290,4 +294,21 @@ export interface SiteConfig {
   updated_at?: string;
   updated_by?: string;
   created_at?: string;
+}
+
+// ─── Energy Simulation / Forecast Types ─────────────────────────
+
+export type SimulationSource = 'forecast' | 'backfill' | 'satellite';
+
+export interface SimulationDataPoint {
+  time: Date;
+  pvEstimated: number;
+  pvForecast: number;
+  loadForecast: number;
+  factoryLoadCorrected: number;
+  weatherGti: number;
+  weatherTemp: number;
+  weatherCloudCover: number;
+  weatherCode: number;
+  source: SimulationSource;
 }

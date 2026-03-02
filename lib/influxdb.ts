@@ -5,7 +5,7 @@
  * Uses HTTP API with Flux queries.
  */
 
-import { LiveData } from '@/types';
+import { LiveData, SimulationDataPoint } from '@/types';
 
 // Analytics Types
 export interface ChartDataPoint {
@@ -290,13 +290,23 @@ export async function fetchLiveData(siteId: string): Promise<LiveData | null> {
       ? round1(calculateFactoryLoad(avg5m['grid_power'], avg5m['total_pv_power'] ?? 0, avg5m['pcs_power'] ?? 0))
       : undefined;
 
+    let pvEstimated = 0;
+    try {
+      pvEstimated = await fetchLatestPvEstimated(siteId);
+    } catch { /* PV estimate unavailable — not critical */ }
+
+    const pvTotal = round1(pvPower + pvEstimated);
+    const correctedFactoryLoad = calculateFactoryLoad(gridPower, pvTotal, batteryPower);
+
     const liveData: LiveData = {
       gridPower: round1(gridPower),
       batteryPower: round1(batteryPower),
       batterySoc: Math.round(batterySoc),
       batteryStatus,
       pvPower: round1(pvPower),
-      factoryLoad: round1(factoryLoad),
+      pvEstimated: round1(pvEstimated),
+      pvTotal,
+      factoryLoad: round1(correctedFactoryLoad),
       lastUpdate: new Date(),
       activeRuleId,
       activeRuleAction,
@@ -544,4 +554,67 @@ export function calculateEnergyStats(data: ChartDataPoint[], timeRange: TimeRang
     avgSoc: Math.round(socSum / data.length),
     pvProduction: Math.round(pvSum * hoursPerPoint * 10) / 10,
   };
+}
+
+// ─── Simulation / Forecast Data ─────────────────────────────────
+
+/**
+ * Fetch the latest pv_estimated value from the simulation measurement.
+ * Used by fetchLiveData to augment real-time PV when arrays are unmonitored.
+ */
+async function fetchLatestPvEstimated(siteId: string): Promise<number> {
+  const query = `
+    from(bucket: "aiess_v1_1h")
+      |> range(start: -6h)
+      |> filter(fn: (r) => r._measurement == "energy_simulation")
+      |> filter(fn: (r) => r.site_id == "${siteId}")
+      |> filter(fn: (r) => r._field == "pv_estimated")
+      |> last()
+  `;
+
+  try {
+    const rows = await runFluxQuery(query);
+    const val = rows.find(r => r['_field'] === 'pv_estimated');
+    return val ? parseFloat(val['_value']) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Fetch simulation data (forecasts / backfill) for charts.
+ */
+export async function fetchSimulationData(
+  siteId: string,
+  startDate: Date,
+  endDate: Date,
+): Promise<SimulationDataPoint[]> {
+  const query = `
+    from(bucket: "aiess_v1_1h")
+      |> range(start: ${startDate.toISOString()}, stop: ${endDate.toISOString()})
+      |> filter(fn: (r) => r._measurement == "energy_simulation")
+      |> filter(fn: (r) => r.site_id == "${siteId}")
+      |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  `;
+
+  try {
+    const csv = await queryInflux(query);
+    const rows = parseInfluxCSV(csv);
+
+    return rows.map(row => ({
+      time: new Date(row['_time']),
+      pvEstimated: parseFloat(row['pv_estimated']) || 0,
+      pvForecast: parseFloat(row['pv_forecast']) || 0,
+      loadForecast: parseFloat(row['load_forecast']) || 0,
+      factoryLoadCorrected: parseFloat(row['factory_load_corrected']) || 0,
+      weatherGti: parseFloat(row['weather_gti']) || 0,
+      weatherTemp: parseFloat(row['weather_temp']) || 0,
+      weatherCloudCover: parseFloat(row['weather_cloud_cover']) || 0,
+      weatherCode: parseInt(row['weather_code']) || 0,
+      source: (row['source'] as 'forecast' | 'backfill' | 'satellite') || 'forecast',
+    })).sort((a, b) => a.time.getTime() - b.time.getTime());
+  } catch (error) {
+    console.error('[Simulation] Error fetching simulation data:', error);
+    return [];
+  }
 }

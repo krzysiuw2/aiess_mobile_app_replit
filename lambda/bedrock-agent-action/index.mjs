@@ -242,6 +242,114 @@ const handlers = {
     result.period_hours = hours;
     return result;
   },
+
+  async get_energy_forecast({ site_id, hours = 48 }) {
+    const h = parseInt(hours) || 48;
+    const q = `from(bucket: "aiess_v1_1h") |> range(start: -1h, stop: ${h}h) |> filter(fn: (r) => r._measurement == "energy_simulation" and r.site_id == "${site_id}" and r.source == "forecast") |> filter(fn: (r) => r._field == "pv_forecast" or r._field == "load_forecast" or r._field == "weather_temp" or r._field == "weather_cloud_cover" or r._field == "weather_code") |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value") |> sort(columns: ["_time"]) |> limit(n: 200)`;
+    const csv = await fluxQuery(q);
+    const rows = parseCsv(csv);
+
+    if (rows.length === 0) return { error: 'No forecast data available. The forecast engine may not have run yet.' };
+
+    const summary = {
+      period_hours: h,
+      point_count: rows.length,
+      pv_peak_kw: 0,
+      pv_total_kwh: 0,
+      load_avg_kw: 0,
+      load_peak_kw: 0,
+    };
+
+    let pvSum = 0, loadSum = 0;
+    for (const r of rows) {
+      const pv = parseFloat(r.pv_forecast) || 0;
+      const load = parseFloat(r.load_forecast) || 0;
+      if (pv > summary.pv_peak_kw) summary.pv_peak_kw = pv;
+      if (load > summary.load_peak_kw) summary.load_peak_kw = load;
+      pvSum += pv;
+      loadSum += load;
+    }
+    summary.pv_total_kwh = Math.round(pvSum);
+    summary.load_avg_kw = rows.length > 0 ? Math.round(loadSum / rows.length * 10) / 10 : 0;
+    summary.pv_peak_kw = Math.round(summary.pv_peak_kw * 10) / 10;
+    summary.load_peak_kw = Math.round(summary.load_peak_kw * 10) / 10;
+
+    const labels = rows.map(r => r._time);
+    const datasets = [
+      { label: 'PV Forecast (kW)', data: rows.map(r => parseFloat(r.pv_forecast) || 0), color: '#f59e0b' },
+      { label: 'Load Forecast (kW)', data: rows.map(r => parseFloat(r.load_forecast) || 0), color: '#8b5cf6' },
+    ];
+
+    return { _chart: true, chart_type: 'line', title: `Prognoza energii — ${h}h`, labels, datasets, summary };
+  },
+
+  async run_battery_simulation({ site_id, strategy, hours = 48 }) {
+    const forecast = await handlers.get_energy_forecast({ site_id, hours });
+    if (forecast.error) return forecast;
+
+    const siteConfig = await handlers.get_site_config({ site_id });
+    const batteryCapacity = siteConfig.battery?.capacity_kwh || 100;
+    const maxCharge = siteConfig.power_limits?.max_charge_kw || 50;
+    const maxDischarge = siteConfig.power_limits?.max_discharge_kw || 50;
+
+    const battery = await handlers.get_battery_status({ site_id });
+    let soc = battery.soc || 50;
+
+    const pvData = forecast.datasets?.find(d => d.label.includes('PV'))?.data || [];
+    const loadData = forecast.datasets?.find(d => d.label.includes('Load'))?.data || [];
+    const timestamps = forecast.labels || [];
+
+    const simResults = [];
+    let totalGridImport = 0, totalGridExport = 0, peakGridDemand = 0;
+
+    for (let i = 0; i < timestamps.length; i++) {
+      const pv = pvData[i] || 0;
+      const load = loadData[i] || 0;
+      const netDemand = load - pv;
+      let batteryAction = 0;
+
+      if (strategy === 'self_consumption') {
+        if (netDemand > 0 && soc > 10) {
+          batteryAction = -Math.min(netDemand, maxDischarge, (soc - 10) / 100 * batteryCapacity);
+        } else if (netDemand < 0 && soc < 90) {
+          batteryAction = Math.min(-netDemand, maxCharge, (90 - soc) / 100 * batteryCapacity);
+        }
+      } else if (strategy === 'peak_shaving') {
+        const peakThreshold = siteConfig.grid_connection?.capacity_kva ? siteConfig.grid_connection.capacity_kva * 0.7 : load * 0.7;
+        if (netDemand > peakThreshold && soc > 10) {
+          batteryAction = -Math.min(netDemand - peakThreshold, maxDischarge, (soc - 10) / 100 * batteryCapacity);
+        } else if (netDemand < 0 && soc < 90) {
+          batteryAction = Math.min(-netDemand, maxCharge, (90 - soc) / 100 * batteryCapacity);
+        }
+      }
+
+      soc += (batteryAction / batteryCapacity) * 100;
+      soc = Math.max(0, Math.min(100, soc));
+      const gridPower = netDemand + batteryAction;
+
+      if (gridPower > 0) totalGridImport += gridPower;
+      else totalGridExport += Math.abs(gridPower);
+      if (gridPower > peakGridDemand) peakGridDemand = gridPower;
+
+      simResults.push({
+        time: timestamps[i],
+        soc: Math.round(soc),
+        battery_kw: Math.round(batteryAction * 10) / 10,
+        grid_kw: Math.round(gridPower * 10) / 10,
+      });
+    }
+
+    return {
+      strategy,
+      period_hours: parseInt(hours) || 48,
+      total_grid_import_kwh: Math.round(totalGridImport),
+      total_grid_export_kwh: Math.round(totalGridExport),
+      peak_grid_demand_kw: Math.round(peakGridDemand * 10) / 10,
+      final_soc: Math.round(soc),
+      point_count: simResults.length,
+      simulation: simResults.slice(0, 48),
+    };
+  },
 };
 
 const CONFIRMABLE = new Set(['send_schedule_rule', 'delete_schedule_rule', 'set_system_mode', 'set_safety_limits', 'update_site_config']);
