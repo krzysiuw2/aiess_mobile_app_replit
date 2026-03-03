@@ -8,6 +8,7 @@ export interface DerivedState {
   batterySoc: number;
   gridPower: number;
   pvPower: number;
+  pvEstimated: number;
   loadPower: number;
 
   battFlowState: FlowState;
@@ -64,6 +65,7 @@ export interface MonitorTranslations {
   standby: string;
   charge: string;
   discharge: string;
+  estimated: string;
 }
 
 export interface EnergyFlowTranslations {

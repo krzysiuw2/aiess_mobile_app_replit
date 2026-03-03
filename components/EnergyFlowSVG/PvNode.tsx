@@ -10,9 +10,11 @@ interface PvNodeProps {
   avg5m: string | null;
   avg1mLabel: string;
   avg5mLabel: string;
+  isEstimated?: boolean;
+  estimatedLabel?: string;
 }
 
-export default function PvNode({ label, value, sunGroupRef, rayGroupRef, avg1m, avg5m, avg1mLabel, avg5mLabel }: PvNodeProps) {
+export default function PvNode({ label, value, sunGroupRef, rayGroupRef, avg1m, avg5m, avg1mLabel, avg5mLabel, isEstimated, estimatedLabel }: PvNodeProps) {
   return (
     <G transform="translate(240, 420)">
       <Rect
@@ -21,6 +23,11 @@ export default function PvNode({ label, value, sunGroupRef, rayGroupRef, avg1m, 
       />
       <SvgText x={12} y={18} fill="#475569" fontSize={12} fontWeight="600">
         {label}
+        {isEstimated && (
+          <SvgText fill="#f59e0b" fontSize={9} fontWeight="400" fontStyle="italic">
+            {` ${estimatedLabel || 'est.'}`}
+          </SvgText>
+        )}
       </SvgText>
       <G transform="translate(82, 2) scale(0.55)">
         <G ref={sunGroupRef} opacity={0}>

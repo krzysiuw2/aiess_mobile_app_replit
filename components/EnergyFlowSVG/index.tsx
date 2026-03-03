@@ -31,7 +31,8 @@ function deriveState(props: EnergyFlowProps): DerivedState {
   const batteryPower = liveData?.batteryPower ?? 0;
   const batterySoc = liveData?.batterySoc ?? 0;
   const gridPower = liveData?.gridPower ?? 0;
-  const pvPower = liveData?.pvPower ?? 0;
+  const pvEstimated = liveData?.pvEstimated ?? 0;
+  const pvPower = liveData?.pvTotal ?? liveData?.pvPower ?? 0;
   const loadPower = liveData?.factoryLoad ?? Math.max(0, gridPower + batteryPower + pvPower);
 
   const battFlowState: FlowState =
@@ -97,7 +98,7 @@ function deriveState(props: EnergyFlowProps): DerivedState {
   const aiPowerColor = rawAction === 'sb' ? '#64748b' : '#1e293b';
 
   return {
-    batteryPower, batterySoc, gridPower, pvPower, loadPower,
+    batteryPower, batterySoc, gridPower, pvPower, pvEstimated, loadPower,
     battFlowState, gridFlowState, loadFlowState, pvFlowState,
     battColor, battStatus, statusColor, statusText,
     socValue, battPowerValue, gridValue, loadValue, pvValue,
@@ -376,6 +377,8 @@ export default function EnergyFlowSVG(props: EnergyFlowProps) {
             avg5m={d.pvAvg5m}
             avg1mLabel={props.t.energyFlow.avg1min}
             avg5mLabel={props.t.energyFlow.avg5min}
+            isEstimated={d.pvEstimated > 0}
+            estimatedLabel={props.t.monitor.estimated}
           />
         </Svg>
       </View>

@@ -164,48 +164,112 @@ function parseBatteryPowerCsv(csv) {
 
 /**
  * Read historical load data for building statistical profiles.
- * Returns hourly factory_load_corrected from energy_simulation (backfill data).
+ * Computes factory_load from telemetry: grid_power + pv_power + pcs_power (clamped >= 0).
+ * Uses pv_estimated from energy_simulation when real PV is 0.
+ * Also reads weather_temp from energy_simulation for temperature correction.
  */
 export async function readHistoricalSimulation(siteId, rangeDays = 90) {
-  const query = `
+  const telemetryQuery = `
+    from(bucket: "${INFLUX_BUCKET}")
+      |> range(start: -${rangeDays}d)
+      |> filter(fn: (r) => r._measurement == "energy_telemetry")
+      |> filter(fn: (r) => r.site_id == "${siteId}")
+      |> filter(fn: (r) => r._field == "grid_power_mean" or r._field == "pcs_power_mean" or r._field == "total_pv_power_mean")
+      |> yield(name: "telemetry")
+  `;
+
+  const simQuery = `
     from(bucket: "${INFLUX_BUCKET}")
       |> range(start: -${rangeDays}d)
       |> filter(fn: (r) => r._measurement == "energy_simulation")
       |> filter(fn: (r) => r.site_id == "${siteId}")
-      |> filter(fn: (r) => r._field == "factory_load_corrected" or r._field == "weather_temp")
-      |> yield(name: "result")
+      |> filter(fn: (r) => r._field == "pv_estimated" or r._field == "weather_temp" or r._field == "factory_load_corrected")
+      |> yield(name: "simulation")
   `;
 
-  const csv = await fluxQuery(query);
-  return parseSimulationCsv(csv);
+  const [telemetryCsv, simCsv] = await Promise.all([
+    fluxQuery(telemetryQuery),
+    fluxQuery(simQuery),
+  ]);
+
+  const gridMap = new Map();
+  const batteryMap = new Map();
+  const pvRealMap = new Map();
+  parseTelemetryCsv(telemetryCsv, gridMap, batteryMap, pvRealMap);
+
+  const pvEstMap = new Map();
+  const tempMap = new Map();
+  const factoryLoadCorrMap = new Map();
+  parseSimulationCsv(simCsv, pvEstMap, tempMap, factoryLoadCorrMap);
+
+  const loadMap = new Map();
+
+  if (factoryLoadCorrMap.size > 168) {
+    for (const [key, val] of factoryLoadCorrMap) loadMap.set(key, val);
+    console.log(`[InfluxDB] Using ${factoryLoadCorrMap.size} factory_load_corrected points from simulation`);
+  } else {
+    for (const [hourKey, gridPower] of gridMap) {
+      const battery = batteryMap.get(hourKey) || 0;
+      const pvReal = pvRealMap.get(hourKey) || 0;
+      const pvEst = pvEstMap.get(hourKey) || 0;
+      const pv = pvReal > 0.1 ? pvReal : pvEst;
+      const factoryLoad = Math.max(0, gridPower + pv + battery);
+      loadMap.set(hourKey, factoryLoad);
+    }
+    console.log(`[InfluxDB] Computed factory_load from telemetry: ${loadMap.size} points (grid=${gridMap.size}, batt=${batteryMap.size}, pvReal=${pvRealMap.size}, pvEst=${pvEstMap.size})`);
+  }
+
+  return { loadMap, tempMap };
 }
 
-function parseSimulationCsv(csv) {
-  const loadMap = new Map();
-  const tempMap = new Map();
-
+function parseTelemetryCsv(csv, gridMap, batteryMap, pvRealMap) {
   const lines = csv.trim().split('\n').filter(l => l && !l.startsWith('#'));
-  if (lines.length < 2) return { loadMap, tempMap };
+  if (lines.length < 2) return;
 
-  const headers = lines[0].split(',');
-  const timeIdx = headers.indexOf('_time');
-  const valueIdx = headers.indexOf('_value');
-  const fieldIdx = headers.indexOf('_field');
+  let headers = null;
+  for (const line of lines) {
+    const cols = line.split(',');
+    if (!headers) { headers = cols; continue; }
+    if (cols.length < headers.length) continue;
 
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(',');
+    const timeIdx = headers.indexOf('_time');
+    const valueIdx = headers.indexOf('_value');
+    const fieldIdx = headers.indexOf('_field');
+
     const time = cols[timeIdx]?.trim();
     const value = parseFloat(cols[valueIdx]?.trim());
     const field = cols[fieldIdx]?.trim();
     if (!time || isNaN(value)) continue;
 
     const hourKey = new Date(time).toISOString().slice(0, 13) + ':00:00.000Z';
-    if (field === 'factory_load_corrected') {
-      loadMap.set(hourKey, value);
-    } else if (field === 'weather_temp') {
-      tempMap.set(hourKey, value);
-    }
+    if (field === 'grid_power_mean') gridMap.set(hourKey, value);
+    else if (field === 'pcs_power_mean') batteryMap.set(hourKey, value);
+    else if (field === 'total_pv_power_mean') pvRealMap.set(hourKey, value);
   }
+}
 
-  return { loadMap, tempMap };
+function parseSimulationCsv(csv, pvEstMap, tempMap, factoryLoadCorrMap) {
+  const lines = csv.trim().split('\n').filter(l => l && !l.startsWith('#'));
+  if (lines.length < 2) return;
+
+  let headers = null;
+  for (const line of lines) {
+    const cols = line.split(',');
+    if (!headers) { headers = cols; continue; }
+    if (cols.length < headers.length) continue;
+
+    const timeIdx = headers.indexOf('_time');
+    const valueIdx = headers.indexOf('_value');
+    const fieldIdx = headers.indexOf('_field');
+
+    const time = cols[timeIdx]?.trim();
+    const value = parseFloat(cols[valueIdx]?.trim());
+    const field = cols[fieldIdx]?.trim();
+    if (!time || isNaN(value)) continue;
+
+    const hourKey = new Date(time).toISOString().slice(0, 13) + ':00:00.000Z';
+    if (field === 'pv_estimated') pvEstMap.set(hourKey, value);
+    else if (field === 'weather_temp') tempMap.set(hourKey, value);
+    else if (field === 'factory_load_corrected') factoryLoadCorrMap.set(hourKey, value);
+  }
 }

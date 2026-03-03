@@ -109,12 +109,16 @@ async function runForecast(site, forecastDays) {
   let loadForecastTs = [];
   try {
     const { loadMap, tempMap } = await readHistoricalSimulation(site_id, 90);
+    console.log(`[ForecastEngine] Load data for ${site_id}: ${loadMap.size} load points, ${tempMap.size} temp points`);
     if (loadMap.size > 168) {
       const profile = buildLoadProfile(loadMap);
       const tempCoeffs = buildTempCorrection(loadMap, tempMap, profile);
       const scaleFactor = computeScaleFactor(loadMap, profile, 7);
       const futureWeather = (weatherRows || []).map(r => ({ time: r.time, temp: r.temp }));
       loadForecastTs = forecastLoad(profile, tempCoeffs, futureWeather, scaleFactor);
+      console.log(`[ForecastEngine] Load forecast: ${loadForecastTs.length} points, peak: ${Math.max(...loadForecastTs.map(p => p.loadKw), 0).toFixed(1)} kW`);
+    } else {
+      console.warn(`[ForecastEngine] Not enough load data for ${site_id}: ${loadMap.size} < 168 required`);
     }
   } catch (err) {
     console.warn(`[ForecastEngine] Load forecast unavailable for ${site_id}: ${err.message}`);

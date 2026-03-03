@@ -1,17 +1,19 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { LineChart, BarChart } from 'react-native-gifted-charts';
 import Colors from '@/constants/colors';
 import type { ChartData } from '@/lib/aws-chat';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const CHART_WIDTH = SCREEN_WIDTH - 120;
 const Y_AXIS_WIDTH = 40;
-const DRAWABLE_WIDTH = CHART_WIDTH - Y_AXIS_WIDTH;
+const BUBBLE_MAX_FRAC = 0.78;
+const BUBBLE_H_PAD = 28;
+const CONTAINER_H_PAD = 20;
 
-function formatTimeLabel(iso: string, hours: number): string {
-  if (!iso) return '';
-  const d = new Date(iso);
+function formatTimeLabel(label: string, hours: number): string {
+  if (!label) return '';
+  if (/^\d{1,2}:\d{2}$/.test(label)) return label;
+  const d = new Date(label);
+  if (isNaN(d.getTime())) return label;
   if (hours <= 24) return d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', hour12: false });
   if (hours <= 168) return d.toLocaleDateString('pl-PL', { weekday: 'short', hour: '2-digit', hour12: false });
   return d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
@@ -23,17 +25,23 @@ interface ChatChartProps {
 
 export function ChatChart({ data }: ChatChartProps) {
   const { datasets, labels, chart_type, title, hours } = data;
+  const { width: screenWidth } = useWindowDimensions();
+
+  const chartWidth = Math.floor(
+    screenWidth * BUBBLE_MAX_FRAC - BUBBLE_H_PAD - CONTAINER_H_PAD - Y_AXIS_WIDTH
+  );
+  const drawableWidth = Math.max(50, chartWidth);
 
   const numPoints = datasets?.[0]?.data?.length || 0;
 
   const labelInterval = useMemo(
-    () => Math.max(1, Math.floor(labels.length / 5)),
-    [labels.length],
+    () => Math.max(1, Math.floor(labels.length / (chart_type === 'bar' ? 6 : 5))),
+    [labels.length, chart_type],
   );
 
   const lineSpacing = useMemo(
-    () => numPoints > 1 ? Math.max(1, DRAWABLE_WIDTH / (numPoints - 1)) : 10,
-    [numPoints],
+    () => numPoints > 1 ? Math.max(1, drawableWidth / (numPoints - 1)) : 10,
+    [numPoints, drawableWidth],
   );
 
   const lineDataSets = useMemo(() => {
@@ -61,14 +69,14 @@ export function ChatChart({ data }: ChatChartProps) {
 
   const barSpacing = useMemo(() => {
     if (barData.length === 0) return 2;
-    const barW = Math.max(2, DRAWABLE_WIDTH / barData.length * 0.7);
-    return Math.max(1, (DRAWABLE_WIDTH / barData.length) - barW);
-  }, [barData.length]);
+    const barW = Math.max(2, drawableWidth / barData.length * 0.7);
+    return Math.max(1, (drawableWidth / barData.length) - barW);
+  }, [barData.length, drawableWidth]);
 
   const barWidth = useMemo(() => {
     if (barData.length === 0) return 8;
-    return Math.max(2, (DRAWABLE_WIDTH / barData.length) - barSpacing);
-  }, [barData.length, barSpacing]);
+    return Math.max(2, (drawableWidth / barData.length) - barSpacing);
+  }, [barData.length, barSpacing, drawableWidth]);
 
   if (!datasets || datasets.length === 0) return null;
 
@@ -79,8 +87,9 @@ export function ChatChart({ data }: ChatChartProps) {
       {chart_type === 'bar' ? (
         <BarChart
           data={barData}
-          width={CHART_WIDTH}
+          width={drawableWidth}
           height={160}
+          disableScroll
           barWidth={barWidth}
           spacing={barSpacing}
           initialSpacing={5}
@@ -89,9 +98,11 @@ export function ChatChart({ data }: ChatChartProps) {
           xAxisColor={Colors.border}
           yAxisColor={Colors.border}
           yAxisTextStyle={styles.axisLabel}
-          xAxisLabelTextStyle={styles.axisLabel}
+          xAxisLabelTextStyle={[styles.axisLabel, { width: 32 }]}
           noOfSections={4}
           isAnimated={false}
+          rotateLabel={numPoints > 12}
+          labelsExtraHeight={numPoints > 12 ? 20 : 0}
         />
       ) : (
         <LineChart
@@ -105,9 +116,10 @@ export function ChatChart({ data }: ChatChartProps) {
           color3={lineDataSets[2]?.color}
           color4={lineDataSets[3]?.color}
           color5={lineDataSets[4]?.color}
-          width={CHART_WIDTH}
+          width={drawableWidth}
           height={160}
           spacing={lineSpacing}
+          disableScroll
           initialSpacing={5}
           endSpacing={5}
           curved
@@ -148,6 +160,7 @@ const styles = StyleSheet.create({
     padding: 10,
     borderWidth: 1,
     borderColor: Colors.border,
+    overflow: 'hidden',
   },
   title: {
     fontSize: 13,

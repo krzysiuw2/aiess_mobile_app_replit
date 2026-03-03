@@ -19,10 +19,12 @@ import { useDevices } from '@/contexts/DeviceContext';
 import { 
   fetchChartData, 
   calculateEnergyStats, 
+  fetchSimulationData,
   ChartDataPoint, 
   EnergyStats,
   TimeRange 
 } from '@/lib/influxdb';
+import { SimulationDataPoint } from '@/types';
 import {
   calculateBatteryCycles,
   findPeakDemand,
@@ -151,6 +153,7 @@ export default function AnalyticsScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [simData, setSimData] = useState<SimulationDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -181,6 +184,23 @@ export default function AnalyticsScreen() {
           selectedDate
         );
         setChartData(data);
+
+        const simStart = new Date(selectedDate);
+        simStart.setHours(0, 0, 0, 0);
+        const simEnd = new Date(simStart);
+        const simDays = timeRange === '7d' ? 8 : timeRange === '30d' ? 32 : timeRange === '365d' ? 366 : 1;
+        simEnd.setDate(simEnd.getDate() + simDays);
+        fetchSimulationData(selectedDevice.device_id, simStart, simEnd)
+          .then(sd => {
+            const pvPeak = Math.max(...sd.map(s => s.pvEstimated || s.pvForecast || 0), 0);
+            const loadPeak = Math.max(...sd.map(s => s.loadForecast || 0), 0);
+            console.log(`[Analytics] Simulation: ${sd.length} pts, PV peak: ${pvPeak.toFixed(1)}, Load fc peak: ${loadPeak.toFixed(1)}`);
+            setSimData(sd);
+          })
+          .catch((e) => {
+            console.warn('[Analytics] Simulation fetch failed:', e);
+            setSimData([]);
+          });
       } catch (err) {
         console.error('[Analytics] Error:', err);
         setError(t.common.failedToLoad);
@@ -234,8 +254,9 @@ export default function AnalyticsScreen() {
       newDate.setFullYear(newDate.getFullYear() + offset);
     }
     
-    // Don't navigate to future
-    if (newDate <= new Date()) {
+    const maxFuture = new Date();
+    maxFuture.setDate(maxFuture.getDate() + 2);
+    if (newDate <= maxFuture) {
       setSelectedDate(newDate);
     }
   };
@@ -346,6 +367,7 @@ export default function AnalyticsScreen() {
         ) : (
           <EnergyFlowChart
             data={chartData}
+            simulationData={simData}
             timeRange={timeRange}
             visibleFields={visibleFields}
             loading={loading}

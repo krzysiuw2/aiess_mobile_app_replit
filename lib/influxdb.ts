@@ -369,7 +369,7 @@ async function queryInflux(query: string): Promise<string> {
  * - 7d:  midnight of that day  ->  +7 days midnight
  * - 30d: 1st of that month 00:00  ->  1st of next month 00:00
  * - 365d: Jan 1 of that year 00:00  ->  Jan 1 of next year 00:00
- * The end is capped at `now` so we never query into the future.
+ * Always returns the full period regardless of current time.
  */
 function computePeriodRange(selectedDate: Date, timeRange: TimeRange): { start: Date; stop: Date } {
   const s = new Date(selectedDate);
@@ -412,11 +412,6 @@ function computePeriodRange(selectedDate: Date, timeRange: TimeRange): { start: 
       s.setHours(0, 0, 0, 0);
       e.setHours(0, 0, 0, 0);
       e.setDate(e.getDate() + 1);
-  }
-
-  const now = new Date();
-  if (e.getTime() > now.getTime()) {
-    e.setTime(now.getTime());
   }
 
   return { start: s, stop: e };
@@ -601,18 +596,25 @@ export async function fetchSimulationData(
     const csv = await queryInflux(query);
     const rows = parseInfluxCSV(csv);
 
-    return rows.map(row => ({
-      time: new Date(row['_time']),
-      pvEstimated: parseFloat(row['pv_estimated']) || 0,
-      pvForecast: parseFloat(row['pv_forecast']) || 0,
-      loadForecast: parseFloat(row['load_forecast']) || 0,
-      factoryLoadCorrected: parseFloat(row['factory_load_corrected']) || 0,
-      weatherGti: parseFloat(row['weather_gti']) || 0,
-      weatherTemp: parseFloat(row['weather_temp']) || 0,
-      weatherCloudCover: parseFloat(row['weather_cloud_cover']) || 0,
-      weatherCode: parseInt(row['weather_code']) || 0,
-      source: (row['source'] as 'forecast' | 'backfill' | 'satellite') || 'forecast',
-    })).sort((a, b) => a.time.getTime() - b.time.getTime());
+    return rows
+      .map(row => {
+        const time = new Date(row['_time']);
+        if (isNaN(time.getTime())) return null;
+        return {
+          time,
+          pvEstimated: parseFloat(row['pv_estimated']) || 0,
+          pvForecast: parseFloat(row['pv_forecast']) || 0,
+          loadForecast: parseFloat(row['load_forecast']) || 0,
+          factoryLoadCorrected: parseFloat(row['factory_load_corrected']) || 0,
+          weatherGti: parseFloat(row['weather_gti']) || 0,
+          weatherTemp: parseFloat(row['weather_temp']) || 0,
+          weatherCloudCover: parseFloat(row['weather_cloud_cover']) || 0,
+          weatherCode: parseInt(row['weather_code']) || 0,
+          source: (row['source'] as 'forecast' | 'backfill' | 'satellite') || 'forecast',
+        };
+      })
+      .filter((p): p is SimulationDataPoint => p !== null)
+      .sort((a, b) => a.time.getTime() - b.time.getTime());
   } catch (error) {
     console.error('[Simulation] Error fetching simulation data:', error);
     return [];

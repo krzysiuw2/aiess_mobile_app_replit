@@ -27,12 +27,23 @@ const HOURLY_VARS = [
 const DAILY_VARS = 'sunrise,sunset';
 
 /**
+ * Convert compass azimuth (0=N, 90=E, 180=S, 270=W) to
+ * Open-Meteo convention (0=S, -90=E, 90=W, ±180=N).
+ */
+function toOpenMeteoAzimuth(compassDeg) {
+  let a = (compassDeg ?? 180) - 180;
+  if (a > 180) a -= 360;
+  if (a < -180) a += 360;
+  return a;
+}
+
+/**
  * Fetch weather forecast for a single orientation.
  *
  * @param {number} lat      Latitude
  * @param {number} lon      Longitude
  * @param {number} tilt     Panel tilt in degrees
- * @param {number} azimuth  Panel azimuth in degrees (0=S, -90=E, 90=W)
+ * @param {number} azimuth  Panel azimuth in Open-Meteo degrees (0=S, -90=E, 90=W)
  * @param {number} forecastDays  Number of forecast days (2-16)
  * @param {string|null} apiKey   Optional commercial API key
  * @returns {object} Parsed JSON response
@@ -182,11 +193,12 @@ export async function fetchWeatherForOrientations(location, orientations, mode, 
   const weatherMap = new Map();
 
   for (const { tilt, azimuth, key } of orientations) {
+    const omAzimuth = toOpenMeteoAzimuth(azimuth);
     let data;
     if (mode === 'forecast') {
-      data = await fetchForecast(location.latitude, location.longitude, tilt, azimuth, forecastDays, apiKey);
+      data = await fetchForecast(location.latitude, location.longitude, tilt, omAzimuth, forecastDays, apiKey);
     } else {
-      data = await fetchArchive(location.latitude, location.longitude, tilt, azimuth, startDate, endDate, apiKey);
+      data = await fetchArchive(location.latitude, location.longitude, tilt, omAzimuth, startDate, endDate, apiKey);
     }
     const rows = parseHourlyWeather(data);
     weatherMap.set(key, rows);

@@ -278,8 +278,8 @@ export function calculateEfficiencyMetrics(
   let loadFromPvAndBattery = 0;
   
   chartData.forEach(point => {
-    const load = point.compensatedPower || point.factoryLoad;
-    
+    const load = point.factoryLoad;
+
     totalPvProduction += point.pvPower;
     totalLoad += load;
     
@@ -331,8 +331,8 @@ export function findPeakDemand(
   
   chartData.forEach(point => {
     const gridImport = Math.max(0, point.gridPower);
-    const load = point.compensatedPower || point.factoryLoad;
-    
+    const load = point.factoryLoad;
+
     if (gridImport > maxGrid.value) {
       maxGrid = { value: gridImport, timestamp: point.time };
     }

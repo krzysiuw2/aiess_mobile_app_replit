@@ -27,7 +27,7 @@ export function calculateArrayPower(gtiWm2, tempAmbientC, array) {
 
   const tempCell = tempAmbientC + gtiWm2 * ROSS_K;
   const efficiency = array.efficiency_factor ?? 1.0;
-  const shadingMultiplier = 1 - (array.shading_factor ?? 0);
+  const shadingMultiplier = array.shading_factor ?? 1.0;
 
   const powerW = dcWp
     * (gtiWm2 / G_STC)
@@ -48,7 +48,7 @@ export function calculateArrayPower(gtiWm2, tempAmbientC, array) {
  * @param {number} directWm2      Direct horizontal irradiance (W/m²)
  * @param {number} tempAmbientC   Ambient temperature (°C)
  * @param {object} array          PV array config
- * @param {boolean} isShaded      Whether the array is shaded from direct sun
+ * @param {boolean} isShaded      Whether the array is temporarily shaded from direct sun
  * @returns {number}              Power output in kW
  */
 export function calculateArrayPowerWithShading(gtiWm2, diffuseWm2, directWm2, tempAmbientC, array, isShaded) {

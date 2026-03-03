@@ -43,6 +43,11 @@ function parseCsv(csv) {
   });
 }
 
+function utcToWarsaw(isoStr) {
+  const d = new Date(isoStr);
+  return d.toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
 const handlers = {
   async get_site_config({ site_id }) {
     const { Item } = await ddb.send(new GetItemCommand({ TableName: SITE_CONFIG_TABLE, Key: marshall({ site_id }) }));
@@ -166,23 +171,26 @@ const handlers = {
     if (rows.length === 0) return { error: 'No TGE price data' };
     const r = rows[rows.length - 1];
     const pln_mwh = parseFloat(r._value) || 0;
-    return { price_pln_mwh: pln_mwh, price_pln_kwh: pln_mwh / 1000, timestamp: r._time };
+    const localTime = utcToWarsaw(r._time);
+    return { price_pln_mwh: pln_mwh, price_pln_kwh: pln_mwh / 1000, timestamp: r._time, local_time: localTime };
   },
 
   async get_tge_price_history({ hours = 24 }) {
     const q = `from(bucket: "tge_energy_prices") |> range(start: -${hours}h) |> filter(fn: (r) => r._measurement == "energy_prices" and r._field == "price") |> sort(columns: ["_time"])`;
     const csv = await fluxQuery(q);
     const rows = parseCsv(csv);
-    const labels = rows.map(r => r._time);
+    const labels = rows.map(r => utcToWarsaw(r._time));
     const data = rows.map(r => parseFloat(r._value) || 0);
+    const nowLocal = new Date().toLocaleDateString('pl-PL', { timeZone: 'Europe/Warsaw' });
     return {
       _chart: true,
       chart_type: 'bar',
-      title: `Ceny energii TGE — ${new Date().toLocaleDateString('pl-PL')} (PLN/MWh)`,
+      title: `Ceny energii TGE — ${nowLocal} (PLN/MWh)`,
       labels,
       datasets: [{ label: 'Cena TGE', data, color: '#f59e0b' }],
       point_count: rows.length,
       hours,
+      note: 'Chart is rendered by the app. Do NOT generate a text-based chart or table of all values.',
     };
   },
 
@@ -209,7 +217,7 @@ const handlers = {
     const q = `from(bucket: "${bucket}") |> range(start: -${h}h) |> filter(fn: (r) => r.site_id == "${site_id}" and r._measurement == "energy_telemetry") |> filter(fn: (r) => ${fieldFilter}) |> aggregateWindow(every: ${agg}, fn: mean, createEmpty: false) |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value") |> sort(columns: ["_time"]) |> limit(n: 200)`;
     const csv = await fluxQuery(q);
     const rows = parseCsv(csv);
-    const labels = rows.map(r => r._time);
+    const labels = rows.map(r => utcToWarsaw(r._time));
     const colorMap = { grid_power: '#ef4444', pcs_power: '#3b82f6', soc: '#22c55e', total_pv_power: '#f59e0b', compensated_power: '#8b5cf6' };
     const datasets = fieldList.map(f => ({
       label: f.replace(/_/g, ' '),
@@ -274,13 +282,13 @@ const handlers = {
     summary.pv_peak_kw = Math.round(summary.pv_peak_kw * 10) / 10;
     summary.load_peak_kw = Math.round(summary.load_peak_kw * 10) / 10;
 
-    const labels = rows.map(r => r._time);
+    const labels = rows.map(r => utcToWarsaw(r._time));
     const datasets = [
       { label: 'PV Forecast (kW)', data: rows.map(r => parseFloat(r.pv_forecast) || 0), color: '#f59e0b' },
       { label: 'Load Forecast (kW)', data: rows.map(r => parseFloat(r.load_forecast) || 0), color: '#8b5cf6' },
     ];
 
-    return { _chart: true, chart_type: 'line', title: `Prognoza energii — ${h}h`, labels, datasets, summary };
+    return { _chart: true, chart_type: 'line', title: `Prognoza energii — ${h}h`, labels, datasets, summary, note: 'Chart is rendered by the app. Do NOT generate a text-based chart.' };
   },
 
   async run_battery_simulation({ site_id, strategy, hours = 48 }) {
