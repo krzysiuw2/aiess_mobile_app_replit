@@ -158,6 +158,11 @@ export default {
     quickChart: 'Show me today\'s energy usage chart',
     quickRules: 'What rules can I set up?',
     quickPrices: 'What are the current energy prices?',
+    quickSavings: 'How much money did I save this month?',
+    quickPvForecast: 'What is the PV production forecast for tomorrow?',
+    quickOverview: 'Give me a full system overview',
+    quickPeakShaving: 'How is peak shaving performing?',
+    quickROI: 'What is my estimated return on investment?',
   },
   schedules: {
     title: 'Schedules',

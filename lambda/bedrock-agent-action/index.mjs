@@ -376,6 +376,11 @@ export const handler = async (event) => {
   const toolName = apiPath?.replace(/^\//, '').replace(/\//g, '_') || event.function || 'unknown';
   console.log(`[Agent Action] ${toolName}`, JSON.stringify(params));
 
+  const DISABLED_TOOLS = new Set(['send_schedule_rule', 'delete_schedule_rule']);
+  if (DISABLED_TOOLS.has(toolName)) {
+    return formatResponse(event, { error: 'Rule modification via agent is disabled. Use the Schedule tab to manage rules.' });
+  }
+
   try {
     const fn = handlers[toolName];
     if (!fn) {

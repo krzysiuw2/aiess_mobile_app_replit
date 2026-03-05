@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowUp, Bot, User, Check, X, RotateCcw, Battery, BarChart3, List, Zap, Mic, MicOff } from 'lucide-react-native';
+import { ArrowUp, Bot, User, Check, X, RotateCcw, Battery, BarChart3, List, Zap, Mic, MicOff, Sun, Monitor, TrendingDown, PiggyBank } from 'lucide-react-native';
 import Markdown from 'react-native-markdown-display';
 import Colors from '@/constants/colors';
 
@@ -56,6 +56,15 @@ export default function AIScreen() {
   const flatListRef = useRef<FlatList>(null);
   const [isListening, setIsListening] = useState(false);
   const hasSpeech = SpeechModule != null;
+
+  useEffect(() => {
+    setMessages(prev => {
+      if (prev.length === 1 && !prev[0].isUser) {
+        return [{ ...prev[0], text: t.ai.helpPrompt }];
+      }
+      return prev;
+    });
+  }, [language, t.ai.helpPrompt]);
 
   useSpeechEvent('start', () => setIsListening(true));
   useSpeechEvent('end', () => setIsListening(false));
@@ -117,6 +126,10 @@ export default function AIScreen() {
     { key: 'chart', label: t.ai.quickChart, icon: BarChart3 },
     { key: 'rules', label: t.ai.quickRules, icon: List },
     { key: 'prices', label: t.ai.quickPrices, icon: Zap },
+    { key: 'pvForecast', label: t.ai.quickPvForecast, icon: Sun },
+    { key: 'overview', label: t.ai.quickOverview, icon: Monitor },
+    { key: 'peakShaving', label: t.ai.quickPeakShaving, icon: TrendingDown },
+    { key: 'roi', label: t.ai.quickROI, icon: PiggyBank },
   ], [t]);
 
   const showQuickActions = messages.length <= 1 && !isLoading;
@@ -126,7 +139,7 @@ export default function AIScreen() {
     addMessage({ text, isUser: true });
     setIsLoading(true);
     try {
-      const res = await sendChatMessage(text, sessionIdRef.current, selectedDevice.device_id);
+      const res = await sendChatMessage(text, sessionIdRef.current, selectedDevice.device_id, language);
       if (res.confirmation) {
         addMessage({ text: res.text || '', isUser: false, confirmation: res.confirmation, charts: res.charts });
       } else {
@@ -137,7 +150,7 @@ export default function AIScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, selectedDevice, addMessage, t]);
+  }, [isLoading, selectedDevice, addMessage, t, language]);
 
   const handleSend = useCallback(async () => {
     if (!inputText.trim()) return;
@@ -304,7 +317,9 @@ export default function AIScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>{t.ai.title}</Text>
+            <Text style={styles.headerTitle}>
+              <Text style={styles.brandAiess}><Text style={styles.brandAI}>AI</Text>ESS</Text> Energy Core
+            </Text>
             <Text style={styles.headerSubtitle}>{t.ai.subtitle}</Text>
           </View>
         </View>
@@ -321,7 +336,9 @@ export default function AIScreen() {
       <View style={styles.header}>
         <View style={{ width: 36 }} />
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>{t.ai.title}</Text>
+          <Text style={styles.headerTitle}>
+            <Text style={styles.brandAiess}><Text style={styles.brandAI}>AI</Text>ESS</Text> Energy Core
+          </Text>
           <Text style={styles.headerSubtitle}>{selectedDevice.name}</Text>
         </View>
         <TouchableOpacity onPress={resetChat} style={styles.headerBtn} hitSlop={8}>
@@ -407,7 +424,9 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerCenter: { alignItems: 'center', flex: 1 },
   headerBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.surface, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: '600', color: Colors.text },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: Colors.text, letterSpacing: -0.3 },
+  brandAiess: { fontFamily: 'MontserratAlt1-Bold', letterSpacing: -0.5 },
+  brandAI: { fontFamily: 'MontserratAlt1-Bold', color: '#008CFF' },
   headerSubtitle: { fontSize: 14, color: Colors.primary, marginTop: 2 },
   content: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },

@@ -114,6 +114,17 @@
         ],
         "responses": { "200": { "description": "Rule history data.", "content": { "application/json": { "schema": { "type": "object", "properties": { "period_hours": { "type": "integer", "description": "The time period in hours." } } } } } } }
       }
+    },
+    "/get_energy_forecast": {
+      "get": {
+        "description": "Retrieves PV production and factory load forecasts for the next hours. Returns a summary with peak PV, total PV kWh, average and peak load, plus a chart with hourly PV and load forecast curves. Use this when the user asks about future energy production, PV forecast, tomorrow's production, or expected load.",
+        "operationId": "get_energy_forecast",
+        "parameters": [
+          { "name": "site_id", "in": "query", "required": true, "description": "The device or site identifier.", "schema": { "type": "string" } },
+          { "name": "hours", "in": "query", "required": false, "description": "Number of hours to forecast. Defaults to 48.", "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Forecast data with PV and load predictions.", "content": { "application/json": { "schema": { "type": "object", "properties": { "summary": { "type": "object", "description": "Forecast summary with pv_peak_kw, pv_total_kwh, load_avg_kw, load_peak_kw." }, "chart_type": { "type": "string" }, "title": { "type": "string" } } } } } } }
+      }
     }
   }
 }

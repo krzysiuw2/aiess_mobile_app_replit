@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { useFonts } from 'expo-font';
 import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from '@/contexts/AuthContext';
@@ -26,11 +27,13 @@ function RootLayoutNav() {
 
 function AppContent() {
   const { isIntroPlaying, markIntroComplete } = useAppLoading();
+  const [fontsLoaded] = useFonts({
+    'MontserratAlt1-Bold': require('@/assets/fonts/MontserratAlt1-Bold.ttf'),
+  });
 
   useEffect(() => {
-    // Hide native splash screen once React is ready
-    SplashScreen.hideAsync();
-  }, []);
+    if (fontsLoaded) SplashScreen.hideAsync();
+  }, [fontsLoaded]);
 
   return (
     <>

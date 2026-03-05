@@ -11,9 +11,74 @@ import { formatTimeLabel } from '@/lib/analytics';
 interface EnergyFlowChartProps {
   data: ChartDataPoint[];
   simulationData?: SimulationDataPoint[];
+  selectedDate: Date;
   timeRange: string;
   visibleFields: Record<FieldKey, boolean>;
   loading?: boolean;
+}
+
+interface TimelinePoint {
+  time: Date;
+  gridPower: number;
+  batteryPower: number;
+  pvPower: number;
+  factoryLoad: number;
+  soc: number;
+  isForecast: boolean;
+}
+
+type LineSegment = {
+  startIndex: number;
+  endIndex: number;
+  color?: string;
+  thickness?: number;
+  strokeDashArray?: number[];
+};
+
+type DSEntry = {
+  key: string;
+  data: any[];
+  color: string;
+  thickness: number;
+  areaChart?: boolean;
+  startFillColor?: string;
+  endFillColor?: string;
+  startOpacity?: number;
+  endOpacity?: number;
+  lineSegments?: LineSegment[];
+};
+
+function getSlotConfig(timeRange: string) {
+  switch (timeRange) {
+    case '24h': return { intervalMs: 3_600_000, slotCount: 24 };
+    case '7d':  return { intervalMs: 3_600_000 * 3, slotCount: 56 };
+    case '30d': return { intervalMs: 3_600_000 * 24, slotCount: 31 };
+    case '365d': return { intervalMs: 3_600_000 * 24, slotCount: 365 };
+    default:    return { intervalMs: 3_600_000, slotCount: 24 };
+  }
+}
+
+function getPeriodStart(selectedDate: Date, timeRange: string): Date {
+  const d = new Date(selectedDate);
+  switch (timeRange) {
+    case '24h':
+      d.setHours(0, 0, 0, 0);
+      return d;
+    case '7d':
+      d.setHours(0, 0, 0, 0);
+      return d;
+    case '30d':
+      d.setDate(1);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    case '365d':
+      d.setMonth(0, 1);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    default:
+      d.setHours(0, 0, 0, 0);
+      return d;
+  }
 }
 
 function buildLabelInterval(dataLen: number, spacing: number): number {
@@ -35,6 +100,9 @@ function niceRound(value: number): number {
   return nice * magnitude;
 }
 
+const avg = (arr: number[]) =>
+  arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+
 const Y_AXIS_WIDTH = 50;
 const CHART_H_PADDING = 12 * 2;
 const PARENT_H_PADDING = 16 * 2;
@@ -42,168 +110,171 @@ const INITIAL_SPACING = 10;
 const END_SPACING_SOC = 40;
 const END_SPACING_DEFAULT = 10;
 
-export function EnergyFlowChart({ 
-  data, 
+export function EnergyFlowChart({
+  data,
   simulationData,
-  timeRange, 
+  selectedDate,
+  timeRange,
   visibleFields,
-  loading = false 
+  loading = false,
 }: EnergyFlowChartProps) {
   const { t } = useSettings();
   const { width: screenWidth } = useWindowDimensions();
 
   const hasSoc = visibleFields.soc;
   const endSpacing = hasSoc ? END_SPACING_SOC : END_SPACING_DEFAULT;
-
   const chartWidth = screenWidth - PARENT_H_PADDING - CHART_H_PADDING - Y_AXIS_WIDTH - endSpacing;
 
-  const simMap = useMemo(() => {
-    if (!simulationData || simulationData.length === 0) return new Map<string, SimulationDataPoint>();
-    const m = new Map<string, SimulationDataPoint>();
-    for (const s of simulationData) {
-      const t = s.time?.getTime?.();
+  // ─── Unified timeline: downsample telemetry + merge forecast ───────
+  const unifiedTimeline = useMemo((): TimelinePoint[] => {
+    const { intervalMs, slotCount } = getSlotConfig(timeRange);
+    const periodStart = getPeriodStart(selectedDate, timeRange);
+    const periodStartMs = periodStart.getTime();
+
+    const telemetryBySlot = new Map<
+      number,
+      { grid: number[]; battery: number[]; pv: number[]; load: number[]; soc: number[] }
+    >();
+
+    for (const point of data) {
+      const t = point.time?.getTime?.();
       if (!t || isNaN(t)) continue;
-      m.set(s.time.toISOString().slice(0, 13), s);
+      const slotIdx = Math.floor((t - periodStartMs) / intervalMs);
+      if (slotIdx < 0 || slotIdx >= slotCount) continue;
+      if (!telemetryBySlot.has(slotIdx)) {
+        telemetryBySlot.set(slotIdx, { grid: [], battery: [], pv: [], load: [], soc: [] });
+      }
+      const bucket = telemetryBySlot.get(slotIdx)!;
+      bucket.grid.push(point.gridPower);
+      bucket.battery.push(point.batteryPower);
+      bucket.pv.push(point.pvPower);
+      bucket.load.push(point.factoryLoad);
+      bucket.soc.push(point.soc);
     }
-    return m;
-  }, [simulationData]);
 
-  const extendedData = useMemo((): ChartDataPoint[] => {
-    if (data.length === 0 || !simulationData || simulationData.length === 0) return data;
-    const lastTelemetry = data[data.length - 1]?.time?.getTime();
-    if (!lastTelemetry || isNaN(lastTelemetry)) return data;
+    const simBySlot = new Map<number, SimulationDataPoint>();
+    if (simulationData) {
+      for (const s of simulationData) {
+        const st = s.time?.getTime?.();
+        if (!st || isNaN(st)) continue;
+        const slotIdx = Math.floor((st - periodStartMs) / intervalMs);
+        if (slotIdx < 0 || slotIdx >= slotCount) continue;
+        if (!simBySlot.has(slotIdx)) simBySlot.set(slotIdx, s);
+      }
+    }
 
-    const futureSimPoints = simulationData.filter(s => {
-      const t = s.time?.getTime?.();
-      return t && !isNaN(t) && t > lastTelemetry;
-    });
+    let lastKnownSoc = 0;
+    const timeline: TimelinePoint[] = [];
 
-    if (futureSimPoints.length === 0) return data;
+    for (let i = 0; i < slotCount; i++) {
+      const slotTime = new Date(periodStartMs + i * intervalMs);
+      const tel = telemetryBySlot.get(i);
+      const sim = simBySlot.get(i);
 
-    const lastSoc = data[data.length - 1]?.soc || 0;
-    const synthPoints: ChartDataPoint[] = futureSimPoints.map(s => ({
-      time: s.time,
-      gridPower: 0,
-      batteryPower: 0,
-      pvPower: 0,
-      soc: lastSoc,
-      factoryLoad: 0,
-      compensatedPower: 0,
-    }));
+      if (tel && tel.grid.length > 0) {
+        const socVal = avg(tel.soc);
+        lastKnownSoc = socVal;
+        timeline.push({
+          time: slotTime,
+          gridPower: avg(tel.grid),
+          batteryPower: avg(tel.battery),
+          pvPower: avg(tel.pv),
+          factoryLoad: avg(tel.load),
+          soc: socVal,
+          isForecast: false,
+        });
+      } else if (sim) {
+        timeline.push({
+          time: slotTime,
+          gridPower: 0,
+          batteryPower: 0,
+          pvPower: sim.pvForecast || sim.pvEstimated || 0,
+          factoryLoad: sim.loadForecast || 0,
+          soc: lastKnownSoc,
+          isForecast: true,
+        });
+      } else {
+        timeline.push({
+          time: slotTime,
+          gridPower: 0,
+          batteryPower: 0,
+          pvPower: 0,
+          factoryLoad: 0,
+          soc: lastKnownSoc,
+          isForecast: true,
+        });
+      }
+    }
 
-    return [...data, ...synthPoints];
-  }, [data, simulationData]);
+    if (__DEV__) {
+      const realCount = timeline.filter(p => !p.isForecast).length;
+      const fcCount = timeline.filter(p => p.isForecast).length;
+      console.log(`[Chart] Unified timeline: ${timeline.length} slots (${realCount} real, ${fcCount} forecast)`);
+    }
 
-  const isForecastOnly = data.length === 0 && simulationData && simulationData.length > 0;
+    return timeline;
+  }, [data, simulationData, selectedDate, timeRange]);
 
-  const pointCount = isForecastOnly ? (simulationData?.length || 0) : extendedData.length;
+  // ─── Spacing ───────────────────────────────────────────────────────
+  const pointCount = unifiedTimeline.length;
   const autoSpacing = pointCount > 1
     ? Math.max(1, (chartWidth - INITIAL_SPACING) / (pointCount - 1))
     : chartWidth;
 
-  const {
-    powerDatasets,
-    socData,
-    maxPositive,
-    maxNegative,
-    effectiveData,
-  } = useMemo(() => {
-    type DSEntry = {
-      key: string;
-      data: any[];
-      color: string;
-      thickness: number;
-      areaChart?: boolean;
-      startFillColor?: string;
-      endFillColor?: string;
-      startOpacity?: number;
-      endOpacity?: number;
-      dashed?: boolean;
-    };
-
-    if (isForecastOnly && simulationData) {
-      const simPoints = simulationData.filter(s => {
-        const t = s.time?.getTime?.();
-        return t && !isNaN(t);
-      });
-      if (simPoints.length === 0) return { powerDatasets: [], socData: null, maxPositive: 10, maxNegative: 0, effectiveData: data };
-
-      const fcLabelInterval = buildLabelInterval(simPoints.length, autoSpacing);
-      const datasets: DSEntry[] = [];
-      let rawMaxPos = 0;
-
-      const makeFcPoints = (getValue: (s: SimulationDataPoint) => number, color: string) =>
-        simPoints.map((s, i) => {
-          const val = getValue(s);
-          if (val > rawMaxPos) rawMaxPos = val;
-          return {
-            value: val,
-            label: i % fcLabelInterval === 0 ? formatTimeLabel(s.time, timeRange) : '',
-            labelTextStyle: { color: Colors.textSecondary, fontSize: 9, width: 48, textAlign: 'center' as const },
-            hideDataPoint: simPoints.length > 50 || i % 3 !== 0,
-            dataPointColor: color,
-          };
-        });
-
-      if (visibleFields.pvPower) {
-        datasets.push({
-          key: 'pvForecast',
-          data: makeFcPoints(s => s.pvForecast || s.pvEstimated || 0, '#f59e0b'),
-          color: '#f59e0b',
-          thickness: 2,
-          dashed: true,
-        });
-      }
-
-      if (visibleFields.compensatedPower) {
-        datasets.push({
-          key: 'loadForecast',
-          data: makeFcPoints(s => s.loadForecast || 0, CHART_COLORS.load.line),
-          color: CHART_COLORS.load.line,
-          thickness: 2,
-          dashed: true,
-        });
-      }
-
-      const synthData: ChartDataPoint[] = simPoints.map(s => ({
-        time: s.time,
-        gridPower: 0, batteryPower: 0, pvPower: 0, soc: 0, factoryLoad: 0, compensatedPower: 0,
-      }));
-
-      return { powerDatasets: datasets, socData: null, maxPositive: rawMaxPos, maxNegative: 0, effectiveData: synthData };
+  // ─── Build datasets with lineSegments for solid→dashed transition ──
+  const { powerDatasets, socData, maxPositive, maxNegative, hasLineSegments } = useMemo(() => {
+    const tl = unifiedTimeline;
+    if (tl.length === 0) {
+      return { powerDatasets: [] as DSEntry[], socData: null, maxPositive: 10, maxNegative: 0 };
     }
 
-    const chartPoints = extendedData;
-    if (chartPoints.length === 0) return { powerDatasets: [], socData: null, maxPositive: 10, maxNegative: 0, effectiveData: chartPoints };
-
-    const labelInterval = buildLabelInterval(chartPoints.length, autoSpacing);
+    const labelInterval = buildLabelInterval(tl.length, autoSpacing);
     const isArea = timeRange === '30d' || timeRange === '365d';
 
-    const datasets: DSEntry[] = [];
+    const forecastStartIndex = tl.findIndex(p => p.isForecast);
+
+    const buildSegments = (color: string): LineSegment[] | undefined => {
+      if (forecastStartIndex < 0) return undefined;
+      if (forecastStartIndex === 0) {
+        return [{ startIndex: 0, endIndex: tl.length - 1, color, strokeDashArray: [6, 4] }];
+      }
+      return [
+        { startIndex: 0, endIndex: forecastStartIndex, color },
+        { startIndex: forecastStartIndex, endIndex: tl.length - 1, color, strokeDashArray: [6, 4] },
+      ];
+    };
 
     let rawMaxPos = 0;
     let rawMaxNeg = 0;
-    for (const p of chartPoints) {
-      const values = [
+    for (const p of tl) {
+      const vals = [
         visibleFields.gridPower ? p.gridPower : 0,
         visibleFields.batteryPower ? p.batteryPower : 0,
         visibleFields.pvPower ? p.pvPower : 0,
         visibleFields.compensatedPower ? p.factoryLoad : 0,
       ];
-      for (const v of values) {
+      for (const v of vals) {
         if (v > rawMaxPos) rawMaxPos = v;
         if (v < rawMaxNeg) rawMaxNeg = v;
       }
     }
 
-    const makePoints = (getValue: (p: ChartDataPoint) => number, color: string) =>
-      chartPoints.map((point, i) => ({
+    const dpInterval = Math.max(1, Math.floor(tl.length / 12));
+    const makePoints = (getValue: (p: TimelinePoint) => number, color: string) =>
+      tl.map((point, i) => ({
         value: getValue(point),
         label: i % labelInterval === 0 ? formatTimeLabel(point.time, timeRange) : '',
-        labelTextStyle: { color: Colors.textSecondary, fontSize: 9, width: 48, textAlign: 'center' as const },
-        hideDataPoint: chartPoints.length > 100 || i % 5 !== 0,
+        labelTextStyle: {
+          color: Colors.textSecondary,
+          fontSize: 9,
+          width: 48,
+          textAlign: 'center' as const,
+        },
+        hideDataPoint: tl.length > 30 || i % dpInterval !== 0,
         dataPointColor: color,
       }));
+
+    const datasets: DSEntry[] = [];
 
     if (visibleFields.gridPower) {
       datasets.push({
@@ -244,6 +315,7 @@ export function EnergyFlowChart({
         endFillColor: CHART_COLORS.pv.production,
         startOpacity: 0.3,
         endOpacity: 0.05,
+        lineSegments: [{ startIndex: 0, endIndex: tl.length - 1, color: CHART_COLORS.pv.production, strokeDashArray: [6, 4] }],
       });
     }
 
@@ -253,87 +325,35 @@ export function EnergyFlowChart({
         data: makePoints(p => p.factoryLoad, CHART_COLORS.load.line),
         color: CHART_COLORS.load.line,
         thickness: 2,
+        lineSegments: buildSegments(CHART_COLORS.load.line),
       });
-    }
-
-    if (visibleFields.pvPower && simMap.size > 0) {
-      const hasForecastValues = [...simMap.values()].some(s => s.pvEstimated > 0 || s.pvForecast > 0);
-      if (hasForecastValues) {
-        const pvEstPoints = chartPoints.map((point, i) => {
-          const tMs = point.time?.getTime?.();
-          const key = (tMs && !isNaN(tMs)) ? point.time.toISOString().slice(0, 13) : '';
-          const sim = key ? simMap.get(key) : undefined;
-          const val = sim ? (sim.pvEstimated || sim.pvForecast || 0) : 0;
-          if (val > rawMaxPos) rawMaxPos = val;
-          return {
-            value: val,
-            label: '',
-            labelTextStyle: { color: Colors.textSecondary, fontSize: 9, width: 48, textAlign: 'center' as const },
-            hideDataPoint: true,
-            dataPointColor: '#f59e0b',
-          };
-        });
-
-        datasets.push({
-          key: 'pvEstimated',
-          data: pvEstPoints,
-          color: '#f59e0b',
-          thickness: 2,
-          dashed: true,
-        });
-      }
-    }
-
-    if (visibleFields.compensatedPower && simMap.size > 0) {
-      const hasLoadForecast = [...simMap.values()].some(s => s.loadForecast > 0);
-      if (hasLoadForecast) {
-        const loadFcPoints = chartPoints.map((point, i) => {
-          const tMs = point.time?.getTime?.();
-          const key = (tMs && !isNaN(tMs)) ? point.time.toISOString().slice(0, 13) : '';
-          const sim = key ? simMap.get(key) : undefined;
-          const val = sim ? (sim.loadForecast || 0) : 0;
-          if (val > rawMaxPos) rawMaxPos = val;
-          return {
-            value: val,
-            label: '',
-            labelTextStyle: { color: Colors.textSecondary, fontSize: 9, width: 48, textAlign: 'center' as const },
-            hideDataPoint: true,
-            dataPointColor: CHART_COLORS.load.line,
-          };
-        });
-
-        datasets.push({
-          key: 'loadForecast',
-          data: loadFcPoints,
-          color: CHART_COLORS.load.line + '80',
-          thickness: 1.5,
-          dashed: true,
-        });
-      }
-    }
-
-    if (__DEV__) {
-      console.log(`[Chart] Total datasets: ${datasets.length} → [${datasets.map(d => d.key).join(', ')}]`);
     }
 
     let soc = null;
     if (visibleFields.soc) {
-      soc = chartPoints.map((point, i) => ({
+      soc = tl.map((point, i) => ({
         value: point.soc,
-        hideDataPoint: chartPoints.length > 100 || i % 5 !== 0,
+        hideDataPoint: tl.length > 30 || i % dpInterval !== 0,
         dataPointColor: CHART_COLORS.soc.line,
       }));
     }
+
+    if (__DEV__) {
+      console.log(`[Chart] Datasets: [${datasets.map(d => d.key).join(', ')}], lineSegments on pv/load: ${forecastStartIndex >= 0 ? `boundary@${forecastStartIndex}` : 'none'}`);
+    }
+
+    const hasSegments = datasets.some(d => d.lineSegments != null);
 
     return {
       powerDatasets: datasets,
       socData: soc,
       maxPositive: rawMaxPos,
       maxNegative: rawMaxNeg,
-      effectiveData: chartPoints,
+      hasLineSegments: hasSegments,
     };
-  }, [data, extendedData, simulationData, isForecastOnly, simMap, timeRange, visibleFields, autoSpacing]);
+  }, [unifiedTimeline, timeRange, visibleFields, autoSpacing]);
 
+  // ─── Loading / empty states ────────────────────────────────────────
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -342,8 +362,8 @@ export function EnergyFlowChart({
       </View>
     );
   }
-  
-  if ((!effectiveData || effectiveData.length === 0) && powerDatasets.length === 0) {
+
+  if (unifiedTimeline.length === 0 && powerDatasets.length === 0) {
     return (
       <View style={styles.emptyContainer}>
         <Text style={styles.emptyText}>{t.analytics.noDataAvailable}</Text>
@@ -361,17 +381,18 @@ export function EnergyFlowChart({
     );
   }
 
-  const ed = effectiveData || [];
-  const labelInterval = buildLabelInterval(ed.length, autoSpacing);
+  // ─── Y-axis scaling ────────────────────────────────────────────────
+  const ds = powerDatasets;
+  const tl = unifiedTimeline;
+  const labelInterval = buildLabelInterval(tl.length, autoSpacing);
 
-  const fallbackPrimary = ed.map((point, i) => ({
+  const fallbackPrimary = tl.map((point, i) => ({
     value: 0,
     label: i % labelInterval === 0 ? formatTimeLabel(point.time, timeRange) : '',
     labelTextStyle: { color: Colors.textSecondary, fontSize: 9, width: 48, textAlign: 'center' as const },
     hideDataPoint: true,
   }));
 
-  const ds = powerDatasets;
   const primaryData = ds[0]?.data || fallbackPrimary;
 
   const rawRange = maxPositive + Math.abs(maxNegative) || 10;
@@ -382,27 +403,29 @@ export function EnergyFlowChart({
 
   const DESIRED_TOTAL = 250;
   const fullRange = yAxisMax + Math.abs(yAxisNeg);
-  const chartHeight = fullRange > 0 && yAxisNeg < 0
-    ? Math.round(DESIRED_TOTAL * yAxisMax / fullRange)
-    : DESIRED_TOTAL;
+  const chartHeight =
+    fullRange > 0 && yAxisNeg < 0
+      ? Math.round(DESIRED_TOTAL * yAxisMax / fullRange)
+      : DESIRED_TOTAL;
 
-  const secondaryYAxisConfig = socData ? {
-    noOfSections: 5,
-    maxValue: 100,
-    yAxisColor: CHART_COLORS.soc.line,
-    yAxisTextStyle: { color: CHART_COLORS.soc.line, fontSize: 10 },
-    yAxisLabelSuffix: '%',
-  } : undefined;
+  const secondaryYAxisConfig = socData
+    ? {
+        noOfSections: 5,
+        maxValue: 100,
+        yAxisColor: CHART_COLORS.soc.line,
+        yAxisTextStyle: { color: CHART_COLORS.soc.line, fontSize: 10 },
+        yAxisLabelSuffix: '%',
+      }
+    : undefined;
 
-  const getDashArray = (idx: number): number[] | undefined => {
-    return ds[idx]?.dashed ? [6, 4] : undefined;
-  };
-
+  // ─── Render ────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
       <View style={styles.axisLabelsRow}>
         <Text style={styles.yAxisLabel}>{t.analytics.powerKw}</Text>
-        {socData && <Text style={[styles.yAxisLabel, { color: CHART_COLORS.soc.line }]}>SoC %</Text>}
+        {socData && (
+          <Text style={[styles.yAxisLabel, { color: CHART_COLORS.soc.line }]}>SoC %</Text>
+        )}
       </View>
       <View style={styles.chartWrapper}>
         <LineChart
@@ -412,14 +435,18 @@ export function EnergyFlowChart({
           data4={ds[3]?.data}
           data5={ds[4]?.data}
           secondaryData={socData || undefined}
-          secondaryLineConfig={socData ? {
-            color: CHART_COLORS.soc.line,
-            thickness: 2,
-            curved: true,
-            hideDataPoints: ed.length > 100,
-            dataPointsColor: CHART_COLORS.soc.line,
-            strokeDashArray: [2, 3],
-          } : undefined}
+          secondaryLineConfig={
+            socData
+              ? {
+                  color: CHART_COLORS.soc.line,
+                  thickness: 2,
+                  curved: true,
+                  hideDataPoints: tl.length > 30,
+                  dataPointsColor: CHART_COLORS.soc.line,
+                  strokeDashArray: [2, 3],
+                }
+              : undefined
+          }
           secondaryYAxis={secondaryYAxisConfig}
           maxValue={yAxisMax}
           mostNegativeValue={yAxisNeg}
@@ -441,11 +468,11 @@ export function EnergyFlowChart({
           thickness3={ds[2]?.thickness}
           thickness4={ds[3]?.thickness}
           thickness5={ds[4]?.thickness}
-          strokeDashArray1={getDashArray(0)}
-          strokeDashArray2={getDashArray(1)}
-          strokeDashArray3={getDashArray(2)}
-          strokeDashArray4={getDashArray(3)}
-          strokeDashArray5={getDashArray(4)}
+          lineSegments={ds[0]?.lineSegments}
+          lineSegments2={ds[1]?.lineSegments}
+          lineSegments3={ds[2]?.lineSegments}
+          lineSegments4={ds[3]?.lineSegments}
+          lineSegments5={ds[4]?.lineSegments}
           curved
           areaChart={ds[0]?.areaChart}
           areaChart2={ds[1]?.areaChart}
@@ -474,25 +501,19 @@ export function EnergyFlowChart({
           endOpacity5={ds[4]?.endOpacity}
           xAxisColor={Colors.border}
           yAxisColor={Colors.border}
-          xAxisLabelTextStyle={{
-            color: Colors.textSecondary,
-            fontSize: 9,
-          }}
-          yAxisTextStyle={{
-            color: Colors.textSecondary,
-            fontSize: 10,
-          }}
+          xAxisLabelTextStyle={{ color: Colors.textSecondary, fontSize: 9 }}
+          yAxisTextStyle={{ color: Colors.textSecondary, fontSize: 10 }}
           backgroundColor={Colors.surface}
           rulesColor={Colors.border}
           rulesType="dashed"
           yAxisThickness={1}
           xAxisThickness={1}
-          hideDataPoints={ed.length > 100}
+          hideDataPoints={tl.length > 30}
           showVerticalLines={false}
-          isAnimated
-          animationDuration={400}
-          animateOnDataChange
-          onDataChangeAnimationDuration={300}
+          isAnimated={!hasLineSegments}
+          animationDuration={hasLineSegments ? 0 : 400}
+          animateOnDataChange={!hasLineSegments}
+          onDataChangeAnimationDuration={hasLineSegments ? 0 : 300}
           rotateLabel={timeRange === '7d' || timeRange === '30d'}
           pointerConfig={{
             pointerStripHeight: 240,
@@ -504,95 +525,70 @@ export function EnergyFlowChart({
             pointerLabelHeight: 100,
             activatePointersOnLongPress: false,
             autoAdjustPointerLabelPosition: true,
-            pointerLabelComponent: (items: any, _secondaryDataItem: any, pointerIndex: number) => {
+            pointerLabelComponent: (
+              _items: any,
+              _secondaryDataItem: any,
+              pointerIndex: number,
+            ) => {
               const idx = typeof pointerIndex === 'number' ? pointerIndex : 0;
-              if (idx < 0 || idx >= ed.length) return null;
-              
-              const pointData = ed[idx];
-              if (!pointData) return null;
+              if (idx < 0 || idx >= tl.length) return null;
+              const point = tl[idx];
+              if (!point) return null;
 
-              let pvEstVal: number | null = null;
-              let loadFcVal: number | null = null;
-              const tMs = pointData.time?.getTime?.();
-              const key = (tMs && !isNaN(tMs)) ? pointData.time.toISOString().slice(0, 13) : '';
-              if (simMap.size > 0 && key) {
-                const sim = simMap.get(key);
-                if (sim) {
-                  if (sim.pvEstimated > 0 || sim.pvForecast > 0) pvEstVal = sim.pvEstimated || sim.pvForecast;
-                  if (sim.loadForecast > 0) loadFcVal = sim.loadForecast;
-                }
-              }
-
-              if (isForecastOnly) {
-                return (
-                  <View style={styles.tooltipCard}>
-                    <Text style={styles.tooltipTime}>
-                      {formatTimeLabel(pointData.time, timeRange)}
-                    </Text>
-                    <Text style={[styles.tooltipValue, { fontStyle: 'italic', color: Colors.textSecondary, marginBottom: 4 }]}>
-                      {t.monitor.forecast || 'Forecast'}
-                    </Text>
-                    {pvEstVal != null && (
-                      <Text style={styles.tooltipValue}>
-                        <Text style={{ color: '#f59e0b' }}>◌{' '}</Text>
-                        {`${t.analytics.pv}: `}{pvEstVal.toFixed(1)} kW
-                      </Text>
-                    )}
-                    {loadFcVal != null && (
-                      <Text style={styles.tooltipValue}>
-                        <Text style={{ color: CHART_COLORS.load.line }}>◌{' '}</Text>
-                        {`${t.monitor.load}: `}{loadFcVal.toFixed(1)} kW
-                      </Text>
-                    )}
-                  </View>
-                );
-              }
-              
               return (
                 <View style={styles.tooltipCard}>
                   <Text style={styles.tooltipTime}>
-                    {formatTimeLabel(pointData.time, timeRange)}
+                    {formatTimeLabel(point.time, timeRange)}
                   </Text>
+                  {point.isForecast && (
+                    <Text
+                      style={[
+                        styles.tooltipValue,
+                        { fontStyle: 'italic', color: Colors.textSecondary, marginBottom: 4 },
+                      ]}
+                    >
+                      {t.monitor.forecast || 'Forecast'}
+                    </Text>
+                  )}
                   {visibleFields.gridPower && (
                     <Text style={styles.tooltipValue}>
                       <Text style={{ color: CHART_COLORS.grid.line }}>●{' '}</Text>
-                      {`${t.analytics.grid}: `}{pointData.gridPower.toFixed(1)} kW
+                      {`${t.analytics.grid}: `}
+                      {point.gridPower.toFixed(1)} kW
                     </Text>
                   )}
                   {visibleFields.batteryPower && (
                     <Text style={styles.tooltipValue}>
                       <Text style={{ color: CHART_COLORS.battery.line }}>●{' '}</Text>
-                      {`${t.analytics.battery}: `}{pointData.batteryPower.toFixed(1)} kW
+                      {`${t.analytics.battery}: `}
+                      {point.batteryPower.toFixed(1)} kW
                     </Text>
                   )}
                   {visibleFields.pvPower && (
                     <Text style={styles.tooltipValue}>
-                      <Text style={{ color: CHART_COLORS.pv.production }}>●{' '}</Text>
-                      {`${t.analytics.pv}: `}{pointData.pvPower.toFixed(1)} kW
-                    </Text>
-                  )}
-                  {pvEstVal != null && (
-                    <Text style={styles.tooltipValue}>
-                      <Text style={{ color: '#f59e0b' }}>◌{' '}</Text>
-                      {`${t.monitor.pvEstimated}: `}{pvEstVal.toFixed(1)} kW
+                      <Text style={{ color: CHART_COLORS.pv.production }}>
+                        {point.isForecast ? '◌' : '●'}
+                        {' '}
+                      </Text>
+                      {`${t.analytics.pv}: `}
+                      {point.pvPower.toFixed(1)} kW
                     </Text>
                   )}
                   {visibleFields.compensatedPower && (
                     <Text style={styles.tooltipValue}>
-                      <Text style={{ color: CHART_COLORS.load.line }}>●{' '}</Text>
-                      {`${t.monitor.load}: `}{pointData.factoryLoad.toFixed(1)} kW
-                    </Text>
-                  )}
-                  {loadFcVal != null && (
-                    <Text style={styles.tooltipValue}>
-                      <Text style={{ color: CHART_COLORS.load.line + '80' }}>◌{' '}</Text>
-                      {`${t.monitor.load} ${t.monitor.forecast || 'fc'}: `}{loadFcVal.toFixed(1)} kW
+                      <Text style={{ color: CHART_COLORS.load.line }}>
+                        {point.isForecast ? '◌' : '●'}
+                        {' '}
+                      </Text>
+                      {`${t.monitor.load}: `}
+                      {point.factoryLoad.toFixed(1)} kW
                     </Text>
                   )}
                   {visibleFields.soc && (
                     <Text style={styles.tooltipValue}>
                       <Text style={{ color: CHART_COLORS.soc.line }}>●{' '}</Text>
-                      {`${t.monitor.soc}: `}{pointData.soc.toFixed(0)}%
+                      {`${t.monitor.soc}: `}
+                      {point.soc.toFixed(0)}%
                     </Text>
                   )}
                 </View>

@@ -158,6 +158,11 @@ export default {
     quickChart: 'Pokaż mi wykres zużycia z dzisiaj',
     quickRules: 'Jakie reguły mogę Ci podać?',
     quickPrices: 'Jakie są aktualne ceny energii?',
+    quickSavings: 'Ile pieniędzy zaoszczędziłem w tym miesiącu?',
+    quickPvForecast: 'Jaka jest prognoza produkcji PV na jutro?',
+    quickOverview: 'Daj mi pełny przegląd systemu',
+    quickPeakShaving: 'Jak działa ograniczanie szczytów?',
+    quickROI: 'Jaki jest szacowany zwrot z inwestycji?',
   },
   schedules: {
     title: 'Harmonogramy',

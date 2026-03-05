@@ -155,12 +155,11 @@ export function parseHourlyWeather(data) {
   const h = data.hourly;
   if (!h || !h.time) return [];
 
-  const utcOffsetSec = data.utc_offset_seconds || 0;
   const rows = [];
 
   for (let i = 0; i < h.time.length; i++) {
     const ts = h.time[i];
-    const isoTime = new Date((ts + utcOffsetSec) * 1000).toISOString();
+    const isoTime = new Date(ts * 1000).toISOString();
 
     rows.push({
       time: isoTime,

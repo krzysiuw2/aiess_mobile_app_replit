@@ -44,12 +44,39 @@ function parseCsv(csvContent) {
 }
 
 /**
- * Normalize Energa date format "2025-01-01 00:00:00" to ISO.
+ * Normalize Energa date format "2025-01-01 00:00:00" to ISO UTC.
+ * Energa meters log in Polish local time (CET/CEST), so we must
+ * convert to UTC by subtracting the offset (1h winter, 2h summer).
  */
 function normalizeTimestamp(dateStr) {
   const d = new Date(dateStr.replace(' ', 'T') + 'Z');
   if (isNaN(d.getTime())) return null;
-  return d.toISOString();
+  const offsetHours = isPolishSummerTime(d) ? 2 : 1;
+  const utc = new Date(d.getTime() - offsetHours * 3600_000);
+  return utc.toISOString();
+}
+
+/**
+ * Determine if a date (interpreted as Polish local wall-clock) falls
+ * in CEST (summer time). DST transitions:
+ *   Start: last Sunday of March at 02:00 → 03:00
+ *   End:   last Sunday of October at 03:00 → 02:00
+ * We receive the local time as-if-UTC, so we compare directly.
+ */
+function isPolishSummerTime(dateAsUtc) {
+  const y = dateAsUtc.getUTCFullYear();
+  const mar = lastSundayOf(y, 2);
+  const oct = lastSundayOf(y, 9);
+  const cestStart = Date.UTC(y, 2, mar, 2, 0, 0);
+  const cestEnd   = Date.UTC(y, 9, oct, 3, 0, 0);
+  const t = dateAsUtc.getTime();
+  return t >= cestStart && t < cestEnd;
+}
+
+function lastSundayOf(year, month) {
+  const d = new Date(Date.UTC(year, month + 1, 0));
+  d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+  return d.getUTCDate();
 }
 
 /**

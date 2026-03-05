@@ -38,6 +38,7 @@ export async function sendChatMessage(
   message: string,
   sessionId: string,
   siteId: string,
+  language?: string,
 ): Promise<ChatResponse> {
   if (!API_ENDPOINT || !API_KEY) {
     throw new Error('AWS API configuration missing');
@@ -51,6 +52,7 @@ export async function sendChatMessage(
       session_id: sessionId,
       site_id: siteId,
       current_datetime: new Date().toISOString(),
+      language: language || 'en',
     }),
   });
 

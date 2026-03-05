@@ -22,7 +22,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 
 import { fetchWeatherForOrientations } from './open-meteo-client.mjs';
 import { calculateSitePv, getUniqueOrientations } from './pv-calculator.mjs';
-import { writeSimulationData, readHistoricalBatteryPower, readHistoricalSimulation } from './influxdb-writer.mjs';
+import { writeSimulationData, readHistoricalBatteryPower, readHistoricalGridPower, readHistoricalSimulation } from './influxdb-writer.mjs';
 import { buildLoadProfile, buildTempCorrection, forecastLoad, computeScaleFactor } from './load-forecaster.mjs';
 import { loadEnergaFromS3, parseEnergaData } from './energa-parser.mjs';
 
@@ -142,10 +142,16 @@ async function runForecast(site, forecastDays) {
 
   await writeSimulationData(site_id, 'forecast', points);
 
+  const loadPeakKw = loadForecastTs.length > 0
+    ? Math.max(...loadForecastTs.map(p => p.loadKw), 0)
+    : 0;
+
   return {
     forecastDays,
     pointsWritten: points.length,
     pvPeakKw: Math.max(...pvForecastTs.map(p => p.pvKw), 0),
+    loadPeakKw,
+    loadForecastPoints: loadForecastTs.length,
   };
 }
 
@@ -229,11 +235,22 @@ async function runBackfill(site, event) {
     console.warn(`[Backfill] No battery history: ${err.message}`);
   }
 
+  let gridPowerMap = new Map();
+  if (!energaData) {
+    try {
+      gridPowerMap = await readHistoricalGridPower(site_id, startDate, endDate);
+      console.log(`[Backfill] ${site_id}: Loaded ${gridPowerMap.size} grid telemetry points (no Energa data — using telemetry fallback)`);
+    } catch (err) {
+      console.warn(`[Backfill] No grid telemetry: ${err.message}`);
+    }
+  }
+
   const weatherFirstKey = orientations[0]?.key;
   const weatherRows = weatherFirstKey ? allWeatherRows.get(weatherFirstKey) : [];
 
   const points = [];
   let validationErrors = [];
+  let telemetryLoadCount = 0;
 
   for (const w of (weatherRows || [])) {
     const pvEst = pvMap.get(w.time) || 0;
@@ -253,6 +270,12 @@ async function runBackfill(site, event) {
           validationErrors.push({ time: w.time, pvEst, exportKw: energaRow.production, error });
         }
       }
+    } else {
+      const gridPower = gridPowerMap.get(w.time);
+      if (gridPower != null) {
+        factoryLoadCorrected = Math.max(0, gridPower + pvEst + batteryPower);
+        telemetryLoadCount++;
+      }
     }
 
     points.push({
@@ -265,6 +288,10 @@ async function runBackfill(site, event) {
       weatherCode: w.weatherCode,
       weatherWindSpeed: w.windSpeed,
     });
+  }
+
+  if (telemetryLoadCount > 0) {
+    console.log(`[Backfill] ${site_id}: Computed ${telemetryLoadCount} factory_load_corrected from grid telemetry + archive PV estimate`);
   }
 
   const WRITE_BATCH = 2000;

@@ -19,6 +19,7 @@ import { useDevices } from '@/contexts/DeviceContext';
 import { 
   fetchChartData, 
   calculateEnergyStats, 
+  calculateFactoryLoad,
   fetchSimulationData,
   ChartDataPoint, 
   EnergyStats,
@@ -212,14 +213,37 @@ export default function AnalyticsScreen() {
     loadData();
   }, [timeRange, selectedDate, selectedDevice?.device_id, t.common.noDeviceSelected, t.common.failedToLoad]);
 
+  // Augment telemetry with pvEstimated from simulation (for sites with unmonitored PV arrays)
+  const augmentedData = useMemo((): ChartDataPoint[] => {
+    if (simData.length === 0) return chartData;
+
+    const simMap = new Map<number, number>();
+    for (const s of simData) {
+      const hour = Math.floor(s.time.getTime() / 3_600_000);
+      simMap.set(hour, s.pvEstimated || 0);
+    }
+
+    return chartData.map(p => {
+      const hour = Math.floor(p.time.getTime() / 3_600_000);
+      const pvEst = simMap.get(hour) ?? 0;
+      if (pvEst === 0) return p;
+      const pvPower = Math.round((p.pvPower + pvEst) * 10) / 10;
+      return {
+        ...p,
+        pvPower,
+        factoryLoad: Math.round(calculateFactoryLoad(p.gridPower, pvPower, p.batteryPower) * 10) / 10,
+      };
+    });
+  }, [chartData, simData]);
+
   const stats = useMemo(() => {
-    return calculateEnergyStats(chartData, timeRange as TimeRange);
-  }, [chartData, timeRange]);
+    return calculateEnergyStats(augmentedData, timeRange as TimeRange);
+  }, [augmentedData, timeRange]);
   
-  const batteryCycles = useMemo(() => calculateBatteryCycles(chartData), [chartData]);
-  const peakDemand = useMemo(() => findPeakDemand(chartData), [chartData]);
-  const efficiencyMetrics = useMemo(() => calculateEfficiencyMetrics(chartData), [chartData]);
-  const energyBreakdown = useMemo(() => calculateEnergyBreakdown(chartData, timeRange), [chartData, timeRange]);
+  const batteryCycles = useMemo(() => calculateBatteryCycles(augmentedData), [augmentedData]);
+  const peakDemand = useMemo(() => findPeakDemand(augmentedData), [augmentedData]);
+  const efficiencyMetrics = useMemo(() => calculateEfficiencyMetrics(augmentedData), [augmentedData]);
+  const energyBreakdown = useMemo(() => calculateEnergyBreakdown(augmentedData, timeRange), [augmentedData, timeRange]);
 
   const formatDateDisplay = () => {
     if (timeRange === '24h') {
@@ -366,8 +390,9 @@ export default function AnalyticsScreen() {
           </View>
         ) : (
           <EnergyFlowChart
-            data={chartData}
+            data={augmentedData}
             simulationData={simData}
+            selectedDate={selectedDate}
             timeRange={timeRange}
             visibleFields={visibleFields}
             loading={loading}
@@ -384,15 +409,15 @@ export default function AnalyticsScreen() {
 
         {/* Section 4: Energy Totals */}
         <SectionHeader title={t.analytics.energyTotals} icon="BarChart2" />
-        <EnergyBarsChart data={chartData} timeRange={timeRange} />
+        <EnergyBarsChart data={augmentedData} timeRange={timeRange} />
 
         {/* Section 5: Battery SoC */}
         <SectionHeader title={t.analytics.batterySoc} icon="Battery" />
-        <SocBandChart data={chartData} timeRange={timeRange} />
+        <SocBandChart data={augmentedData} timeRange={timeRange} />
 
         {/* Section 6: Load Composition */}
         <SectionHeader title={t.analytics.loadComposition} icon="Zap" />
-        <LoadCompositionChart data={chartData} timeRange={timeRange} />
+        <LoadCompositionChart data={augmentedData} timeRange={timeRange} />
         
         {/* Section 7: Battery Performance */}
         <SectionHeader title={t.analytics.batteryPerformance} icon="Battery" />
@@ -421,7 +446,7 @@ export default function AnalyticsScreen() {
 
         {/* Section 8: Battery Cycles */}
         <SectionHeader title={t.analytics.batteryCycles} icon="RefreshCw" />
-        <CyclesBarChart data={chartData} timeRange={timeRange} />
+        <CyclesBarChart data={augmentedData} timeRange={timeRange} />
         
         {/* Section 9: Efficiency Metrics */}
         <SectionHeader title={t.analytics.efficiency} icon="TrendingUp" />

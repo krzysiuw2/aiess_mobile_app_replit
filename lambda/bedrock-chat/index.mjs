@@ -20,11 +20,12 @@ export const handler = async (event) => {
 
   try {
     const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-    const { message, session_id, site_id, current_datetime, return_control_results } = body;
+    const { message, session_id, site_id, current_datetime, return_control_results, language } = body;
 
     const now = current_datetime || new Date().toISOString();
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const currentDay = dayNames[new Date(now).getUTCDay()];
+    const lang = language || 'en';
 
     if (!session_id) return response(400, { error: 'session_id required' });
 
@@ -36,7 +37,11 @@ export const handler = async (event) => {
     };
 
     const sessionAttrs = {};
-    const promptAttrs = { current_datetime: now, current_day_of_week: currentDay };
+    const promptAttrs = {
+      current_datetime: now,
+      current_day_of_week: currentDay,
+      response_language: lang === 'pl' ? 'Polish' : 'English',
+    };
     if (site_id) {
       sessionAttrs.site_id = site_id;
       promptAttrs.site_id = site_id;
