@@ -226,7 +226,7 @@ export function calculateCyclesByPeriod(
 ```typescript
 /**
  * Calculate factory load from components
- * factoryLoad = grid_power + pv_power - battery_power
+ * factoryLoad = grid_power + pv_power + battery_power
  * Always returns >= 0
  */
 export function calculateFactoryLoad(
@@ -234,7 +234,7 @@ export function calculateFactoryLoad(
   pvPower: number,
   batteryPower: number
 ): number {
-  return Math.max(0, gridPower + pvPower - batteryPower);
+  return Math.max(0, gridPower + pvPower + batteryPower);
 }
 ```
 

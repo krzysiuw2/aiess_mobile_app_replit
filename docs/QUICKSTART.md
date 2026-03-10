@@ -257,7 +257,7 @@ Update version in `app.json`:
 
 ### Things to Remember
 
-1. **Factory Load Formula**: `max(0, grid_power + pv_power - battery_power)`
+1. **Factory Load Formula**: `max(0, grid_power + pv_power + battery_power)`
 
 2. **Rule Priority**: P4-P8 for user rules, P9 for site limits only
 

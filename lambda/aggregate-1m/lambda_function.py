@@ -49,9 +49,9 @@ def lambda_handler(event, context):
     print(f"Starting 1-minute aggregation at {datetime.now(timezone.utc).isoformat()}")
 
     try:
-        # Calculate time window: previous 1 minute
+        # Offset by 1 extra minute so slow-ingesting sites have time to land
         now = datetime.now(timezone.utc)
-        window_end = now.replace(second=0, microsecond=0)
+        window_end = now.replace(second=0, microsecond=0) - timedelta(minutes=1)
         window_start = window_end - timedelta(minutes=1)
 
         print(f"Aggregating data from {window_start.isoformat()} to {window_end.isoformat()}")
@@ -68,26 +68,28 @@ def lambda_handler(event, context):
         SELECT
             site_id,
             date_bin(INTERVAL '1 minute', time, TIMESTAMP '1970-01-01T00:00:00Z') AS _time,
-            AVG(grid_power) AS grid_power_mean,
-            MIN(grid_power) AS grid_power_min,
-            MAX(grid_power) AS grid_power_max,
-            AVG(pcs_power) AS pcs_power_mean,
-            MIN(pcs_power) AS pcs_power_min,
-            MAX(pcs_power) AS pcs_power_max,
-            AVG(soc) AS soc_mean,
-            MIN(soc) AS soc_min,
-            MAX(soc) AS soc_max,
-            AVG(total_pv_power) AS total_pv_power_mean,
-            MIN(total_pv_power) AS total_pv_power_min,
-            MAX(total_pv_power) AS total_pv_power_max,
-            AVG(compensated_power) AS compensated_power_mean,
-            MIN(compensated_power) AS compensated_power_min,
-            MAX(compensated_power) AS compensated_power_max,
+            COALESCE(AVG(grid_power), 0) AS grid_power_mean,
+            COALESCE(MIN(grid_power), 0) AS grid_power_min,
+            COALESCE(MAX(grid_power), 0) AS grid_power_max,
+            COALESCE(AVG(pcs_power), 0) AS pcs_power_mean,
+            COALESCE(MIN(pcs_power), 0) AS pcs_power_min,
+            COALESCE(MAX(pcs_power), 0) AS pcs_power_max,
+            COALESCE(AVG(soc), 0) AS soc_mean,
+            COALESCE(MIN(soc), 0) AS soc_min,
+            COALESCE(MAX(soc), 0) AS soc_max,
+            COALESCE(AVG(total_pv_power), 0) AS total_pv_power_mean,
+            COALESCE(MIN(total_pv_power), 0) AS total_pv_power_min,
+            COALESCE(MAX(total_pv_power), 0) AS total_pv_power_max,
+            COALESCE(AVG(compensated_power), 0) AS compensated_power_mean,
+            COALESCE(MIN(compensated_power), 0) AS compensated_power_min,
+            COALESCE(MAX(compensated_power), 0) AS compensated_power_max,
             COUNT(*) AS sample_count
         FROM {MEASUREMENT}
         WHERE
             time >= TIMESTAMP '{window_start.isoformat()}'
             AND time < TIMESTAMP '{window_end.isoformat()}'
+            AND site_id IS NOT NULL
+            AND site_id != ''
         GROUP BY site_id, date_bin(INTERVAL '1 minute', time, TIMESTAMP '1970-01-01T00:00:00Z')
         """
 
@@ -170,9 +172,11 @@ def lambda_handler(event, context):
                 "sample_count": int(_val(table.column('sample_count')[i]))
             }
 
-            # Merge active rule info if available
-            site_id = str(_val(table.column('site_id')[i]))
+            site_id = str(_val(table.column('site_id')[i], ''))
             time_val = _val(table.column('_time')[i])
+            if not site_id or site_id == '0.0' or site_id == 'None':
+                print(f"Skipping row {i} with invalid site_id: {site_id!r}")
+                continue
             key = (site_id, str(time_val))
             if key in rule_info:
                 fields.update(rule_info[key])

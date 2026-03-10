@@ -163,8 +163,8 @@ time: timestamp              # Start of aggregation window
 ### Derived Values (Calculate in App)
 
 ```typescript
-// Factory Load = Grid + PV - Battery
-factoryLoad = Math.max(0, gridPower + pvPower - batteryPower);
+// Factory Load = Grid + PV + Battery
+factoryLoad = Math.max(0, gridPower + pvPower + batteryPower);
 
 // Battery Status
 batteryStatus = batteryPower < -0.5 ? 'Charging' 
@@ -1154,7 +1154,7 @@ async function queryInflux(query: string): Promise<string> {
 
 // Utility functions
 export function calculateFactoryLoad(gridPower: number, pvPower: number, batteryPower: number): number {
-  return Math.max(0, gridPower + pvPower - batteryPower);
+  return Math.max(0, gridPower + pvPower + batteryPower);
 }
 
 export function getBatteryStatus(batteryPower: number): 'Charging' | 'Discharging' | 'Standby' {

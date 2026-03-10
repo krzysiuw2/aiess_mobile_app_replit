@@ -272,7 +272,7 @@ interface LiveData {
   batterySoc: number;       // 0-100%
   batteryStatus: 'Charging' | 'Discharging' | 'Standby';
   pvPower: number;          // kW
-  factoryLoad: number;      // kW, calculated: max(0, grid + pv - battery)
+  factoryLoad: number;      // kW, calculated: max(0, grid + pv + battery)
   lastUpdate: Date;
 }
 ```

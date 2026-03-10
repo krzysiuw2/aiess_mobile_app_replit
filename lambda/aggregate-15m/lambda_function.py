@@ -70,27 +70,29 @@ def lambda_handler(event, context):
         SELECT
             site_id,
             date_bin(INTERVAL '15 minutes', time, TIMESTAMP '1970-01-01T00:00:00Z') AS _time,
-            AVG(grid_power_mean) AS grid_power_mean,
-            MIN(grid_power_min) AS grid_power_min,
-            MAX(grid_power_max) AS grid_power_max,
-            AVG(pcs_power_mean) AS pcs_power_mean,
-            MIN(pcs_power_min) AS pcs_power_min,
-            MAX(pcs_power_max) AS pcs_power_max,
-            AVG(soc_mean) AS soc_mean,
-            MIN(soc_min) AS soc_min,
-            MAX(soc_max) AS soc_max,
-            AVG(total_pv_power_mean) AS total_pv_power_mean,
-            MIN(total_pv_power_min) AS total_pv_power_min,
-            MAX(total_pv_power_max) AS total_pv_power_max,
-            AVG(compensated_power_mean) AS compensated_power_mean,
-            MIN(compensated_power_min) AS compensated_power_min,
-            MAX(compensated_power_max) AS compensated_power_max,
-            SUM(sample_count) AS sample_count
+            COALESCE(AVG(grid_power_mean), 0) AS grid_power_mean,
+            COALESCE(MIN(grid_power_min), 0) AS grid_power_min,
+            COALESCE(MAX(grid_power_max), 0) AS grid_power_max,
+            COALESCE(AVG(pcs_power_mean), 0) AS pcs_power_mean,
+            COALESCE(MIN(pcs_power_min), 0) AS pcs_power_min,
+            COALESCE(MAX(pcs_power_max), 0) AS pcs_power_max,
+            COALESCE(AVG(soc_mean), 0) AS soc_mean,
+            COALESCE(MIN(soc_min), 0) AS soc_min,
+            COALESCE(MAX(soc_max), 0) AS soc_max,
+            COALESCE(AVG(total_pv_power_mean), 0) AS total_pv_power_mean,
+            COALESCE(MIN(total_pv_power_min), 0) AS total_pv_power_min,
+            COALESCE(MAX(total_pv_power_max), 0) AS total_pv_power_max,
+            COALESCE(AVG(compensated_power_mean), 0) AS compensated_power_mean,
+            COALESCE(MIN(compensated_power_min), 0) AS compensated_power_min,
+            COALESCE(MAX(compensated_power_max), 0) AS compensated_power_max,
+            COALESCE(SUM(sample_count), 0) AS sample_count
         FROM {MEASUREMENT}
         WHERE
             time >= TIMESTAMP '{window_start.isoformat()}'
             AND time < TIMESTAMP '{window_end.isoformat()}'
             AND aggregation = '1m'
+            AND site_id IS NOT NULL
+            AND site_id != ''
         GROUP BY site_id, date_bin(INTERVAL '15 minutes', time, TIMESTAMP '1970-01-01T00:00:00Z')
         """
 
@@ -163,10 +165,15 @@ def lambda_handler(event, context):
             if rule_info:
                 fields.update(rule_info)
 
+            site_id = str(_val(table.column('site_id')[i], ''))
+            if not site_id or site_id in ('0.0', 'None'):
+                print(f"Skipping row {i} with invalid site_id: {site_id!r}")
+                continue
+
             point = {
                 "measurement": MEASUREMENT,
                 "tags": {
-                    "site_id": str(_val(table.column('site_id')[i])),
+                    "site_id": site_id,
                     "aggregation": "15m"
                 },
                 "fields": fields,
