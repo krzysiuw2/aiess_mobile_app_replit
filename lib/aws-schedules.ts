@@ -11,21 +11,12 @@ import type {
   SaveSchedulesResponse,
   ScheduleRuleFormData,
 } from '@/types';
-
-const API_ENDPOINT = process.env.EXPO_PUBLIC_AWS_ENDPOINT || '';
-const API_KEY = process.env.EXPO_PUBLIC_AWS_API_KEY || '';
+import { callAwsProxy } from '@/lib/edge-proxy';
 
 // ─── API Methods ────────────────────────────────────────────────
 
 export async function getSchedules(siteId: string): Promise<SchedulesResponse> {
-  if (!API_ENDPOINT || !API_KEY) {
-    throw new Error('AWS Schedules API configuration missing');
-  }
-
-  const response = await fetch(`${API_ENDPOINT}/schedules/${siteId}`, {
-    method: 'GET',
-    headers: { 'x-api-key': API_KEY },
-  });
+  const response = await callAwsProxy(`/schedules/${siteId}`);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -43,21 +34,10 @@ export async function saveSchedules(
     safety?: { soc_min: number; soc_max: number };
   }
 ): Promise<SaveSchedulesResponse> {
-  if (!API_ENDPOINT || !API_KEY) {
-    throw new Error('AWS Schedules API configuration missing');
-  }
-
   const body: any = { site_id: siteId, sch: schedules };
   if (options?.safety) body.safety = options.safety;
 
-  const response = await fetch(`${API_ENDPOINT}/schedules/${siteId}`, {
-    method: 'POST',
-    headers: {
-      'x-api-key': API_KEY,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  const response = await callAwsProxy(`/schedules/${siteId}`, 'POST', body);
 
   if (!response.ok) {
     const errorText = await response.text();

@@ -10,7 +10,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, ChevronRight, Calendar, Eye, EyeOff, Zap, Battery, BarChart2, TrendingUp, RefreshCw, Sun, Shield, Activity } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Calendar, Eye, EyeOff, Zap, Battery, BarChart2, TrendingUp, RefreshCw, Sun, Shield, Activity, CloudSun } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { FIELD_COLORS, FieldKey, CHART_COLORS } from '@/constants/chartColors';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -46,8 +46,9 @@ import { CyclesBarChart } from '@/components/analytics/CyclesBarChart';
 import TgePriceChart from '@/components/analytics/TgePriceChart';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
 import { BatteryDataView } from '@/components/analytics/BatteryDataView';
+import { ForecastView } from '@/components/analytics/ForecastView';
 
-type AnalyticsTab = 'usage' | 'battery';
+type AnalyticsTab = 'usage' | 'battery' | 'forecasts';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -166,8 +167,10 @@ export default function AnalyticsScreen() {
   
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [simData, setSimData] = useState<SimulationDataPoint[]>([]);
+  const [forecastSimData, setForecastSimData] = useState<SimulationDataPoint[]>([]);
   const [tgePrices, setTgePrices] = useState<TgePricePoint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [forecastLoading, setForecastLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [visibleFields, setVisibleFields] = useState<Record<FieldKey, boolean>>({
@@ -238,6 +241,30 @@ export default function AnalyticsScreen() {
 
     loadData();
   }, [timeRange, selectedDate, selectedDevice?.device_id, showTgePrices, t.common.noDeviceSelected, t.common.failedToLoad]);
+
+  // Fetch wider simulation window for Forecasts tab (yesterday → +8 days)
+  useEffect(() => {
+    if (activeTab !== 'forecasts' || !selectedDevice?.device_id) return;
+
+    setForecastLoading(true);
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+    const futureEnd = new Date();
+    futureEnd.setDate(futureEnd.getDate() + 8);
+    futureEnd.setHours(0, 0, 0, 0);
+
+    fetchSimulationData(selectedDevice.device_id, yesterday, futureEnd)
+      .then(sd => {
+        console.log(`[Analytics] Forecast sim data: ${sd.length} pts`);
+        setForecastSimData(sd);
+      })
+      .catch(e => {
+        console.warn('[Analytics] Forecast sim fetch failed:', e);
+        setForecastSimData([]);
+      })
+      .finally(() => setForecastLoading(false));
+  }, [activeTab, selectedDevice?.device_id]);
 
   // Augment telemetry with pvEstimated from simulation (for sites with unmonitored PV arrays)
   const augmentedData = useMemo((): ChartDataPoint[] => {
@@ -349,6 +376,15 @@ export default function AnalyticsScreen() {
             <Activity size={14} color={activeTab === 'battery' ? '#fff' : Colors.textSecondary} />
             <Text style={[styles.segmentText, activeTab === 'battery' && styles.segmentTextActive]}>
               {bt.batteryData}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segmentBtn, activeTab === 'forecasts' && styles.segmentBtnActive]}
+            onPress={() => setActiveTab('forecasts')}
+          >
+            <CloudSun size={14} color={activeTab === 'forecasts' ? '#fff' : Colors.textSecondary} />
+            <Text style={[styles.segmentText, activeTab === 'forecasts' && styles.segmentTextActive]}>
+              {t.analytics.forecastTab.forecasts}
             </Text>
           </TouchableOpacity>
         </View>
@@ -531,6 +567,13 @@ export default function AnalyticsScreen() {
               />
             </View>
           </>
+        ) : activeTab === 'forecasts' ? (
+          <ForecastView
+            simData={forecastSimData}
+            deviceId={selectedDevice?.device_id}
+            loading={forecastLoading}
+            t={t}
+          />
         ) : (
           <BatteryDataView
             deviceId={selectedDevice?.device_id}

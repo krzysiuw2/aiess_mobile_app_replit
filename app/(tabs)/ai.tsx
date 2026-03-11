@@ -11,8 +11,9 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowUp, Bot, User, Check, X, RotateCcw, Battery, BarChart3, List, Zap, Mic, MicOff, Sun, Monitor, TrendingDown, PiggyBank } from 'lucide-react-native';
+import { ArrowUp, Bot, User, Check, X, RotateCcw, Battery, BarChart3, List, Zap, Mic, MicOff, Sun } from 'lucide-react-native';
 import Markdown from 'react-native-markdown-display';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Colors from '@/constants/colors';
 
 let SpeechModule: typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule | null = null;
@@ -37,6 +38,23 @@ interface Message {
   charts?: ChartData[];
 }
 
+interface StoredChat {
+  sessionId: string;
+  messages: Array<Omit<Message, 'timestamp'> & { timestamp: string }>;
+}
+
+const CHAT_STORAGE_PREFIX = '@aiess_chat_';
+const MAX_STORED_MESSAGES = 50;
+
+function shuffleAndPick<T>(arr: T[], n: number): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, n);
+}
+
 const CONFIRM_LABELS: Record<string, { en: string; pl: string }> = {
   send_schedule_rule: { en: 'Send schedule rule', pl: 'Wysłanie reguły harmonogramu' },
   delete_schedule_rule: { en: 'Delete schedule rule', pl: 'Usunięcie reguły harmonogramu' },
@@ -47,6 +65,8 @@ const CONFIRM_LABELS: Record<string, { en: string; pl: string }> = {
 export default function AIScreen() {
   const { t, language } = useSettings();
   const { selectedDevice } = useDevices();
+  const deviceId = selectedDevice?.device_id;
+
   const [messages, setMessages] = useState<Message[]>(() => [
     { id: '1', text: t.ai.helpPrompt, isUser: false, timestamp: new Date() },
   ]);
@@ -56,6 +76,62 @@ export default function AIScreen() {
   const flatListRef = useRef<FlatList>(null);
   const [isListening, setIsListening] = useState(false);
   const hasSpeech = SpeechModule != null;
+  const prevDeviceIdRef = useRef<string | undefined>(deviceId);
+
+  const saveChat = useCallback(async (deviceKey: string | undefined, msgs: Message[], sessId: string) => {
+    if (!deviceKey) return;
+    try {
+      const stored: StoredChat = {
+        sessionId: sessId,
+        messages: msgs.slice(-MAX_STORED_MESSAGES).map(m => ({
+          ...m,
+          timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : String(m.timestamp),
+        })),
+      };
+      await AsyncStorage.setItem(CHAT_STORAGE_PREFIX + deviceKey, JSON.stringify(stored));
+    } catch { /* storage full — non-critical */ }
+  }, []);
+
+  const loadChat = useCallback(async (deviceKey: string): Promise<{ sessionId: string; messages: Message[] } | null> => {
+    try {
+      const raw = await AsyncStorage.getItem(CHAT_STORAGE_PREFIX + deviceKey);
+      if (!raw) return null;
+      const stored: StoredChat = JSON.parse(raw);
+      return {
+        sessionId: stored.sessionId,
+        messages: stored.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) })),
+      };
+    } catch { return null; }
+  }, []);
+
+  useEffect(() => {
+    if (!deviceId) return;
+    if (prevDeviceIdRef.current === deviceId) {
+      loadChat(deviceId).then(data => {
+        if (data && data.messages.length > 0) {
+          sessionIdRef.current = data.sessionId;
+          setMessages(data.messages);
+        }
+      });
+    }
+    prevDeviceIdRef.current = deviceId;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!deviceId || deviceId === prevDeviceIdRef.current) return;
+    prevDeviceIdRef.current = deviceId;
+
+    loadChat(deviceId).then(data => {
+      if (data && data.messages.length > 0) {
+        sessionIdRef.current = data.sessionId;
+        setMessages(data.messages);
+      } else {
+        sessionIdRef.current = `session-${Date.now()}`;
+        setMessages([{ id: '1', text: t.ai.helpPrompt, isUser: false, timestamp: new Date() }]);
+      }
+    });
+  }, [deviceId, loadChat, t.ai.helpPrompt]);
 
   useEffect(() => {
     setMessages(prev => {
@@ -112,25 +188,46 @@ export default function AIScreen() {
   }), []);
 
   const addMessage = useCallback((msg: Omit<Message, 'id' | 'timestamp'>) => {
-    setMessages(prev => [...prev, { ...msg, id: Date.now().toString() + Math.random(), timestamp: new Date() }]);
+    setMessages(prev => {
+      const next = [...prev, { ...msg, id: Date.now().toString() + Math.random(), timestamp: new Date() }];
+      saveChat(deviceId, next, sessionIdRef.current);
+      return next;
+    });
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-  }, []);
+  }, [deviceId, saveChat]);
 
   const resetChat = useCallback(() => {
     sessionIdRef.current = `session-${Date.now()}`;
-    setMessages([{ id: '1', text: t.ai.helpPrompt, isUser: false, timestamp: new Date() }]);
-  }, [t]);
+    quickKeysRef.current = shuffleAndPick(QUICK_ACTION_POOL, 3).map(a => a.key);
+    const fresh = [{ id: '1', text: t.ai.helpPrompt, isUser: false, timestamp: new Date() } as Message];
+    setMessages(fresh);
+    saveChat(deviceId, fresh, sessionIdRef.current);
+  }, [t, deviceId, saveChat, QUICK_ACTION_POOL]);
 
-  const quickActions = useMemo(() => [
-    { key: 'battery', label: t.ai.quickBattery, icon: Battery },
-    { key: 'chart', label: t.ai.quickChart, icon: BarChart3 },
-    { key: 'rules', label: t.ai.quickRules, icon: List },
-    { key: 'prices', label: t.ai.quickPrices, icon: Zap },
-    { key: 'pvForecast', label: t.ai.quickPvForecast, icon: Sun },
-    { key: 'overview', label: t.ai.quickOverview, icon: Monitor },
-    { key: 'peakShaving', label: t.ai.quickPeakShaving, icon: TrendingDown },
-    { key: 'roi', label: t.ai.quickROI, icon: PiggyBank },
-  ], [t]);
+  const QUICK_ACTION_POOL: { key: string; icon: typeof Battery }[] = useMemo(() => [
+    { key: 'battery', icon: Battery },
+    { key: 'chart', icon: BarChart3 },
+    { key: 'rules', icon: List },
+    { key: 'prices', icon: Zap },
+    { key: 'pvForecast', icon: Sun },
+  ], []);
+
+  const quickKeysRef = useRef(shuffleAndPick(QUICK_ACTION_POOL, 3).map(a => a.key));
+
+  const quickActionLabels: Record<string, string> = useMemo(() => ({
+    battery: t.ai.quickBattery,
+    chart: t.ai.quickChart,
+    rules: t.ai.quickRules,
+    prices: t.ai.quickPrices,
+    pvForecast: t.ai.quickPvForecast,
+  }), [t]);
+
+  const quickActions = useMemo(() =>
+    quickKeysRef.current.map(key => {
+      const pool = QUICK_ACTION_POOL.find(a => a.key === key)!;
+      return { key, label: quickActionLabels[key], icon: pool.icon };
+    }),
+  [QUICK_ACTION_POOL, quickActionLabels]);
 
   const showQuickActions = messages.length <= 1 && !isLoading;
 
@@ -139,7 +236,8 @@ export default function AIScreen() {
     addMessage({ text, isUser: true });
     setIsLoading(true);
     try {
-      const res = await sendChatMessage(text, sessionIdRef.current, selectedDevice.device_id, language);
+      const langHint = language === 'en' ? '[Respond in English]\n\n' : '[Odpowiadaj po polsku]\n\n';
+      const res = await sendChatMessage(langHint + text, sessionIdRef.current, selectedDevice.device_id, language);
       if (res.confirmation) {
         addMessage({ text: res.text || '', isUser: false, confirmation: res.confirmation, charts: res.charts });
       } else {

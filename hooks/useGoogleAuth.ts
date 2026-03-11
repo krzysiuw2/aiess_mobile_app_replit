@@ -70,22 +70,24 @@ export function useGoogleAuth() {
     try {
       const ready = await ensureConfigured();
       if (!ready) {
-        throw new Error('Google Sign-In native module is not available. Build a dev client with `npx expo run:ios` or `npx expo run:android`.');
+        throw new Error('Google Sign-In native module is not available.');
       }
 
       const { GoogleSignin } = googleSigninModule!;
 
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      if (Platform.OS === 'android') {
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      }
+
       const response = await GoogleSignin.signIn();
 
-      const idToken = response.data?.idToken;
-      if (!idToken) {
+      if (response.type !== 'success' || !response.data?.idToken) {
         throw new Error('Google Sign-In did not return an ID token.');
       }
 
       const { error } = await supabase.auth.signInWithIdToken({
         provider: 'google',
-        token: idToken,
+        token: response.data.idToken,
       });
 
       if (error) throw error;

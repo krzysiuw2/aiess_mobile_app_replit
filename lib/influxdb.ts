@@ -7,6 +7,7 @@
 
 import { LiveData, SimulationDataPoint, BatteryLiveData, BatteryDetailData } from '@/types';
 import { parseCsvToNumbers } from '@/lib/batteryHealth';
+import { callInfluxProxy } from '@/lib/edge-proxy';
 
 // Analytics Types
 export interface ChartDataPoint {
@@ -109,9 +110,6 @@ const ANALYTICS_CONFIG: Record<string, {
   },
 };
 
-const INFLUX_URL = process.env.EXPO_PUBLIC_INFLUX_URL || '';
-const INFLUX_ORG = process.env.EXPO_PUBLIC_INFLUX_ORG || '';
-const INFLUX_TOKEN = process.env.EXPO_PUBLIC_INFLUX_TOKEN || '';
 
 /**
  * Split a CSV line respecting quoted fields (handles embedded commas/newlines).
@@ -199,22 +197,7 @@ export function getBatteryStatus(batteryPower: number): 'Charging' | 'Dischargin
 }
 
 async function runFluxQuery(query: string): Promise<Record<string, string>[]> {
-  const response = await fetch(`${INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Token ${INFLUX_TOKEN}`,
-      'Content-Type': 'application/vnd.flux',
-      'Accept': 'application/csv',
-    },
-    body: query,
-  });
-  if (!response.ok) {
-    if (response.status === 503) {
-      console.warn('[InfluxDB] Temporary service unavailable');
-    }
-    throw new Error(`InfluxDB error: ${response.status}`);
-  }
-  const csv = await response.text();
+  const csv = await callInfluxProxy(query);
   return parseInfluxCSV(csv);
 }
 
@@ -234,10 +217,6 @@ function extractNumericFields(rows: Record<string, string>[]): Record<string, nu
  * Fetch live data from InfluxDB for a specific site
  */
 export async function fetchLiveData(siteId: string): Promise<LiveData | null> {
-  if (!INFLUX_URL || !INFLUX_ORG || !INFLUX_TOKEN) {
-    console.error('[InfluxDB] Environment variables not configured');
-    throw new Error('InfluxDB configuration missing');
-  }
 
   const liveQuery = `
     from(bucket: "aiess_v1")
@@ -364,35 +343,10 @@ export async function fetchLiveData(siteId: string): Promise<LiveData | null> {
 }
 
 /**
- * Execute a Flux query against InfluxDB
+ * Execute a Flux query against InfluxDB via edge proxy
  */
 async function queryInflux(query: string): Promise<string> {
-  if (!INFLUX_URL || !INFLUX_ORG || !INFLUX_TOKEN) {
-    throw new Error('InfluxDB configuration missing');
-  }
-
-  const response = await fetch(`${INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Token ${INFLUX_TOKEN}`,
-      'Content-Type': 'application/vnd.flux',
-      'Accept': 'application/csv',
-    },
-    body: query,
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    // Log 503 errors as warnings (transient network issues)
-    if (response.status === 503) {
-      console.warn('[InfluxDB] Temporary service unavailable (will retry):', response.status);
-    } else {
-      console.error('[InfluxDB] API error:', response.status, errorText);
-    }
-    throw new Error(`InfluxDB error: ${response.status}`);
-  }
-
-  return response.text();
+  return callInfluxProxy(query);
 }
 
 /**
@@ -638,10 +592,12 @@ export async function fetchSimulationData(
           pvForecast: parseFloat(row['pv_forecast']) || 0,
           loadForecast: parseFloat(row['load_forecast']) || 0,
           factoryLoadCorrected: parseFloat(row['factory_load_corrected']) || 0,
+          estimatedSurplus: parseFloat(row['estimated_surplus']) || 0,
           weatherGti: parseFloat(row['weather_gti']) || 0,
           weatherTemp: parseFloat(row['weather_temp']) || 0,
           weatherCloudCover: parseFloat(row['weather_cloud_cover']) || 0,
           weatherCode: parseInt(row['weather_code']) || 0,
+          weatherWindSpeed: parseFloat(row['weather_wind_speed']) || 0,
           source: (row['source'] as 'forecast' | 'backfill' | 'satellite') || 'forecast',
         };
       })
@@ -656,9 +612,6 @@ export async function fetchSimulationData(
 // ─── Battery Live Data (Tier 1 — 5s telemetry) ─────────────────
 
 export async function fetchBatteryLiveData(siteId: string): Promise<BatteryLiveData | null> {
-  if (!INFLUX_URL || !INFLUX_ORG || !INFLUX_TOKEN) {
-    throw new Error('InfluxDB configuration missing');
-  }
 
   const query = `
     from(bucket: "aiess_v1")
@@ -714,9 +667,6 @@ export async function fetchBatteryLiveData(siteId: string): Promise<BatteryLiveD
 // ─── Battery Detail Data (Tier 2 — 60s detail) ─────────────────
 
 export async function fetchBatteryDetail(siteId: string): Promise<BatteryDetailData | null> {
-  if (!INFLUX_URL || !INFLUX_ORG || !INFLUX_TOKEN) {
-    throw new Error('InfluxDB configuration missing');
-  }
 
   const query = `
     from(bucket: "battery_detail")
@@ -749,17 +699,22 @@ export async function fetchBatteryDetail(siteId: string): Promise<BatteryDetailD
       return null;
     }
 
+    const STRING_FIELDS = new Set(['cell_voltage_csv', 'cell_temp_csv', 'active_faults']);
     const numValues: Record<string, number> = {};
     const strValues: Record<string, string> = {};
     for (const row of rows) {
       const field = row['_field']?.trim();
       const raw = row['_value']?.trim();
       if (!field || !raw) continue;
-      const num = parseFloat(raw);
-      if (!isNaN(num)) {
-        numValues[field] = num;
-      } else {
+      if (STRING_FIELDS.has(field)) {
         strValues[field] = raw;
+      } else {
+        const num = parseFloat(raw);
+        if (!isNaN(num)) {
+          numValues[field] = num;
+        } else {
+          strValues[field] = raw;
+        }
       }
     }
 

@@ -339,9 +339,11 @@ export interface SimulationDataPoint {
   pvForecast: number;
   loadForecast: number;
   factoryLoadCorrected: number;
+  estimatedSurplus: number;
   weatherGti: number;
   weatherTemp: number;
   weatherCloudCover: number;
   weatherCode: number;
+  weatherWindSpeed: number;
   source: SimulationSource;
 }

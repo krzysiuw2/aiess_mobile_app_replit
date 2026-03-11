@@ -44,6 +44,19 @@ export const CHART_COLORS = {
     center: '#f8f9fa',      // Light gray center
   },
   
+  // Forecast-specific colors
+  forecast: {
+    pv: '#FF9800',           // Orange (same as PV)
+    load: '#F44336',         // Red (same as load)
+    irradiance: '#FDD835',   // Warm yellow
+    irradianceArea: '#FFF9C4', // Light yellow fill
+  },
+  weather: {
+    temp: '#FF7043',         // Deep orange
+    cloud: '#90A4AE',        // Blue-grey
+    wind: '#26A69A',         // Teal
+  },
+
   // Success/warning/error
   success: '#4CAF50',
   warning: '#FF9800',

@@ -128,17 +128,22 @@ async function runForecast(site, forecastDays) {
   const pvEstimatedMap = new Map(pvEstimatedTs.map(p => [p.time, p.pvKw]));
   const loadForecastMap = new Map(loadForecastTs.map(p => [p.time, p.loadKw]));
 
-  const points = (weatherRows || []).map(w => ({
-    time: w.time,
-    pvEstimated: pvEstimatedMap.get(w.time) || 0,
-    pvForecast: pvForecastMap.get(w.time) || 0,
-    loadForecast: loadForecastMap.get(w.time) || 0,
-    weatherGti: w.gti,
-    weatherTemp: w.temp,
-    weatherCloudCover: w.cloudCover,
-    weatherCode: w.weatherCode,
-    weatherWindSpeed: w.windSpeed,
-  }));
+  const points = (weatherRows || []).map(w => {
+    const pvFc = pvForecastMap.get(w.time) || 0;
+    const loadFc = loadForecastMap.get(w.time) || 0;
+    return {
+      time: w.time,
+      pvEstimated: pvEstimatedMap.get(w.time) || 0,
+      pvForecast: pvFc,
+      loadForecast: loadFc,
+      estimatedSurplus: pvFc - loadFc,
+      weatherGti: w.gti,
+      weatherTemp: w.temp,
+      weatherCloudCover: w.cloudCover,
+      weatherCode: w.weatherCode,
+      weatherWindSpeed: w.windSpeed,
+    };
+  });
 
   await writeSimulationData(site_id, 'forecast', points);
 

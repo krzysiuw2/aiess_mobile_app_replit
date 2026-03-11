@@ -1,5 +1,4 @@
-const API_ENDPOINT = process.env.EXPO_PUBLIC_AWS_ENDPOINT || '';
-const API_KEY = process.env.EXPO_PUBLIC_AWS_API_KEY || '';
+import { callAwsProxy } from '@/lib/edge-proxy';
 
 export interface ChartDataset {
   label: string;
@@ -40,20 +39,12 @@ export async function sendChatMessage(
   siteId: string,
   language?: string,
 ): Promise<ChatResponse> {
-  if (!API_ENDPOINT || !API_KEY) {
-    throw new Error('AWS API configuration missing');
-  }
-
-  const response = await fetch(`${API_ENDPOINT}/chat`, {
-    method: 'POST',
-    headers: { 'x-api-key': API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message,
-      session_id: sessionId,
-      site_id: siteId,
-      current_datetime: new Date().toISOString(),
-      language: language || 'en',
-    }),
+  const response = await callAwsProxy('/chat', 'POST', {
+    message,
+    session_id: sessionId,
+    site_id: siteId,
+    current_datetime: new Date().toISOString(),
+    language: language || 'en',
   });
 
   if (!response.ok) {
@@ -73,10 +64,6 @@ export async function sendConfirmationResult(
   httpMethod?: string,
   siteId?: string,
 ): Promise<ChatResponse> {
-  if (!API_ENDPOINT || !API_KEY) {
-    throw new Error('AWS API configuration missing');
-  }
-
   const returnControlResults = [{
     apiResult: {
       actionGroup: actionGroup || 'aiess-management',
@@ -95,10 +82,10 @@ export async function sendConfirmationResult(
     },
   }];
 
-  const response = await fetch(`${API_ENDPOINT}/chat`, {
-    method: 'POST',
-    headers: { 'x-api-key': API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, site_id: siteId, return_control_results: returnControlResults }),
+  const response = await callAwsProxy('/chat', 'POST', {
+    session_id: sessionId,
+    site_id: siteId,
+    return_control_results: returnControlResults,
   });
 
   if (!response.ok) {

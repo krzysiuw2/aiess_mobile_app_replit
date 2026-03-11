@@ -67,7 +67,12 @@
       "expo-speech-recognition",
       "expo-sqlite",
       "expo-apple-authentication",
-      "@react-native-google-signin/google-signin"
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.363891071080-gsebvgmddec17ktibc7so8hhuvut8nhk"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
