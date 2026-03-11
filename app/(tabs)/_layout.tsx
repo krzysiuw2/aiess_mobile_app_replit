@@ -10,11 +10,13 @@ import {
 import React from 'react';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
+import { DeviceProvider } from '@/contexts/DeviceContext';
 
 export default function TabLayout() {
   const { t } = useSettings();
 
   return (
+    <DeviceProvider>
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: Colors.primary,
@@ -74,5 +76,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </DeviceProvider>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,15 +18,28 @@ import AiessLogo from '@/components/AiessLogo';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useGoogleAuth } from '@/hooks/useGoogleAuth';
+import { useAppleAuth } from '@/hooks/useAppleAuth';
+
+const isNativePlatform = Platform.OS === 'ios' || Platform.OS === 'android';
 
 export default function SignupScreen() {
-  const { signup, isSignupLoading } = useAuth();
+  const { signup, isSignupLoading, isAuthenticated } = useAuth();
+  const { signInWithGoogle, isLoading: isGoogleLoading, isConfigured: isGoogleConfigured } = useGoogleAuth();
+  const { signInWithApple, isLoading: isAppleLoading, isAvailable: isAppleAvailable } = useAppleAuth();
   const { t } = useSettings();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [retypePassword, setRetypePassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showRetypePassword, setShowRetypePassword] = useState(false);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace('/(tabs)/devices');
+    }
+  }, [isAuthenticated]);
 
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -34,7 +47,6 @@ export default function SignupScreen() {
   };
 
   const handleSignup = async () => {
-    // Validation
     if (!email.trim()) {
       Alert.alert(t.common.error, t.auth.enterEmail);
       return;
@@ -67,11 +79,8 @@ export default function SignupScreen() {
 
     try {
       const result = await signup(email.trim(), password);
-      console.log('[Signup] Success:', result);
-      
-      // Check if email confirmation is required
+
       if (result?.user && !result?.session) {
-        // Email confirmation required
         Alert.alert(
           t.auth.checkYourEmail,
           t.auth.confirmEmailSent,
@@ -83,14 +92,9 @@ export default function SignupScreen() {
           ]
         );
       } else {
-        // Auto-confirmed, go to main app
-        console.log('[Signup] Auto-confirmed, navigating to main app');
         router.replace('/(tabs)/devices');
       }
     } catch (error: any) {
-      console.log('[Signup] Error:', error);
-      
-      // Handle specific Supabase errors
       let errorMessage = t.auth.signupFailed;
       
       if (error?.message) {
@@ -110,6 +114,29 @@ export default function SignupScreen() {
       Alert.alert(t.common.error, errorMessage);
     }
   };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      await signInWithGoogle();
+    } catch (error: any) {
+      if (error?.code === 'SIGN_IN_CANCELLED') return;
+      Alert.alert(t.common.error, error?.message || t.auth.googleSignInFailed);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    try {
+      await signInWithApple();
+    } catch (error: any) {
+      if (error?.code === 'ERR_REQUEST_CANCELED') return;
+      Alert.alert(t.common.error, error?.message || t.auth.appleSignInFailed);
+    }
+  };
+
+  const showGoogleButton = isNativePlatform && isGoogleConfigured;
+  const showAppleButton = Platform.OS === 'ios' && isAppleAvailable;
+  const showSocialDivider = showGoogleButton || showAppleButton;
+  const isSocialLoading = isGoogleLoading || isAppleLoading;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -214,6 +241,42 @@ export default function SignupScreen() {
               )}
             </TouchableOpacity>
 
+            {showSocialDivider && (
+              <View style={styles.dividerContainer}>
+                <View style={styles.divider} />
+                <Text style={styles.dividerText}>{t.auth.orSignUpWith}</Text>
+                <View style={styles.divider} />
+              </View>
+            )}
+
+            {showGoogleButton && (
+              <TouchableOpacity
+                style={[styles.googleButton, isSocialLoading && styles.buttonDisabled]}
+                onPress={handleGoogleSignIn}
+                disabled={isSocialLoading}
+              >
+                {isGoogleLoading ? (
+                  <ActivityIndicator color={Colors.text} />
+                ) : (
+                  <Text style={styles.googleButtonText}>{t.auth.signUpWithGoogle}</Text>
+                )}
+              </TouchableOpacity>
+            )}
+
+            {showAppleButton && (
+              <TouchableOpacity
+                style={[styles.appleButton, isSocialLoading && styles.buttonDisabled]}
+                onPress={handleAppleSignIn}
+                disabled={isSocialLoading}
+              >
+                {isAppleLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.appleButtonText}>{t.auth.signUpWithApple}</Text>
+                )}
+              </TouchableOpacity>
+            )}
+
             <View style={styles.signInContainer}>
               <Text style={styles.signInText}>{t.auth.haveAccount} </Text>
               <TouchableOpacity onPress={() => router.back()}>
@@ -313,6 +376,50 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: '600' as const,
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.border,
+  },
+  dividerText: {
+    marginHorizontal: 16,
+    color: Colors.textSecondary,
+    fontSize: 14,
+  },
+  googleButton: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 30,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  googleButtonText: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '500' as const,
+  },
+  appleButton: {
+    backgroundColor: '#000',
+    borderRadius: 30,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: 24,
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  appleButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500' as const,
   },
   signInContainer: {
     flexDirection: 'row',

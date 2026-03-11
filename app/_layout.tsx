@@ -5,7 +5,6 @@ import { useFonts } from 'expo-font';
 import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from '@/contexts/AuthContext';
-import { DeviceProvider } from '@/contexts/DeviceContext';
 import { SettingsProvider, useSettings } from '@/contexts/SettingsContext';
 import { AppLoadingProvider, useAppLoading } from '@/contexts/AppLoadingContext';
 import IntroAnimation from '@/components/IntroAnimation';
@@ -39,9 +38,7 @@ function AppContent() {
     <>
       <SettingsProvider>
         <AuthProvider>
-          <DeviceProvider>
-            <RootLayoutNav />
-          </DeviceProvider>
+          <RootLayoutNav />
         </AuthProvider>
       </SettingsProvider>
       

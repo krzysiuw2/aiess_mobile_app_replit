@@ -165,7 +165,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         throw error;
       }
 
-      console.log('[Auth] Signup successful');
+      console.log('[Auth] Signup successful — user:', data.user?.id, 'session:', !!data.session, 'confirmed:', data.user?.confirmed_at);
       return data;
     },
   });
@@ -182,27 +182,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setUser(null);
       setProfile(null);
       queryClient.clear();
-    },
-  });
-
-  // Google Sign-In
-  const googleSignInMutation = useMutation({
-    mutationFn: async () => {
-      console.log('[Auth] Attempting Google sign-in');
-      
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          skipBrowserRedirect: true,
-        },
-      });
-
-      if (error) {
-        console.error('[Auth] Google sign-in error:', error.message);
-        throw error;
-      }
-
-      return data;
     },
   });
 
@@ -223,7 +202,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const { mutateAsync: loginAsync } = loginMutation;
   const { mutateAsync: signupAsync } = signupMutation;
   const { mutateAsync: logoutAsync } = logoutMutation;
-  const { mutateAsync: googleSignInAsync } = googleSignInMutation;
   const { mutateAsync: resetPasswordAsync } = resetPasswordMutation;
 
   const login = useCallback((email: string, password: string) => {
@@ -238,10 +216,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     return logoutAsync();
   }, [logoutAsync]);
 
-  const signInWithGoogle = useCallback(() => {
-    return googleSignInAsync();
-  }, [googleSignInAsync]);
-
   const resetPassword = useCallback((email: string) => {
     return resetPasswordAsync(email);
   }, [resetPasswordAsync]);
@@ -254,13 +228,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     isLoading: !isInitialized,
     isLoginLoading: loginMutation.isPending,
     isSignupLoading: signupMutation.isPending,
-    isGoogleSignInLoading: googleSignInMutation.isPending,
     loginError: loginMutation.error,
     signupError: signupMutation.error,
     login,
     signup,
     logout,
-    signInWithGoogle,
     resetPassword,
   };
 });

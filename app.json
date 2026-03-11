@@ -16,6 +16,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.aiess.mobile",
       "buildNumber": "1",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSSpeechRecognitionUsageDescription": "Allow $(PRODUCT_NAME) to use speech recognition.",
@@ -64,7 +65,9 @@
       "expo-web-browser",
       "expo-secure-store",
       "expo-speech-recognition",
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-apple-authentication",
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true

@@ -19,21 +19,22 @@ import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useGoogleAuth } from '@/hooks/useGoogleAuth';
+import { useAppleAuth } from '@/hooks/useAppleAuth';
+
+const isNativePlatform = Platform.OS === 'ios' || Platform.OS === 'android';
 
 export default function LoginScreen() {
   const { login, resetPassword, isLoginLoading, isAuthenticated } = useAuth();
-  const { signInWithGoogle, isLoading: isGoogleSignInLoading, isConfigured: isGoogleConfigured } = useGoogleAuth();
+  const { signInWithGoogle, isLoading: isGoogleLoading, isConfigured: isGoogleConfigured } = useGoogleAuth();
+  const { signInWithApple, isLoading: isAppleLoading, isAvailable: isAppleAvailable } = useAppleAuth();
   const { t } = useSettings();
-  
-  // Check if we're on a native platform (iOS/Android)
-  const isNativePlatform = Platform.OS === 'ios' || Platform.OS === 'android';
 
-  // Navigate when authenticated
   useEffect(() => {
     if (isAuthenticated) {
       router.replace('/(tabs)/devices');
     }
   }, [isAuthenticated]);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
@@ -45,7 +46,6 @@ export default function LoginScreen() {
   };
 
   const handleLogin = async () => {
-    // Validation
     if (!email.trim()) {
       Alert.alert(t.common.error, t.auth.enterEmail);
       return;
@@ -68,12 +68,8 @@ export default function LoginScreen() {
     
     try {
       await login(email.trim(), password);
-      console.log('[Login] Success, navigating to main app');
       router.replace('/(tabs)/devices');
     } catch (error: any) {
-      console.log('[Login] Error:', error);
-      
-      // Handle specific Supabase errors
       let errorMessage = t.auth.loginFailed;
       
       if (error?.message) {
@@ -93,30 +89,21 @@ export default function LoginScreen() {
   };
 
   const handleGoogleSignIn = async () => {
-    // On native platforms, show coming soon message
-    if (isNativePlatform && !isGoogleConfigured) {
-      Alert.alert(
-        t.common.comingSoon,
-        t.auth.googleComingSoon
-      );
-      return;
-    }
-
     try {
-      const result = await signInWithGoogle();
-      if (result?.type === 'cancel') {
-        console.log('[Login] Google sign-in cancelled');
-        return;
-      }
-      // Navigation is handled by the useEffect when isAuthenticated changes
+      await signInWithGoogle();
     } catch (error: any) {
-      console.log('[Login] Google sign-in error:', error);
+      if (error?.code === 'SIGN_IN_CANCELLED') return;
       Alert.alert(t.common.error, error?.message || t.auth.googleSignInFailed);
     }
   };
 
-  const handleAppleSignIn = () => {
-    Alert.alert(t.auth.comingInV11, t.auth.appleSignInComingSoon);
+  const handleAppleSignIn = async () => {
+    try {
+      await signInWithApple();
+    } catch (error: any) {
+      if (error?.code === 'ERR_REQUEST_CANCELED') return;
+      Alert.alert(t.common.error, error?.message || t.auth.appleSignInFailed);
+    }
   };
 
   const handleForgotPassword = async () => {
@@ -143,6 +130,11 @@ export default function LoginScreen() {
       Alert.alert(t.common.error, error?.message || t.auth.failedResetEmail);
     }
   };
+
+  const showGoogleButton = isNativePlatform && isGoogleConfigured;
+  const showAppleButton = Platform.OS === 'ios' && isAppleAvailable;
+  const showSocialDivider = showGoogleButton || showAppleButton;
+  const isSocialLoading = isGoogleLoading || isAppleLoading;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -232,40 +224,41 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
-            <View style={styles.dividerContainer}>
-              <View style={styles.divider} />
-              <Text style={styles.dividerText}>{t.auth.orSignInWith}</Text>
-              <View style={styles.divider} />
-            </View>
+            {showSocialDivider && (
+              <View style={styles.dividerContainer}>
+                <View style={styles.divider} />
+                <Text style={styles.dividerText}>{t.auth.orSignInWith}</Text>
+                <View style={styles.divider} />
+              </View>
+            )}
 
-            <TouchableOpacity
-              style={[
-                styles.googleButton, 
-                isGoogleSignInLoading && styles.buttonDisabled,
-                (isNativePlatform && !isGoogleConfigured) && styles.socialButtonComingSoon
-              ]}
-              onPress={handleGoogleSignIn}
-              disabled={isGoogleSignInLoading}
-            >
-              {isGoogleSignInLoading ? (
-                <ActivityIndicator color={Colors.text} />
-              ) : (
-                <>
+            {showGoogleButton && (
+              <TouchableOpacity
+                style={[styles.googleButton, isSocialLoading && styles.buttonDisabled]}
+                onPress={handleGoogleSignIn}
+                disabled={isSocialLoading}
+              >
+                {isGoogleLoading ? (
+                  <ActivityIndicator color={Colors.text} />
+                ) : (
                   <Text style={styles.googleButtonText}>{t.auth.signInWithGoogle}</Text>
-                  {isNativePlatform && !isGoogleConfigured && (
-                    <Text style={styles.comingSoonText}>({t.common.comingSoon})</Text>
-                  )}
-                </>
-              )}
-            </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+            )}
 
-            <TouchableOpacity
-              style={styles.appleButton}
-              onPress={handleAppleSignIn}
-            >
-              <Text style={styles.appleButtonText}>{t.auth.signInWithApple}</Text>
-              <Text style={styles.appleComingSoon}>({t.auth.comingInV11})</Text>
-            </TouchableOpacity>
+            {showAppleButton && (
+              <TouchableOpacity
+                style={[styles.appleButton, isSocialLoading && styles.buttonDisabled]}
+                onPress={handleAppleSignIn}
+                disabled={isSocialLoading}
+              >
+                {isAppleLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.appleButtonText}>{t.auth.signInWithApple}</Text>
+                )}
+              </TouchableOpacity>
+            )}
 
             <View style={styles.signUpContainer}>
               <Text style={styles.signUpText}>{t.auth.noAccount} </Text>
@@ -416,25 +409,11 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     flexDirection: 'row',
     justifyContent: 'center',
-    opacity: 0.6,
   },
   appleButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '500' as const,
-  },
-  appleComingSoon: {
-    color: '#999',
-    fontSize: 12,
-    marginLeft: 8,
-  },
-  socialButtonComingSoon: {
-    opacity: 0.6,
-  },
-  comingSoonText: {
-    color: Colors.textLight,
-    fontSize: 12,
-    marginLeft: 8,
   },
   signUpContainer: {
     flexDirection: 'row',
