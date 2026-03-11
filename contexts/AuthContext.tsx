@@ -44,7 +44,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         console.log(`[Auth] onAuthStateChange: ${event} ${session?.user?.email || 'none'} (+${Date.now() - t0}ms)`);
         setSession(session);
         setUser(session?.user ?? null);
@@ -54,12 +54,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           console.log(`[Auth] Initialized via onAuthStateChange (${event}) (+${Date.now() - t0}ms)`);
           markInitialized();
         }
-        
-        if (session?.user) {
-          const profileStart = Date.now();
-          await fetchOrCreateProfile(session.user.id, session.user.email);
-          console.log(`[Auth] fetchOrCreateProfile done (+${Date.now() - profileStart}ms)`);
-        } else {
+
+        if (!session?.user) {
           setProfile(null);
         }
       }
@@ -70,6 +66,15 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Profile fetch reacts to user changes — kept outside onAuthStateChange
+  // to avoid deadlocking the GoTrue session lock during TOKEN_REFRESHED.
+  useEffect(() => {
+    if (!user?.id) return;
+    const t = Date.now();
+    fetchOrCreateProfile(user.id, user.email ?? undefined)
+      .then(() => console.log(`[Auth] fetchOrCreateProfile done (+${Date.now() - t}ms)`));
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch or create user profile
   const fetchOrCreateProfile = async (userId: string, email?: string) => {

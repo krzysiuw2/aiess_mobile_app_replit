@@ -296,6 +296,39 @@ export interface SiteConfig {
   created_at?: string;
 }
 
+// ─── Battery Telemetry Types ────────────────────────────────────
+
+export interface BatteryLiveData {
+  minCellVoltage: number;
+  maxCellVoltage: number;
+  voltageDelta: number;
+  minCellTemp: number;
+  maxCellTemp: number;
+  activeFaults: string;
+  activeFaultCount: number;
+  lastUpdate: Date;
+}
+
+export type BatteryWorkingMode = 0 | 1 | 2 | 3 | 4 | 170;
+
+export interface BatteryDetailData {
+  stackVoltage: number;
+  stackCurrent: number;
+  stackSoc: number;
+  stackSoh: number;
+  workingMode: BatteryWorkingMode;
+  cellCount: number;
+  cellVoltageMin: number;
+  cellVoltageMax: number;
+  cellVoltageDelta: number;
+  cellVoltages: number[];
+  ntcCount: number;
+  cellTempMin: number;
+  cellTempMax: number;
+  cellTemps: number[];
+  lastUpdate: Date;
+}
+
 // ─── Energy Simulation / Forecast Types ─────────────────────────
 
 export type SimulationSource = 'forecast' | 'backfill' | 'satellite';

@@ -176,20 +176,28 @@ const handlers = {
   },
 
   async get_tge_price_history({ hours = 24 }) {
-    const q = `from(bucket: "tge_energy_prices") |> range(start: -${hours}h) |> filter(fn: (r) => r._measurement == "energy_prices" and r._field == "price") |> sort(columns: ["_time"])`;
+    const h = parseInt(hours) || 24;
+    const q = `from(bucket: "tge_energy_prices") |> range(start: -${h}h, stop: ${h}h) |> filter(fn: (r) => r._measurement == "energy_prices" and r._field == "price") |> sort(columns: ["_time"])`;
     const csv = await fluxQuery(q);
     const rows = parseCsv(csv);
     const labels = rows.map(r => utcToWarsaw(r._time));
     const data = rows.map(r => parseFloat(r._value) || 0);
-    const nowLocal = new Date().toLocaleDateString('pl-PL', { timeZone: 'Europe/Warsaw' });
+    const now = new Date();
+    const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
+    const todayStr = now.toLocaleDateString('pl-PL', { timeZone: 'Europe/Warsaw' });
+    const tomorrowStr = tomorrow.toLocaleDateString('pl-PL', { timeZone: 'Europe/Warsaw' });
+    const hasFuture = rows.some(r => new Date(r._time) > now);
+    const title = hasFuture
+      ? `Ceny energii TGE — ${todayStr} + ${tomorrowStr} (PLN/MWh)`
+      : `Ceny energii TGE — ${todayStr} (PLN/MWh)`;
     return {
       _chart: true,
       chart_type: 'bar',
-      title: `Ceny energii TGE — ${nowLocal} (PLN/MWh)`,
+      title,
       labels,
       datasets: [{ label: 'Cena TGE', data, color: '#f59e0b' }],
       point_count: rows.length,
-      hours,
+      hours: h,
       note: 'Chart is rendered by the app. Do NOT generate a text-based chart or table of all values.',
     };
   },
@@ -375,11 +383,6 @@ export const handler = async (event) => {
 
   const toolName = apiPath?.replace(/^\//, '').replace(/\//g, '_') || event.function || 'unknown';
   console.log(`[Agent Action] ${toolName}`, JSON.stringify(params));
-
-  const DISABLED_TOOLS = new Set(['send_schedule_rule', 'delete_schedule_rule']);
-  if (DISABLED_TOOLS.has(toolName)) {
-    return formatResponse(event, { error: 'Rule modification via agent is disabled. Use the Schedule tab to manage rules.' });
-  }
 
   try {
     const fn = handlers[toolName];

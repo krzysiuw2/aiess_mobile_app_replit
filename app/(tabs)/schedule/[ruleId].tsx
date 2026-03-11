@@ -130,10 +130,13 @@ function DatePicker({ visible, onClose, onSelect, initialDate, title, doneLabel,
   const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
   const DAYS = Array.from({ length: 31 }, (_, i) => (i + 1).toString().padStart(2, '0'));
 
+  const todayMonth = (now.getMonth() + 1).toString().padStart(2, '0');
+  const todayDay = now.getDate().toString().padStart(2, '0');
+
   const parts = initialDate?.split('-') || [];
   const [year, setYear] = useState(parts[0] || currentYear.toString());
-  const [month, setMonth] = useState(parts[1] || '01');
-  const [day, setDay] = useState(parts[2] || '01');
+  const [month, setMonth] = useState(parts[1] || todayMonth);
+  const [day, setDay] = useState(parts[2] || todayDay);
 
   const handleConfirm = () => {
     onSelect(`${year}-${month}-${day}`);
@@ -715,15 +718,26 @@ export default function RuleBuilderScreen() {
               {form.actionType === 'dt' && (
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>{ed.minGridPower}</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={form.minGrid}
-                    onChangeText={(v) => update({ minGrid: v.replace(/[^0-9.\-]/g, '') })}
-                    onBlur={() => clampField('minGrid', siteLth, siteHth)}
-                    keyboardType="decimal-pad"
-                    placeholder="0"
-                    placeholderTextColor={Colors.textSecondary}
-                  />
+                  <View style={styles.signedInputRow}>
+                    <TouchableOpacity
+                      style={styles.signToggle}
+                      onPress={() => {
+                        const v = form.minGrid;
+                        update({ minGrid: v.startsWith('-') ? v.slice(1) : '-' + v });
+                      }}
+                    >
+                      <Text style={styles.signToggleText}>±</Text>
+                    </TouchableOpacity>
+                    <TextInput
+                      style={[styles.textInput, { flex: 1 }]}
+                      value={form.minGrid}
+                      onChangeText={(v) => update({ minGrid: v.replace(/[^0-9.\-]/g, '') })}
+                      onBlur={() => clampField('minGrid', siteLth, siteHth)}
+                      keyboardType="numbers-and-punctuation"
+                      placeholder="0"
+                      placeholderTextColor={Colors.textSecondary}
+                    />
+                  </View>
                   <Text style={styles.hintText}>
                     {ed.minGridPowerHint} ({siteLth} ~ {siteHth} kW)
                   </Text>
@@ -916,28 +930,50 @@ export default function RuleBuilderScreen() {
               <View style={styles.rowInputs}>
                 <View style={[styles.inputGroup, { flex: 1 }]}>
                   <Text style={styles.inputLabel}>{ed.valueKw}</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={form.gridValue}
-                    onChangeText={(v) => update({ gridValue: v.replace(/[^0-9.\-]/g, '') })}
-                    onBlur={() => clampField('gridValue', siteLth, siteHth)}
-                    keyboardType="decimal-pad"
-                    placeholder="0"
-                    placeholderTextColor={Colors.textSecondary}
-                  />
+                  <View style={styles.signedInputRow}>
+                    <TouchableOpacity
+                      style={styles.signToggle}
+                      onPress={() => {
+                        const v = form.gridValue;
+                        update({ gridValue: v.startsWith('-') ? v.slice(1) : '-' + v });
+                      }}
+                    >
+                      <Text style={styles.signToggleText}>±</Text>
+                    </TouchableOpacity>
+                    <TextInput
+                      style={[styles.textInput, { flex: 1 }]}
+                      value={form.gridValue}
+                      onChangeText={(v) => update({ gridValue: v.replace(/[^0-9.\-]/g, '') })}
+                      onBlur={() => clampField('gridValue', siteLth, siteHth)}
+                      keyboardType="numbers-and-punctuation"
+                      placeholder="0"
+                      placeholderTextColor={Colors.textSecondary}
+                    />
+                  </View>
                 </View>
                 {form.gridOperator === 'bt' && (
                   <View style={[styles.inputGroup, { flex: 1 }]}>
                     <Text style={styles.inputLabel}>{ed.maxValueKw}</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={form.gridValueMax}
-                      onChangeText={(v) => update({ gridValueMax: v.replace(/[^0-9.\-]/g, '') })}
-                      onBlur={() => clampField('gridValueMax', siteLth, siteHth)}
-                      keyboardType="decimal-pad"
-                      placeholder="50"
-                      placeholderTextColor={Colors.textSecondary}
-                    />
+                    <View style={styles.signedInputRow}>
+                      <TouchableOpacity
+                        style={styles.signToggle}
+                        onPress={() => {
+                          const v = form.gridValueMax;
+                          update({ gridValueMax: v.startsWith('-') ? v.slice(1) : '-' + v });
+                        }}
+                      >
+                        <Text style={styles.signToggleText}>±</Text>
+                      </TouchableOpacity>
+                      <TextInput
+                        style={[styles.textInput, { flex: 1 }]}
+                        value={form.gridValueMax}
+                        onChangeText={(v) => update({ gridValueMax: v.replace(/[^0-9.\-]/g, '') })}
+                        onBlur={() => clampField('gridValueMax', siteLth, siteHth)}
+                        keyboardType="numbers-and-punctuation"
+                        placeholder="50"
+                        placeholderTextColor={Colors.textSecondary}
+                      />
+                    </View>
                   </View>
                 )}
               </View>
@@ -1127,6 +1163,26 @@ const styles = StyleSheet.create({
   },
   operatorChipText: { fontSize: 13, fontWeight: '500', color: Colors.text },
 
+  signedInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  signToggle: {
+    width: 40,
+    height: 48,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  signToggleText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
   pickerButton: {
     flexDirection: 'row',
     alignItems: 'center',

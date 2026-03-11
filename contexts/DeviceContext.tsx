@@ -17,33 +17,48 @@ export const [DeviceProvider, useDevices] = createContextHook(() => {
   // Fetch devices from Supabase
   const devicesQuery = useQuery({
     queryKey: ['devices', user?.id],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (!user?.id) {
         console.log('[Devices] No user, returning empty array');
         return [];
       }
 
       console.log('[Devices] Fetching devices for user:', user.id);
-      
-      const { data, error } = await supabase
-        .from('devices')
-        .select(`
-          id,
-          device_id,
-          name,
-          status,
-          device_type,
-          location,
-          battery_capacity_kwh,
-          pcs_power_kw,
-          pv_power_kw,
-          device_users!inner (
-            user_id,
-            role
-          )
-        `)
-        .eq('device_users.user_id', user.id)
-        .order('name');
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10_000);
+      if (signal) {
+        signal.addEventListener('abort', () => controller.abort());
+      }
+
+      let data: any;
+      let error: any;
+      try {
+        const result = await supabase
+          .from('devices')
+          .select(`
+            id,
+            device_id,
+            name,
+            status,
+            device_type,
+            location,
+            battery_capacity_kwh,
+            pcs_power_kw,
+            pv_power_kw,
+            device_users!inner (
+              user_id,
+              role
+            )
+          `)
+          .eq('device_users.user_id', user.id)
+          .order('name')
+          .abortSignal(controller.signal);
+        data = result.data;
+        error = result.error;
+      } finally {
+        clearTimeout(timeout);
+      }
 
       if (error) {
         console.error('[Devices] Error fetching devices:', error);
@@ -67,7 +82,10 @@ export const [DeviceProvider, useDevices] = createContextHook(() => {
       return devices;
     },
     enabled: isAuthenticated && !!user?.id,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 5,
+    retry: 3,
+    retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 10_000),
+    refetchOnReconnect: true,
   });
 
   // Load previously selected device from storage

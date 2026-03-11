@@ -20,7 +20,7 @@ import { useDevices } from '@/contexts/DeviceContext';
 import { useSchedules } from '@/hooks/useSchedules';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
 import { geocodeSiteAddress } from '@/lib/aws-site-config';
-import type { SiteConfigPvArray } from '@/types';
+import type { SiteConfigPvArray, SiteConfigTariffPeriod } from '@/types';
 
 const BELL_CURVE_BARS = [0.08, 0.18, 0.35, 0.58, 0.78, 0.92, 1.0, 0.95, 0.82, 0.62, 0.38, 0.15];
 const BELL_HOURS = ['6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17'];
@@ -71,6 +71,7 @@ export default function SiteSettingsScreen() {
   const [tariffCurrency, setTariffCurrency] = useState('PLN');
   const [tariffDemandCharge, setTariffDemandCharge] = useState('');
   const [tariffFixed, setTariffFixed] = useState('');
+  const [tariffPeriods, setTariffPeriods] = useState<SiteConfigTariffPeriod[]>([]);
   const [loadType, setLoadType] = useState('industrial');
   const [loadPeak, setLoadPeak] = useState('');
   const [loadBase, setLoadBase] = useState('');
@@ -110,6 +111,7 @@ export default function SiteSettingsScreen() {
       setTariffCurrency(siteConfig.tariff?.currency || 'PLN');
       setTariffDemandCharge(siteConfig.tariff?.demand_charge_per_kw?.toString() || '');
       setTariffFixed(siteConfig.tariff?.fixed_monthly?.toString() || '');
+      setTariffPeriods(siteConfig.tariff?.periods || []);
       setLoadType(siteConfig.load_profile?.type || 'industrial');
       setLoadPeak(siteConfig.load_profile?.typical_peak_kw?.toString() || '');
       setLoadBase(siteConfig.load_profile?.typical_base_kw?.toString() || '');
@@ -317,10 +319,44 @@ export default function SiteSettingsScreen() {
           currency: tariffCurrency || 'PLN',
           demand_charge_per_kw: parseFloat(tariffDemandCharge) || undefined,
           fixed_monthly: parseFloat(tariffFixed) || undefined,
+          periods: tariffType === 'time_of_use' ? tariffPeriods : undefined,
         },
       });
       Alert.alert(t.common.success, t.settings.tariffSaved);
     } catch { Alert.alert(t.common.error, t.settings.failedSaveSiteConfig); }
+  };
+
+  const TOU_PRESET_2: SiteConfigTariffPeriod[] = [
+    { name: 'Peak', start: '06:00', end: '22:00', days: [1, 2, 3, 4, 5], import_rate: 0.85, export_rate: 0.40 },
+    { name: 'Off-Peak', start: '22:00', end: '06:00', days: [0, 1, 2, 3, 4, 5, 6], import_rate: 0.45, export_rate: 0.25 },
+  ];
+
+  const TOU_PRESET_3: SiteConfigTariffPeriod[] = [
+    { name: 'Peak', start: '07:00', end: '13:00', days: [1, 2, 3, 4, 5], import_rate: 0.95, export_rate: 0.45 },
+    { name: 'Mid-Peak', start: '13:00', end: '17:00', days: [1, 2, 3, 4, 5], import_rate: 0.65, export_rate: 0.35 },
+    { name: 'Off-Peak', start: '22:00', end: '07:00', days: [0, 1, 2, 3, 4, 5, 6], import_rate: 0.45, export_rate: 0.25 },
+  ];
+
+  const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+  const updatePeriod = (idx: number, patch: Partial<SiteConfigTariffPeriod>) => {
+    setTariffPeriods(prev => prev.map((p, i) => i === idx ? { ...p, ...patch } : p));
+  };
+
+  const toggleDay = (periodIdx: number, day: number) => {
+    setTariffPeriods(prev => prev.map((p, i) => {
+      if (i !== periodIdx) return p;
+      const days = p.days.includes(day) ? p.days.filter(d => d !== day) : [...p.days, day].sort();
+      return { ...p, days };
+    }));
+  };
+
+  const addPeriod = () => {
+    setTariffPeriods(prev => [...prev, { name: '', start: '00:00', end: '00:00', days: [1, 2, 3, 4, 5] }]);
+  };
+
+  const removePeriod = (idx: number) => {
+    setTariffPeriods(prev => prev.filter((_, i) => i !== idx));
   };
 
   const handleSaveLoadProfile = async () => {
@@ -874,6 +910,103 @@ export default function SiteSettingsScreen() {
               ))}
             </View>
           </View>
+
+          {tariffType === 'time_of_use' && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Presets</Text>
+              <View style={styles.chipRow}>
+                <TouchableOpacity style={[styles.chip3, tariffPeriods.length === 2 && styles.chip3Active]} onPress={() => setTariffPeriods([...TOU_PRESET_2])}>
+                  <Text style={[styles.chip3Text, tariffPeriods.length === 2 && styles.chip3TextActive]}>{t.settings.touPreset2}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.chip3, tariffPeriods.length === 3 && styles.chip3Active]} onPress={() => setTariffPeriods([...TOU_PRESET_3])}>
+                  <Text style={[styles.chip3Text, tariffPeriods.length === 3 && styles.chip3TextActive]}>{t.settings.touPreset3}</Text>
+                </TouchableOpacity>
+              </View>
+
+              {tariffPeriods.map((period, idx) => (
+                <View key={idx} style={styles.touPeriodCard}>
+                  <View style={styles.touPeriodHeader}>
+                    <TextInput
+                      style={[styles.textInput, { flex: 1 }]}
+                      value={period.name}
+                      onChangeText={v => updatePeriod(idx, { name: v })}
+                      placeholder={t.settings.touPeriodName}
+                      placeholderTextColor={Colors.textSecondary}
+                    />
+                    {tariffPeriods.length > 1 && (
+                      <TouchableOpacity onPress={() => removePeriod(idx)} style={styles.touDeleteBtn}>
+                        <Trash2 size={16} color={Colors.error} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <View style={styles.rowInputs}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.touSmallLabel}>{t.settings.touStartTime}</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={period.start}
+                        onChangeText={v => updatePeriod(idx, { start: v })}
+                        placeholder="06:00"
+                        placeholderTextColor={Colors.textSecondary}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.touSmallLabel}>{t.settings.touEndTime}</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={period.end}
+                        onChangeText={v => updatePeriod(idx, { end: v })}
+                        placeholder="22:00"
+                        placeholderTextColor={Colors.textSecondary}
+                      />
+                    </View>
+                  </View>
+                  <Text style={styles.touSmallLabel}>{t.settings.touDays}</Text>
+                  <View style={styles.touDaysRow}>
+                    {DAY_LABELS.map((label, dayIdx) => (
+                      <TouchableOpacity
+                        key={dayIdx}
+                        style={[styles.touDayChip, period.days.includes(dayIdx) && styles.touDayChipActive]}
+                        onPress={() => toggleDay(idx, dayIdx)}
+                      >
+                        <Text style={[styles.touDayText, period.days.includes(dayIdx) && styles.touDayTextActive]}>{label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <View style={styles.rowInputs}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.touSmallLabel}>{t.settings.touImportRate}</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={period.import_rate?.toString() || ''}
+                        onChangeText={v => updatePeriod(idx, { import_rate: parseFloat(v) || undefined })}
+                        keyboardType="decimal-pad"
+                        placeholder="0.85"
+                        placeholderTextColor={Colors.textSecondary}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.touSmallLabel}>{t.settings.touExportRate}</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={period.export_rate?.toString() || ''}
+                        onChangeText={v => updatePeriod(idx, { export_rate: parseFloat(v) || undefined })}
+                        keyboardType="decimal-pad"
+                        placeholder="0.40"
+                        placeholderTextColor={Colors.textSecondary}
+                      />
+                    </View>
+                  </View>
+                </View>
+              ))}
+
+              <TouchableOpacity style={styles.touAddBtn} onPress={addPeriod}>
+                <Plus size={16} color={Colors.primary} />
+                <Text style={styles.touAddText}>{t.settings.addPeriod}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={styles.rowInputs}>
             <View style={[styles.inputGroup, { flex: 1 }]}>
               <Text style={styles.inputLabel}>{t.settings.currency}</Text>
@@ -1323,5 +1456,69 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  touPeriodCard: {
+    backgroundColor: Colors.background,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 8,
+  },
+  touPeriodHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  touDeleteBtn: {
+    padding: 8,
+  },
+  touSmallLabel: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginBottom: 2,
+  },
+  touDaysRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginBottom: 4,
+  },
+  touDayChip: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+  },
+  touDayChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  touDayText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  touDayTextActive: {
+    color: '#fff',
+  },
+  touAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginTop: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    borderStyle: 'dashed',
+  },
+  touAddText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.primary,
   },
 });

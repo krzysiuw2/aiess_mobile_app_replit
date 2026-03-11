@@ -10,7 +10,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, ChevronRight, Calendar, Eye, EyeOff, Zap, Battery, BarChart2, TrendingUp, RefreshCw, Sun, Shield } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Calendar, Eye, EyeOff, Zap, Battery, BarChart2, TrendingUp, RefreshCw, Sun, Shield, Activity } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { FIELD_COLORS, FieldKey, CHART_COLORS } from '@/constants/chartColors';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -21,8 +21,10 @@ import {
   calculateEnergyStats, 
   calculateFactoryLoad,
   fetchSimulationData,
+  fetchTgePrices,
   ChartDataPoint, 
   EnergyStats,
+  TgePricePoint,
   TimeRange 
 } from '@/lib/influxdb';
 import { SimulationDataPoint } from '@/types';
@@ -41,6 +43,11 @@ import { EnergyBarsChart } from '@/components/analytics/EnergyBarsChart';
 import { SocBandChart } from '@/components/analytics/SocBandChart';
 import { LoadCompositionChart } from '@/components/analytics/LoadCompositionChart';
 import { CyclesBarChart } from '@/components/analytics/CyclesBarChart';
+import TgePriceChart from '@/components/analytics/TgePriceChart';
+import { useSiteConfig } from '@/hooks/useSiteConfig';
+import { BatteryDataView } from '@/components/analytics/BatteryDataView';
+
+type AnalyticsTab = 'usage' | 'battery';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -148,13 +155,18 @@ function DatePickerModal({
 export default function AnalyticsScreen() {
   const { t } = useSettings();
   const { selectedDevice } = useDevices();
-  
+  const { siteConfig } = useSiteConfig();
+  const tariffType = siteConfig?.tariff?.type;
+  const showTgePrices = tariffType === 'dynamic' || tariffType === 'time_of_use';
+
+  const [activeTab, setActiveTab] = useState<AnalyticsTab>('usage');
   const [timeRange, setTimeRange] = useState<string>('24h');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [simData, setSimData] = useState<SimulationDataPoint[]>([]);
+  const [tgePrices, setTgePrices] = useState<TgePricePoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -202,6 +214,20 @@ export default function AnalyticsScreen() {
             console.warn('[Analytics] Simulation fetch failed:', e);
             setSimData([]);
           });
+
+        if (showTgePrices) {
+          fetchTgePrices(simStart, simEnd)
+            .then(prices => {
+              console.log(`[Analytics] TGE prices: ${prices.length} pts`);
+              setTgePrices(prices);
+            })
+            .catch((e) => {
+              console.warn('[Analytics] TGE price fetch failed:', e);
+              setTgePrices([]);
+            });
+        } else {
+          setTgePrices([]);
+        }
       } catch (err) {
         console.error('[Analytics] Error:', err);
         setError(t.common.failedToLoad);
@@ -211,7 +237,7 @@ export default function AnalyticsScreen() {
     }
 
     loadData();
-  }, [timeRange, selectedDate, selectedDevice?.device_id, t.common.noDeviceSelected, t.common.failedToLoad]);
+  }, [timeRange, selectedDate, selectedDevice?.device_id, showTgePrices, t.common.noDeviceSelected, t.common.failedToLoad]);
 
   // Augment telemetry with pvEstimated from simulation (for sites with unmonitored PV arrays)
   const augmentedData = useMemo((): ChartDataPoint[] => {
@@ -290,6 +316,8 @@ export default function AnalyticsScreen() {
     setVisibleFields(prev => ({ ...prev, [field]: !prev[field] }));
   };
 
+  const bt = t.analytics.batteryTab;
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -302,168 +330,214 @@ export default function AnalyticsScreen() {
         </View>
       </View>
 
+      {/* Segmented Control: Usage Data / Battery Data */}
+      <View style={styles.segmentedRow}>
+        <View style={styles.segmentedControl}>
+          <TouchableOpacity
+            style={[styles.segmentBtn, activeTab === 'usage' && styles.segmentBtnActive]}
+            onPress={() => setActiveTab('usage')}
+          >
+            <BarChart2 size={14} color={activeTab === 'usage' ? '#fff' : Colors.textSecondary} />
+            <Text style={[styles.segmentText, activeTab === 'usage' && styles.segmentTextActive]}>
+              {bt.usageData}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segmentBtn, activeTab === 'battery' && styles.segmentBtnActive]}
+            onPress={() => setActiveTab('battery')}
+          >
+            <Activity size={14} color={activeTab === 'battery' ? '#fff' : Colors.textSecondary} />
+            <Text style={[styles.segmentText, activeTab === 'battery' && styles.segmentTextActive]}>
+              {bt.batteryData}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Time Range Selector */}
-        <View style={styles.timeRangeSelector}>
-          {(['24h', '7d', '30d', '365d'] as string[]).map((range) => (
-            <TouchableOpacity
-              key={range}
-              style={[
-                styles.timeRangeButton,
-                timeRange === range && styles.timeRangeButtonActive,
-              ]}
-              onPress={() => setTimeRange(range)}
-            >
-              <Text
-                style={[
-                  styles.timeRangeText,
-                  timeRange === range && styles.timeRangeTextActive,
-                ]}
+        {activeTab === 'usage' ? (
+          <>
+            {/* Time Range Selector */}
+            <View style={styles.timeRangeSelector}>
+              {(['24h', '7d', '30d', '365d'] as string[]).map((range) => (
+                <TouchableOpacity
+                  key={range}
+                  style={[
+                    styles.timeRangeButton,
+                    timeRange === range && styles.timeRangeButtonActive,
+                  ]}
+                  onPress={() => setTimeRange(range)}
+                >
+                  <Text
+                    style={[
+                      styles.timeRangeText,
+                      timeRange === range && styles.timeRangeTextActive,
+                    ]}
+                  >
+                    {range}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Date Navigation */}
+            <View style={styles.dateNavigation}>
+              <TouchableOpacity
+                style={styles.dateNavButton}
+                onPress={() => navigateDate('prev')}
               >
-                {range}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+                <ChevronLeft size={24} color={Colors.text} />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.dateDisplay}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Calendar size={16} color={Colors.primary} style={{ marginRight: 8 }} />
+                <Text style={styles.dateText}>{formatDateDisplay()}</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.dateNavButton}
+                onPress={() => navigateDate('next')}
+              >
+                <ChevronRight size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
 
-        {/* Date Navigation */}
-        <View style={styles.dateNavigation}>
-          <TouchableOpacity
-            style={styles.dateNavButton}
-            onPress={() => navigateDate('prev')}
-          >
-            <ChevronLeft size={24} color={Colors.text} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.dateDisplay}
-            onPress={() => setShowDatePicker(true)}
-          >
-            <Calendar size={16} color={Colors.primary} style={{ marginRight: 8 }} />
-            <Text style={styles.dateText}>{formatDateDisplay()}</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={styles.dateNavButton}
-            onPress={() => navigateDate('next')}
-          >
-            <ChevronRight size={24} color={Colors.text} />
-          </TouchableOpacity>
-        </View>
+            {/* Field Toggles */}
+            <View style={styles.fieldToggles}>
+              {(Object.keys(FIELDS) as FieldKey[]).map((key) => (
+                <TouchableOpacity
+                  key={key}
+                  style={[
+                    styles.fieldToggle,
+                    visibleFields[key] && { borderColor: FIELDS[key].color, backgroundColor: FIELDS[key].color + '20' },
+                  ]}
+                  onPress={() => toggleField(key)}
+                >
+                  <View style={[styles.fieldDot, { backgroundColor: FIELDS[key].color }]} />
+                  <Text style={[
+                    styles.fieldToggleText,
+                    visibleFields[key] && { color: FIELDS[key].color },
+                  ]}>
+                    {FIELDS[key].label}
+                  </Text>
+                  {visibleFields[key] ? (
+                    <Eye size={14} color={FIELDS[key].color} />
+                  ) : (
+                    <EyeOff size={14} color={Colors.textLight} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
 
-        {/* Field Toggles */}
-        <View style={styles.fieldToggles}>
-          {(Object.keys(FIELDS) as FieldKey[]).map((key) => (
-            <TouchableOpacity
-              key={key}
-              style={[
-                styles.fieldToggle,
-                visibleFields[key] && { borderColor: FIELDS[key].color, backgroundColor: FIELDS[key].color + '20' },
-              ]}
-              onPress={() => toggleField(key)}
-            >
-              <View style={[styles.fieldDot, { backgroundColor: FIELDS[key].color }]} />
-              <Text style={[
-                styles.fieldToggleText,
-                visibleFields[key] && { color: FIELDS[key].color },
-              ]}>
-                {FIELDS[key].label}
-              </Text>
-              {visibleFields[key] ? (
-                <Eye size={14} color={FIELDS[key].color} />
-              ) : (
-                <EyeOff size={14} color={Colors.textLight} />
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
+            {/* Section 1: Energy Flow Chart */}
+            <SectionHeader title={t.analytics.energyFlow} icon="Zap" />
+            {error ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : (
+              <EnergyFlowChart
+                data={augmentedData}
+                simulationData={simData}
+                selectedDate={selectedDate}
+                timeRange={timeRange}
+                visibleFields={visibleFields}
+                loading={loading}
+              />
+            )}
 
-        {/* Section 1: Energy Flow Chart */}
-        <SectionHeader title={t.analytics.energyFlow} icon="Zap" />
-        {error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
+            {/* Section 1b: TGE Energy Prices (dynamic/ToU tariff only) */}
+            {showTgePrices && (
+              <>
+                <SectionHeader title={t.analytics.tgePrices} icon="TrendingUp" />
+                <TgePriceChart
+                  data={tgePrices}
+                  timeRange={timeRange}
+                  loading={loading}
+                />
+              </>
+            )}
+
+            {/* Section 2: Energy Source Breakdown */}
+            <SectionHeader title={t.analytics.energySourceBreakdown} icon="BarChart2" />
+            <EnergyDonutChart breakdown={energyBreakdown} />
+
+            {/* Section 3: Energy Summary Cards */}
+            <SectionHeader title={t.analytics.energySummary} icon="BarChart2" />
+            <EnergySummaryCards stats={stats} />
+
+            {/* Section 4: Energy Totals */}
+            <SectionHeader title={t.analytics.energyTotals} icon="BarChart2" />
+            <EnergyBarsChart data={augmentedData} timeRange={timeRange} />
+
+            {/* Section 5: Battery SoC */}
+            <SectionHeader title={t.analytics.batterySoc} icon="Battery" />
+            <SocBandChart data={augmentedData} timeRange={timeRange} />
+
+            {/* Section 6: Load Composition */}
+            <SectionHeader title={t.analytics.loadComposition} icon="Zap" />
+            <LoadCompositionChart data={augmentedData} timeRange={timeRange} />
+            
+            {/* Section 7: Battery Performance */}
+            <SectionHeader title={t.analytics.batteryPerformance} icon="Battery" />
+            <View style={styles.kpiRow}>
+              <KPICard
+                title={t.analytics.peakGridDemand}
+                value={`${peakDemand.gridPeak.value.toFixed(1)} kW`}
+                subtitle={new Date(peakDemand.gridPeak.timestamp).toLocaleTimeString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+                icon={Zap}
+                color={CHART_COLORS.grid.line}
+              />
+              <KPICard
+                title={t.analytics.peakFactoryLoad}
+                value={`${peakDemand.factoryPeak.value.toFixed(1)} kW`}
+                subtitle={new Date(peakDemand.factoryPeak.timestamp).toLocaleTimeString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+                icon={TrendingUp}
+                color={CHART_COLORS.load.line}
+              />
+            </View>
+
+            {/* Section 8: Battery Cycles */}
+            <SectionHeader title={t.analytics.batteryCycles} icon="RefreshCw" />
+            <CyclesBarChart data={augmentedData} timeRange={timeRange} />
+            
+            {/* Section 9: Efficiency Metrics */}
+            <SectionHeader title={t.analytics.efficiency} icon="TrendingUp" />
+            <View style={styles.kpiRow}>
+              <KPICard
+                title={t.analytics.selfConsumption}
+                value={`${efficiencyMetrics.selfConsumption.toFixed(1)}%`}
+                icon={Sun}
+                color={CHART_COLORS.pv.production}
+              />
+              <KPICard
+                title={t.analytics.gridIndependence}
+                value={`${efficiencyMetrics.gridIndependence.toFixed(1)}%`}
+                icon={Shield}
+                color={CHART_COLORS.success}
+              />
+            </View>
+          </>
         ) : (
-          <EnergyFlowChart
-            data={augmentedData}
-            simulationData={simData}
-            selectedDate={selectedDate}
-            timeRange={timeRange}
-            visibleFields={visibleFields}
-            loading={loading}
+          <BatteryDataView
+            deviceId={selectedDevice?.device_id}
+            isActive={activeTab === 'battery'}
+            t={t}
           />
         )}
-
-        {/* Section 2: Energy Source Breakdown */}
-        <SectionHeader title={t.analytics.energySourceBreakdown} icon="BarChart2" />
-        <EnergyDonutChart breakdown={energyBreakdown} />
-
-        {/* Section 3: Energy Summary Cards */}
-        <SectionHeader title={t.analytics.energySummary} icon="BarChart2" />
-        <EnergySummaryCards stats={stats} />
-
-        {/* Section 4: Energy Totals */}
-        <SectionHeader title={t.analytics.energyTotals} icon="BarChart2" />
-        <EnergyBarsChart data={augmentedData} timeRange={timeRange} />
-
-        {/* Section 5: Battery SoC */}
-        <SectionHeader title={t.analytics.batterySoc} icon="Battery" />
-        <SocBandChart data={augmentedData} timeRange={timeRange} />
-
-        {/* Section 6: Load Composition */}
-        <SectionHeader title={t.analytics.loadComposition} icon="Zap" />
-        <LoadCompositionChart data={augmentedData} timeRange={timeRange} />
-        
-        {/* Section 7: Battery Performance */}
-        <SectionHeader title={t.analytics.batteryPerformance} icon="Battery" />
-        <View style={styles.kpiRow}>
-          <KPICard
-            title={t.analytics.peakGridDemand}
-            value={`${peakDemand.gridPeak.value.toFixed(1)} kW`}
-            subtitle={new Date(peakDemand.gridPeak.timestamp).toLocaleTimeString('en-US', {
-              hour: '2-digit',
-              minute: '2-digit'
-            })}
-            icon={Zap}
-            color={CHART_COLORS.grid.line}
-          />
-          <KPICard
-            title={t.analytics.peakFactoryLoad}
-            value={`${peakDemand.factoryPeak.value.toFixed(1)} kW`}
-            subtitle={new Date(peakDemand.factoryPeak.timestamp).toLocaleTimeString('en-US', {
-              hour: '2-digit',
-              minute: '2-digit'
-            })}
-            icon={TrendingUp}
-            color={CHART_COLORS.load.line}
-          />
-        </View>
-
-        {/* Section 8: Battery Cycles */}
-        <SectionHeader title={t.analytics.batteryCycles} icon="RefreshCw" />
-        <CyclesBarChart data={augmentedData} timeRange={timeRange} />
-        
-        {/* Section 9: Efficiency Metrics */}
-        <SectionHeader title={t.analytics.efficiency} icon="TrendingUp" />
-        <View style={styles.kpiRow}>
-          <KPICard
-            title={t.analytics.selfConsumption}
-            value={`${efficiencyMetrics.selfConsumption.toFixed(1)}%`}
-            icon={Sun}
-            color={CHART_COLORS.pv.production}
-          />
-          <KPICard
-            title={t.analytics.gridIndependence}
-            value={`${efficiencyMetrics.gridIndependence.toFixed(1)}%`}
-            icon={Shield}
-            color={CHART_COLORS.success}
-          />
-        </View>
       </ScrollView>
 
       {/* Date Picker Modal */}
@@ -502,6 +576,37 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  segmentedRow: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+  },
+  segmentBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+  },
+  segmentBtnActive: {
+    backgroundColor: Colors.primary,
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  segmentTextActive: {
+    color: '#fff',
   },
   scrollView: {
     flex: 1,

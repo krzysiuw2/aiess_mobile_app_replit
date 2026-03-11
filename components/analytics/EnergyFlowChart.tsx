@@ -232,6 +232,19 @@ export function EnergyFlowChart({
     const isArea = timeRange === '30d' || timeRange === '365d';
 
     const forecastStartIndex = tl.findIndex(p => p.isForecast);
+    const lastRealIndex = forecastStartIndex > 0 ? forecastStartIndex - 1 : forecastStartIndex < 0 ? tl.length - 1 : -1;
+
+    const hasPvForecast = tl.some(p => p.isForecast && p.pvPower > 0);
+    const hasLoadForecast = tl.some(p => p.isForecast && p.factoryLoad > 0);
+
+    const clipAtReal = (color: string): LineSegment[] | undefined => {
+      if (forecastStartIndex < 0) return undefined;
+      if (lastRealIndex < 0) return [{ startIndex: 0, endIndex: tl.length - 1, color: 'transparent' }];
+      return [
+        { startIndex: 0, endIndex: lastRealIndex, color },
+        { startIndex: lastRealIndex, endIndex: tl.length - 1, color: 'transparent' },
+      ];
+    };
 
     const buildSegments = (color: string): LineSegment[] | undefined => {
       if (forecastStartIndex < 0) return undefined;
@@ -260,7 +273,7 @@ export function EnergyFlowChart({
     }
 
     const dpInterval = Math.max(1, Math.floor(tl.length / 12));
-    const makePoints = (getValue: (p: TimelinePoint) => number, color: string) =>
+    const makePoints = (getValue: (p: TimelinePoint) => number, color: string, clipForecast = false) =>
       tl.map((point, i) => ({
         value: getValue(point),
         label: i % labelInterval === 0 ? formatTimeLabel(point.time, timeRange) : '',
@@ -270,7 +283,7 @@ export function EnergyFlowChart({
           width: 48,
           textAlign: 'center' as const,
         },
-        hideDataPoint: tl.length > 30 || i % dpInterval !== 0,
+        hideDataPoint: tl.length > 30 || i % dpInterval !== 0 || (clipForecast && point.isForecast),
         dataPointColor: color,
       }));
 
@@ -279,7 +292,7 @@ export function EnergyFlowChart({
     if (visibleFields.gridPower) {
       datasets.push({
         key: 'grid',
-        data: makePoints(p => p.gridPower, CHART_COLORS.grid.line),
+        data: makePoints(p => p.gridPower, CHART_COLORS.grid.line, true),
         color: CHART_COLORS.grid.line,
         thickness: 2,
         areaChart: isArea,
@@ -287,13 +300,14 @@ export function EnergyFlowChart({
         endFillColor: CHART_COLORS.grid.line,
         startOpacity: 0.3,
         endOpacity: 0.05,
+        lineSegments: clipAtReal(CHART_COLORS.grid.line),
       });
     }
 
     if (visibleFields.batteryPower) {
       datasets.push({
         key: 'battery',
-        data: makePoints(p => p.batteryPower, CHART_COLORS.battery.line),
+        data: makePoints(p => p.batteryPower, CHART_COLORS.battery.line, true),
         color: CHART_COLORS.battery.line,
         thickness: 2,
         areaChart: isArea,
@@ -301,6 +315,7 @@ export function EnergyFlowChart({
         endFillColor: CHART_COLORS.battery.line,
         startOpacity: 0.3,
         endOpacity: 0.05,
+        lineSegments: clipAtReal(CHART_COLORS.battery.line),
       });
     }
 
@@ -315,7 +330,9 @@ export function EnergyFlowChart({
         endFillColor: CHART_COLORS.pv.production,
         startOpacity: 0.3,
         endOpacity: 0.05,
-        lineSegments: [{ startIndex: 0, endIndex: tl.length - 1, color: CHART_COLORS.pv.production, strokeDashArray: [6, 4] }],
+        lineSegments: hasPvForecast
+          ? buildSegments(CHART_COLORS.pv.production)
+          : clipAtReal(CHART_COLORS.pv.production),
       });
     }
 
@@ -325,13 +342,16 @@ export function EnergyFlowChart({
         data: makePoints(p => p.factoryLoad, CHART_COLORS.load.line),
         color: CHART_COLORS.load.line,
         thickness: 2,
-        lineSegments: buildSegments(CHART_COLORS.load.line),
+        lineSegments: hasLoadForecast
+          ? buildSegments(CHART_COLORS.load.line)
+          : clipAtReal(CHART_COLORS.load.line),
       });
     }
 
     let soc = null;
     if (visibleFields.soc) {
-      soc = tl.map((point, i) => ({
+      const socEnd = lastRealIndex >= 0 ? lastRealIndex + 1 : tl.length;
+      soc = tl.slice(0, socEnd).map((point, i) => ({
         value: point.soc,
         hideDataPoint: tl.length > 30 || i % dpInterval !== 0,
         dataPointColor: CHART_COLORS.soc.line,

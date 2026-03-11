@@ -5,7 +5,8 @@
  * Uses HTTP API with Flux queries.
  */
 
-import { LiveData, SimulationDataPoint } from '@/types';
+import { LiveData, SimulationDataPoint, BatteryLiveData, BatteryDetailData } from '@/types';
+import { parseCsvToNumbers } from '@/lib/batteryHealth';
 
 // Analytics Types
 export interface ChartDataPoint {
@@ -113,6 +114,40 @@ const INFLUX_ORG = process.env.EXPO_PUBLIC_INFLUX_ORG || '';
 const INFLUX_TOKEN = process.env.EXPO_PUBLIC_INFLUX_TOKEN || '';
 
 /**
+ * Split a CSV line respecting quoted fields (handles embedded commas/newlines).
+ */
+function splitCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (i + 1 < line.length && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      fields.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  fields.push(current);
+  return fields;
+}
+
+/**
  * Parse InfluxDB CSV response into key-value pairs
  */
 function parseInfluxCSV(csv: string): Record<string, string>[] {
@@ -123,18 +158,15 @@ function parseInfluxCSV(csv: string): Record<string, string>[] {
   let headers: string[] = [];
 
   for (const line of lines) {
-    // Skip empty lines and comments
     if (!line || line.startsWith('#')) continue;
-    
-    const values = line.split(',');
-    
-    // First non-comment line is headers
+
+    const values = splitCsvLine(line);
+
     if (headers.length === 0) {
       headers = values;
       continue;
     }
 
-    // Parse data row
     const row: Record<string, string> = {};
     headers.forEach((header, i) => {
       row[header] = values[i] || '';
@@ -617,6 +649,186 @@ export async function fetchSimulationData(
       .sort((a, b) => a.time.getTime() - b.time.getTime());
   } catch (error) {
     console.error('[Simulation] Error fetching simulation data:', error);
+    return [];
+  }
+}
+
+// ─── Battery Live Data (Tier 1 — 5s telemetry) ─────────────────
+
+export async function fetchBatteryLiveData(siteId: string): Promise<BatteryLiveData | null> {
+  if (!INFLUX_URL || !INFLUX_ORG || !INFLUX_TOKEN) {
+    throw new Error('InfluxDB configuration missing');
+  }
+
+  const query = `
+    from(bucket: "aiess_v1")
+      |> range(start: -1m)
+      |> filter(fn: (r) => r._measurement == "energy_telemetry")
+      |> filter(fn: (r) => r.site_id == "${siteId}")
+      |> filter(fn: (r) =>
+           r._field == "min_cell_voltage_mv" or
+           r._field == "max_cell_voltage_mv" or
+           r._field == "voltage_delta_mv" or
+           r._field == "min_cell_temp_c" or
+           r._field == "max_cell_temp_c" or
+           r._field == "active_faults" or
+           r._field == "active_fault_count"
+      )
+      |> last()
+  `;
+
+  try {
+    const rows = await runFluxQuery(query);
+    if (rows.length === 0) return null;
+
+    const numValues: Record<string, number> = {};
+    const strValues: Record<string, string> = {};
+    for (const row of rows) {
+      const field = row['_field']?.trim();
+      const raw = row['_value']?.trim();
+      if (!field || !raw) continue;
+      const num = parseFloat(raw);
+      if (!isNaN(num)) {
+        numValues[field] = num;
+      } else {
+        strValues[field] = raw;
+      }
+    }
+
+    return {
+      minCellVoltage: numValues['min_cell_voltage_mv'] ?? 0,
+      maxCellVoltage: numValues['max_cell_voltage_mv'] ?? 0,
+      voltageDelta: numValues['voltage_delta_mv'] ?? 0,
+      minCellTemp: numValues['min_cell_temp_c'] ?? 0,
+      maxCellTemp: numValues['max_cell_temp_c'] ?? 0,
+      activeFaults: strValues['active_faults'] || '',
+      activeFaultCount: numValues['active_fault_count'] ?? 0,
+      lastUpdate: new Date(),
+    };
+  } catch (error) {
+    console.error('[BatteryLive] Error fetching battery live data:', error);
+    throw error;
+  }
+}
+
+// ─── Battery Detail Data (Tier 2 — 60s detail) ─────────────────
+
+export async function fetchBatteryDetail(siteId: string): Promise<BatteryDetailData | null> {
+  if (!INFLUX_URL || !INFLUX_ORG || !INFLUX_TOKEN) {
+    throw new Error('InfluxDB configuration missing');
+  }
+
+  const query = `
+    from(bucket: "battery_detail")
+      |> range(start: -5m)
+      |> filter(fn: (r) => r._measurement == "energy_telemetry")
+      |> filter(fn: (r) => r.site_id == "${siteId}")
+      |> filter(fn: (r) =>
+           r._field == "stack_voltage_v" or
+           r._field == "stack_current_a" or
+           r._field == "stack_soc_percent" or
+           r._field == "stack_soh_percent" or
+           r._field == "stack_wm" or
+           r._field == "cell_count" or
+           r._field == "cell_voltage_min" or
+           r._field == "cell_voltage_max" or
+           r._field == "cell_voltage_delta" or
+           r._field == "cell_voltage_csv" or
+           r._field == "ntc_count" or
+           r._field == "cell_temp_min" or
+           r._field == "cell_temp_max" or
+           r._field == "cell_temp_csv"
+      )
+      |> last()
+  `;
+
+  try {
+    const rows = await runFluxQuery(query);
+    if (rows.length === 0) {
+      console.warn('[BatteryDetail] No data from battery_detail bucket (token may lack read access — check bucket permissions)');
+      return null;
+    }
+
+    const numValues: Record<string, number> = {};
+    const strValues: Record<string, string> = {};
+    for (const row of rows) {
+      const field = row['_field']?.trim();
+      const raw = row['_value']?.trim();
+      if (!field || !raw) continue;
+      const num = parseFloat(raw);
+      if (!isNaN(num)) {
+        numValues[field] = num;
+      } else {
+        strValues[field] = raw;
+      }
+    }
+
+    return {
+      stackVoltage: numValues['stack_voltage_v'] ?? 0,
+      stackCurrent: numValues['stack_current_a'] ?? 0,
+      stackSoc: numValues['stack_soc_percent'] ?? 0,
+      stackSoh: numValues['stack_soh_percent'] ?? 0,
+      workingMode: (numValues['stack_wm'] ?? 0) as import('@/types').BatteryWorkingMode,
+      cellCount: numValues['cell_count'] ?? 0,
+      cellVoltageMin: numValues['cell_voltage_min'] ?? 0,
+      cellVoltageMax: numValues['cell_voltage_max'] ?? 0,
+      cellVoltageDelta: numValues['cell_voltage_delta'] ?? 0,
+      cellVoltages: parseCsvToNumbers(strValues['cell_voltage_csv'] || ''),
+      ntcCount: numValues['ntc_count'] ?? 0,
+      cellTempMin: numValues['cell_temp_min'] ?? 0,
+      cellTempMax: numValues['cell_temp_max'] ?? 0,
+      cellTemps: parseCsvToNumbers(strValues['cell_temp_csv'] || ''),
+      lastUpdate: new Date(),
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes('404')) {
+      console.error('[BatteryDetail] 404 — app token lacks read access to battery_detail bucket. Update token permissions in InfluxDB Cloud UI.');
+    } else {
+      console.error('[BatteryDetail] Error:', msg);
+    }
+    return null;
+  }
+}
+
+// TGE Price types
+export interface TgePricePoint {
+  time: Date;
+  price: number; // PLN/MWh
+}
+
+/**
+ * Fetch TGE RDN energy prices for a time range.
+ * Uses the tge_energy_prices bucket. Includes future prices when available.
+ */
+export async function fetchTgePrices(
+  startDate: Date,
+  endDate: Date,
+): Promise<TgePricePoint[]> {
+  const query = `
+    from(bucket: "tge_energy_prices")
+      |> range(start: ${startDate.toISOString()}, stop: ${endDate.toISOString()})
+      |> filter(fn: (r) => r._measurement == "energy_prices" and r._field == "price")
+      |> sort(columns: ["_time"])
+  `;
+
+  try {
+    const csv = await queryInflux(query);
+    const rows = parseInfluxCSV(csv);
+
+    return rows
+      .map(row => {
+        const time = new Date(row['_time']);
+        if (isNaN(time.getTime())) return null;
+        return {
+          time,
+          price: parseFloat(row['_value']) || 0,
+        };
+      })
+      .filter((p): p is TgePricePoint => p !== null)
+      .sort((a, b) => a.time.getTime() - b.time.getTime());
+  } catch (error) {
+    console.error('[TGE] Error fetching TGE prices:', error);
     return [];
   }
 }
