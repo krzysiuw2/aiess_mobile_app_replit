@@ -23,7 +23,8 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { fetchWeatherForOrientations } from './open-meteo-client.mjs';
 import { calculateSitePv, getUniqueOrientations } from './pv-calculator.mjs';
 import { writeSimulationData, readHistoricalBatteryPower, readHistoricalGridPower, readHistoricalSimulation } from './influxdb-writer.mjs';
-import { buildLoadProfile, buildTempCorrection, forecastLoad, computeScaleFactor } from './load-forecaster.mjs';
+import { buildLoadProfile, buildTempCorrection, forecastLoad, computeScaleFactors } from './load-forecaster.mjs';
+import { getHolidaysForRange, createClassifier } from './day-type-classifier.mjs';
 import { loadEnergaFromS3, parseEnergaData } from './energa-parser.mjs';
 
 const ddb = new DynamoDBClient({});
@@ -108,15 +109,25 @@ async function runForecast(site, forecastDays) {
 
   let loadForecastTs = [];
   try {
-    const { loadMap, tempMap } = await readHistoricalSimulation(site_id, 90);
+    const { loadMap, tempMap } = await readHistoricalSimulation(site_id, 180);
     console.log(`[ForecastEngine] Load data for ${site_id}: ${loadMap.size} load points, ${tempMap.size} temp points`);
     if (loadMap.size > 168) {
-      const profile = buildLoadProfile(loadMap);
-      const tempCoeffs = buildTempCorrection(loadMap, tempMap, profile);
-      const scaleFactor = computeScaleFactor(loadMap, profile, 7);
+      const countryCode = site.location?.country || '';
+      const timezone = site.general?.timezone || '';
+
+      const histStart = new Date(Date.now() - 180 * 86400000);
+      const futureEnd = new Date(Date.now() + forecastDays * 86400000);
+      const holidaySet = await getHolidaysForRange(countryCode, histStart, futureEnd);
+      const classifyFn = createClassifier(holidaySet, timezone);
+
+      const profile = buildLoadProfile(loadMap, classifyFn);
+      const tempCoeffs = buildTempCorrection(loadMap, tempMap, profile, classifyFn);
+      const scaleFactors = computeScaleFactors(loadMap, profile, classifyFn, 14);
       const futureWeather = (weatherRows || []).map(r => ({ time: r.time, temp: r.temp }));
-      loadForecastTs = forecastLoad(profile, tempCoeffs, futureWeather, scaleFactor);
-      console.log(`[ForecastEngine] Load forecast: ${loadForecastTs.length} points, peak: ${Math.max(...loadForecastTs.map(p => p.loadKw), 0).toFixed(1)} kW`);
+      loadForecastTs = forecastLoad(profile, tempCoeffs, futureWeather, scaleFactors, classifyFn);
+
+      const sfLog = [...scaleFactors.entries()].map(([k, v]) => `${k}=${v.toFixed(2)}`).join(', ');
+      console.log(`[ForecastEngine] Load forecast: ${loadForecastTs.length} pts, peak: ${Math.max(...loadForecastTs.map(p => p.loadKw), 0).toFixed(1)} kW, holidays: ${holidaySet.size}, scale: {${sfLog}}`);
     } else {
       console.warn(`[ForecastEngine] Not enough load data for ${site_id}: ${loadMap.size} < 168 required`);
     }

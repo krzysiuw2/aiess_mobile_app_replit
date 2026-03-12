@@ -66,6 +66,7 @@ export default function SiteSettingsScreen() {
   const [locationAddress, setLocationAddress] = useState('');
   const [locationLat, setLocationLat] = useState('');
   const [locationLng, setLocationLng] = useState('');
+  const [locationCountry, setLocationCountry] = useState('PL');
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [tariffType, setTariffType] = useState('flat');
   const [tariffCurrency, setTariffCurrency] = useState('PLN');
@@ -107,6 +108,7 @@ export default function SiteSettingsScreen() {
       setLocationAddress(siteConfig.location?.address || '');
       setLocationLat(siteConfig.location?.latitude?.toString() || '');
       setLocationLng(siteConfig.location?.longitude?.toString() || '');
+      setLocationCountry(siteConfig.location?.country || 'PL');
       setTariffType(siteConfig.tariff?.type || 'flat');
       setTariffCurrency(siteConfig.tariff?.currency || 'PLN');
       setTariffDemandCharge(siteConfig.tariff?.demand_charge_per_kw?.toString() || '');
@@ -290,6 +292,7 @@ export default function SiteSettingsScreen() {
           address: locationAddress || undefined,
           latitude: parseFloat(locationLat) || undefined,
           longitude: parseFloat(locationLng) || undefined,
+          country: locationCountry || undefined,
         },
       });
       Alert.alert(t.common.success, t.settings.locationSaved);
@@ -698,6 +701,22 @@ export default function SiteSettingsScreen() {
               <Text style={styles.inputLabel}>{t.settings.longitude}</Text>
               <TextInput style={styles.textInput} value={locationLng} onChangeText={setLocationLng} keyboardType="decimal-pad" placeholder="19.9450" placeholderTextColor={Colors.textSecondary} />
             </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>{t.analytics.forecastTab.country}</Text>
+            <View style={styles.chipRow}>
+              {['PL', 'DE', 'CZ', 'SK'].map(code => (
+                <TouchableOpacity
+                  key={code}
+                  style={[styles.chip3, locationCountry === code && styles.chip3Active]}
+                  onPress={() => setLocationCountry(code)}
+                >
+                  <Text style={[styles.chip3Text, locationCountry === code && styles.chip3TextActive]}>{code}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.sectionDescription}>{t.analytics.forecastTab.countryHint}</Text>
           </View>
 
           <TouchableOpacity style={[styles.saveButton, { backgroundColor: Colors.warning, marginBottom: 12 }]} onPress={handleGeocode} disabled={isGeocoding || !locationAddress.trim()}>

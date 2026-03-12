@@ -50,6 +50,10 @@ export const CHART_COLORS = {
     load: '#F44336',         // Red (same as load)
     irradiance: '#FDD835',   // Warm yellow
     irradianceArea: '#FFF9C4', // Light yellow fill
+    surplus: '#66BB6A',      // Green for positive surplus
+    surplusArea: '#C8E6C9',  // Light green fill
+    deficit: '#EF5350',      // Red for negative surplus (deficit)
+    deficitArea: '#FFCDD2',  // Light red fill
   },
   weather: {
     temp: '#FF7043',         // Deep orange

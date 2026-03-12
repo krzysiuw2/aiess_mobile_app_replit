@@ -8,7 +8,7 @@ import { SimulationDataPoint } from '@/types';
 import { formatTimeLabel } from '@/lib/analytics';
 import type { TranslationKeys } from '@/locales';
 
-type ForecastField = 'pvForecast' | 'loadForecast' | 'irradiance';
+type ForecastField = 'pvForecast' | 'loadForecast' | 'irradiance' | 'surplus';
 
 interface ForecastChartProps {
   data: SimulationDataPoint[];
@@ -47,6 +47,7 @@ function getSlotConfig(forecastRange: '48h' | '7d') {
 const FIELD_CONFIG: Record<ForecastField, { color: string; label: (t: TranslationKeys) => string }> = {
   pvForecast: { color: CHART_COLORS.forecast.pv, label: t => t.analytics.forecastTab.pvForecast },
   loadForecast: { color: CHART_COLORS.forecast.load, label: t => t.analytics.forecastTab.loadForecast },
+  surplus: { color: CHART_COLORS.forecast.surplus, label: t => t.analytics.forecastTab.estimatedSurplus },
   irradiance: { color: CHART_COLORS.forecast.irradiance, label: t => t.analytics.forecastTab.irradiance },
 };
 
@@ -73,34 +74,37 @@ export function ForecastChart({
     now.setMinutes(0, 0, 0);
     const periodStartMs = now.getTime();
 
-    const buckets = new Map<number, { pv: number[]; load: number[]; gti: number[] }>();
+    const buckets = new Map<number, { pv: number[]; load: number[]; surplus: number[]; gti: number[] }>();
 
     for (const p of data) {
       const ts = p.time?.getTime?.();
       if (!ts || isNaN(ts) || p.source !== 'forecast') continue;
       const idx = Math.floor((ts - periodStartMs) / intervalMs);
       if (idx < 0 || idx >= slotCount) continue;
-      if (!buckets.has(idx)) buckets.set(idx, { pv: [], load: [], gti: [] });
+      if (!buckets.has(idx)) buckets.set(idx, { pv: [], load: [], surplus: [], gti: [] });
       const b = buckets.get(idx)!;
       b.pv.push(p.pvForecast || 0);
       b.load.push(p.loadForecast || 0);
+      b.surplus.push(p.estimatedSurplus || ((p.pvForecast || 0) - (p.loadForecast || 0)));
       b.gti.push(p.weatherGti || 0);
     }
 
     let mxP = 10;
     let mxG = 100;
-    const result: { time: Date; pv: number; load: number; gti: number }[] = [];
+    const result: { time: Date; pv: number; load: number; surplus: number; gti: number }[] = [];
 
     for (let i = 0; i < slotCount; i++) {
       const slotTime = new Date(periodStartMs + i * intervalMs);
       const b = buckets.get(i);
       const pv = b ? avg(b.pv) : 0;
       const load = b ? avg(b.load) : 0;
+      const surplus = b ? avg(b.surplus) : 0;
       const gti = b ? avg(b.gti) : 0;
       if (pv > mxP) mxP = pv;
       if (load > mxP) mxP = load;
+      if (Math.abs(surplus) > mxP) mxP = Math.abs(surplus);
       if (gti > mxG) mxG = gti;
-      result.push({ time: slotTime, pv, load, gti });
+      result.push({ time: slotTime, pv, load, surplus, gti });
     }
 
     return { slots: result, maxPower: mxP, maxGti: mxG };
@@ -166,6 +170,33 @@ export function ForecastChart({
         yAxisLabelSuffix: '',
       }
     : undefined;
+
+  const showSurplus = visibleFields.surplus;
+
+  const surplusMax = useMemo(() => {
+    if (!showSurplus) return 10;
+    let mx = 10;
+    for (const s of slots) {
+      if (Math.abs(s.surplus) > mx) mx = Math.abs(s.surplus);
+    }
+    return mx;
+  }, [slots, showSurplus]);
+
+  const surplusStep = niceRound(surplusMax / 4) || 1;
+  const surplusYMax = Math.max(surplusStep, Math.ceil(surplusMax / surplusStep) * surplusStep);
+
+  const surplusChartWidth = screenWidth - PARENT_H_PADDING - CHART_H_PADDING - Y_AXIS_WIDTH - END_SPACING_DEFAULT;
+
+  const surplusData = showSurplus
+    ? slots.map((s, i) => ({
+        value: s.surplus + surplusYMax,
+        label: i % labelInterval === 0 ? formatTimeLabel(s.time, timeRange) : '',
+        labelTextStyle: { color: Colors.textSecondary, fontSize: 9, width: 48, textAlign: 'center' as const },
+        hideDataPoint: pointCount > 30 || i % Math.max(1, Math.floor(pointCount / 12)) !== 0,
+        dataPointColor: s.surplus >= 0 ? CHART_COLORS.forecast.surplus : CHART_COLORS.forecast.deficit,
+        frontColor: s.surplus >= 0 ? CHART_COLORS.forecast.surplus : CHART_COLORS.forecast.deficit,
+      }))
+    : null;
 
   return (
     <View style={styles.container}>
@@ -266,7 +297,7 @@ export function ForecastChart({
             pointerColor: Colors.primary,
             radius: 6,
             pointerLabelWidth: 140,
-            pointerLabelHeight: 100,
+            pointerLabelHeight: 120,
             activatePointersOnLongPress: false,
             autoAdjustPointerLabelPosition: true,
             pointerLabelComponent: (
@@ -295,6 +326,12 @@ export function ForecastChart({
                       {`${ft.loadForecast}: ${s.load.toFixed(1)} kW`}
                     </Text>
                   )}
+                  {visibleFields.surplus && (
+                    <Text style={styles.tooltipValue}>
+                      <Text style={{ color: s.surplus >= 0 ? CHART_COLORS.forecast.surplus : CHART_COLORS.forecast.deficit }}>● </Text>
+                      {`${ft.estimatedSurplus}: ${s.surplus >= 0 ? '+' : ''}${s.surplus.toFixed(1)} kW`}
+                    </Text>
+                  )}
                   {visibleFields.irradiance && (
                     <Text style={styles.tooltipValue}>
                       <Text style={{ color: CHART_COLORS.forecast.irradiance }}>● </Text>
@@ -307,6 +344,56 @@ export function ForecastChart({
           }}
         />
       </View>
+
+      {/* Surplus bar chart */}
+      {showSurplus && surplusData && (
+        <View style={styles.surplusSection}>
+          <Text style={styles.surplusSectionTitle}>{ft.estimatedSurplus} (kW)</Text>
+          <View style={styles.chartWrapper}>
+            <LineChart
+              data={surplusData}
+              maxValue={surplusYMax * 2}
+              noOfSections={4}
+              stepValue={surplusStep}
+              width={surplusChartWidth}
+              height={120}
+              spacing={pointCount > 1 ? Math.max(1, (surplusChartWidth - INITIAL_SPACING) / (pointCount - 1)) : surplusChartWidth}
+              initialSpacing={INITIAL_SPACING}
+              endSpacing={END_SPACING_DEFAULT}
+              disableScroll
+              color1={CHART_COLORS.forecast.surplus}
+              thickness1={1.5}
+              curved
+              areaChart
+              startFillColor={CHART_COLORS.forecast.surplusArea}
+              endFillColor={CHART_COLORS.forecast.deficitArea}
+              startOpacity={0.5}
+              endOpacity={0.5}
+              xAxisColor={Colors.border}
+              yAxisColor={Colors.border}
+              xAxisLabelTextStyle={{ color: Colors.textSecondary, fontSize: 9 }}
+              yAxisTextStyle={{ color: Colors.textSecondary, fontSize: 9 }}
+              formatYLabel={(val: string) => {
+                const n = parseFloat(val) - surplusYMax;
+                return n >= 0 ? `+${n.toFixed(0)}` : n.toFixed(0);
+              }}
+              backgroundColor={Colors.surface}
+              rulesColor={Colors.border}
+              rulesType="dashed"
+              yAxisThickness={1}
+              xAxisThickness={1}
+              hideDataPoints={pointCount > 30}
+              showReferenceLine1
+              referenceLine1Position={surplusYMax}
+              referenceLine1Config={{ color: Colors.textLight, dashWidth: 4, dashGap: 4, thickness: 1 }}
+              showVerticalLines={false}
+              isAnimated
+              animationDuration={400}
+              rotateLabel={forecastRange === '7d'}
+            />
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -409,5 +496,15 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.text,
     marginVertical: 2,
+  },
+  surplusSection: {
+    marginTop: 16,
+  },
+  surplusSectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginBottom: 6,
+    paddingHorizontal: 4,
   },
 });

@@ -399,6 +399,9 @@ export default {
       deficit: 'Deficit',
       actual: 'Actual',
       forecast: 'Forecast',
+      estimatedSurplus: 'Est. Surplus',
+      country: 'Country',
+      countryHint: 'Used for holiday-aware load forecasting',
     },
     batteryTab: {
       usageData: 'Usage Data',

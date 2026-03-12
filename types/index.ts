@@ -180,6 +180,7 @@ export interface SiteConfigLocation {
   longitude?: number;
   elevation_m?: number;
   climate_zone?: string;
+  country?: string;
 }
 
 export interface SiteConfigBattery {

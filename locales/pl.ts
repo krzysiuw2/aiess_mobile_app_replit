@@ -399,6 +399,9 @@ export default {
       deficit: 'Deficyt',
       actual: 'Rzeczywiste',
       forecast: 'Prognoza',
+      estimatedSurplus: 'Szac. nadwyżka',
+      country: 'Kraj',
+      countryHint: 'Używany do prognozowania obciążenia z uwzgl. świąt',
     },
     batteryTab: {
       usageData: 'Dane zużycia',

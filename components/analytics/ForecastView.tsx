@@ -10,7 +10,7 @@ import { WeatherForecastSection } from './WeatherForecastSection';
 import type { TranslationKeys } from '@/locales';
 
 type ForecastRange = '48h' | '7d';
-type ForecastField = 'pvForecast' | 'loadForecast' | 'irradiance';
+type ForecastField = 'pvForecast' | 'loadForecast' | 'irradiance' | 'surplus';
 
 interface ForecastViewProps {
   simData: SimulationDataPoint[];
@@ -25,6 +25,7 @@ export function ForecastView({ simData, deviceId, loading, t }: ForecastViewProp
   const [visibleFields, setVisibleFields] = useState<Record<ForecastField, boolean>>({
     pvForecast: true,
     loadForecast: true,
+    surplus: true,
     irradiance: true,
   });
 
