@@ -74,7 +74,7 @@ export function ForecastSummaryCards({ data, forecastRange, t }: ForecastSummary
         pvSum += p.pvForecast || 0;
         if ((p.pvForecast || 0) > peakPv) peakPv = p.pvForecast || 0;
         loadSum += p.loadForecast || 0;
-        surplusSum += p.estimatedSurplus || ((p.pvForecast || 0) - (p.loadForecast || 0));
+        surplusSum += p.energyBalance || ((p.pvForecast || 0) - (p.loadForecast || 0));
         if (p.weatherTemp < tempMin) tempMin = p.weatherTemp;
         if (p.weatherTemp > tempMax) tempMax = p.weatherTemp;
         weatherCodes.push(p.weatherCode);

@@ -592,7 +592,7 @@ export async function fetchSimulationData(
           pvForecast: parseFloat(row['pv_forecast']) || 0,
           loadForecast: parseFloat(row['load_forecast']) || 0,
           factoryLoadCorrected: parseFloat(row['factory_load_corrected']) || 0,
-          estimatedSurplus: parseFloat(row['estimated_surplus']) || 0,
+          energyBalance: parseFloat(row['energy_balance']) || parseFloat(row['estimated_surplus']) || 0,
           weatherGti: parseFloat(row['weather_gti']) || 0,
           weatherTemp: parseFloat(row['weather_temp']) || 0,
           weatherCloudCover: parseFloat(row['weather_cloud_cover']) || 0,

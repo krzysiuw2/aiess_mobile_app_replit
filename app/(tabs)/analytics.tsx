@@ -154,11 +154,12 @@ function DatePickerModal({
 }
 
 export default function AnalyticsScreen() {
-  const { t } = useSettings();
+  const { t, language } = useSettings();
   const { selectedDevice } = useDevices();
   const { siteConfig } = useSiteConfig();
   const tariffType = siteConfig?.tariff?.type;
   const showTgePrices = tariffType === 'dynamic' || tariffType === 'time_of_use';
+  const locale = language === 'pl' ? 'pl-PL' : 'en-US';
 
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('usage');
   const [timeRange, setTimeRange] = useState<string>('24h');
@@ -300,20 +301,20 @@ export default function AnalyticsScreen() {
 
   const formatDateDisplay = () => {
     if (timeRange === '24h') {
-      return selectedDate.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+      return selectedDate.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
     }
     if (timeRange === '7d') {
       const weekEnd = new Date(selectedDate);
       weekEnd.setDate(weekEnd.getDate() + 6);
-      return `${selectedDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })} - ${weekEnd.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+      return `${selectedDate.toLocaleDateString(locale, { day: 'numeric', month: 'short' })} - ${weekEnd.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })}`;
     }
     if (timeRange === '30d') {
-      return selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      return selectedDate.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
     }
     if (timeRange === '365d') {
       return selectedDate.getFullYear().toString();
     }
-    return selectedDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+    return selectedDate.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
   // Navigate to previous/next period
@@ -370,21 +371,21 @@ export default function AnalyticsScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.segmentBtn, activeTab === 'battery' && styles.segmentBtnActive]}
-            onPress={() => setActiveTab('battery')}
-          >
-            <Activity size={14} color={activeTab === 'battery' ? '#fff' : Colors.textSecondary} />
-            <Text style={[styles.segmentText, activeTab === 'battery' && styles.segmentTextActive]}>
-              {bt.batteryData}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             style={[styles.segmentBtn, activeTab === 'forecasts' && styles.segmentBtnActive]}
             onPress={() => setActiveTab('forecasts')}
           >
             <CloudSun size={14} color={activeTab === 'forecasts' ? '#fff' : Colors.textSecondary} />
             <Text style={[styles.segmentText, activeTab === 'forecasts' && styles.segmentTextActive]}>
               {t.analytics.forecastTab.forecasts}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segmentBtn, activeTab === 'battery' && styles.segmentBtnActive]}
+            onPress={() => setActiveTab('battery')}
+          >
+            <Activity size={14} color={activeTab === 'battery' ? '#fff' : Colors.textSecondary} />
+            <Text style={[styles.segmentText, activeTab === 'battery' && styles.segmentTextActive]}>
+              {bt.batteryData}
             </Text>
           </TouchableOpacity>
         </View>
@@ -527,9 +528,10 @@ export default function AnalyticsScreen() {
               <KPICard
                 title={t.analytics.peakGridDemand}
                 value={`${peakDemand.gridPeak.value.toFixed(1)} kW`}
-                subtitle={new Date(peakDemand.gridPeak.timestamp).toLocaleTimeString('en-US', {
+                subtitle={new Date(peakDemand.gridPeak.timestamp).toLocaleTimeString(locale, {
                   hour: '2-digit',
-                  minute: '2-digit'
+                  minute: '2-digit',
+                  hour12: false,
                 })}
                 icon={Zap}
                 color={CHART_COLORS.grid.line}
@@ -537,9 +539,10 @@ export default function AnalyticsScreen() {
               <KPICard
                 title={t.analytics.peakFactoryLoad}
                 value={`${peakDemand.factoryPeak.value.toFixed(1)} kW`}
-                subtitle={new Date(peakDemand.factoryPeak.timestamp).toLocaleTimeString('en-US', {
+                subtitle={new Date(peakDemand.factoryPeak.timestamp).toLocaleTimeString(locale, {
                   hour: '2-digit',
-                  minute: '2-digit'
+                  minute: '2-digit',
+                  hour12: false,
                 })}
                 icon={TrendingUp}
                 color={CHART_COLORS.load.line}
@@ -573,6 +576,7 @@ export default function AnalyticsScreen() {
             deviceId={selectedDevice?.device_id}
             loading={forecastLoading}
             t={t}
+            language={language}
           />
         ) : (
           <BatteryDataView

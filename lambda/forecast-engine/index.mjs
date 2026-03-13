@@ -147,7 +147,7 @@ async function runForecast(site, forecastDays) {
       pvEstimated: pvEstimatedMap.get(w.time) || 0,
       pvForecast: pvFc,
       loadForecast: loadFc,
-      estimatedSurplus: pvFc - loadFc,
+      energyBalance: pvFc - loadFc,
       weatherGti: w.gti,
       weatherTemp: w.temp,
       weatherCloudCover: w.cloudCover,

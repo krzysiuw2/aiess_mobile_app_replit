@@ -8,7 +8,7 @@ import { SimulationDataPoint } from '@/types';
 import { formatTimeLabel } from '@/lib/analytics';
 import type { TranslationKeys } from '@/locales';
 
-type ForecastField = 'pvForecast' | 'loadForecast' | 'irradiance' | 'surplus';
+type ForecastField = 'pvForecast' | 'loadForecast' | 'irradiance' | 'energyBalance';
 
 interface ForecastChartProps {
   data: SimulationDataPoint[];
@@ -17,6 +17,7 @@ interface ForecastChartProps {
   onToggleField: (field: ForecastField) => void;
   loading?: boolean;
   t: TranslationKeys;
+  language?: string;
 }
 
 const Y_AXIS_WIDTH = 50;
@@ -47,7 +48,7 @@ function getSlotConfig(forecastRange: '48h' | '7d') {
 const FIELD_CONFIG: Record<ForecastField, { color: string; label: (t: TranslationKeys) => string }> = {
   pvForecast: { color: CHART_COLORS.forecast.pv, label: t => t.analytics.forecastTab.pvForecast },
   loadForecast: { color: CHART_COLORS.forecast.load, label: t => t.analytics.forecastTab.loadForecast },
-  surplus: { color: CHART_COLORS.forecast.surplus, label: t => t.analytics.forecastTab.estimatedSurplus },
+  energyBalance: { color: CHART_COLORS.forecast.surplus, label: t => t.analytics.forecastTab.energyBalance },
   irradiance: { color: CHART_COLORS.forecast.irradiance, label: t => t.analytics.forecastTab.irradiance },
 };
 
@@ -58,9 +59,11 @@ export function ForecastChart({
   onToggleField,
   loading = false,
   t,
+  language = 'en',
 }: ForecastChartProps) {
   const { width: screenWidth } = useWindowDimensions();
   const ft = t.analytics.forecastTab;
+  const locale = language === 'pl' ? 'pl-PL' : 'en-US';
 
   const hasIrradiance = visibleFields.irradiance;
   const endSpacing = hasIrradiance ? END_SPACING_IRR : END_SPACING_DEFAULT;
@@ -85,7 +88,7 @@ export function ForecastChart({
       const b = buckets.get(idx)!;
       b.pv.push(p.pvForecast || 0);
       b.load.push(p.loadForecast || 0);
-      b.surplus.push(p.estimatedSurplus || ((p.pvForecast || 0) - (p.loadForecast || 0)));
+      b.surplus.push(p.energyBalance || ((p.pvForecast || 0) - (p.loadForecast || 0)));
       b.gti.push(p.weatherGti || 0);
     }
 
@@ -110,12 +113,37 @@ export function ForecastChart({
     return { slots: result, maxPower: mxP, maxGti: mxG };
   }, [data, forecastRange]);
 
+  const showSurplus = visibleFields.energyBalance;
+
+  const { balancePosMax, balanceNegMax, balanceStep } = useMemo(() => {
+    if (!showSurplus) return { balancePosMax: 10, balanceNegMax: 10, balanceStep: 5 };
+    let posRaw = 0;
+    let negRaw = 0;
+    for (const s of slots) {
+      if (s.surplus > posRaw) posRaw = s.surplus;
+      if (s.surplus < 0 && Math.abs(s.surplus) > negRaw) negRaw = Math.abs(s.surplus);
+    }
+    let adjPos = (posRaw * 1.2) || 1;
+    let adjNeg = (negRaw * 1.2) || 1;
+    const MIN_RATIO = 0.2;
+    if (adjPos < adjNeg * MIN_RATIO) adjPos = adjNeg * MIN_RATIO;
+    if (adjNeg < adjPos * MIN_RATIO) adjNeg = adjPos * MIN_RATIO;
+    const step = niceRound(Math.max(adjPos, adjNeg) / 3) || 1;
+    return {
+      balancePosMax: Math.max(step, Math.ceil(adjPos / step) * step),
+      balanceNegMax: Math.max(step, Math.ceil(adjNeg / step) * step),
+      balanceStep: step,
+    };
+  }, [slots, showSurplus]);
+
   const pointCount = slots.length;
   const autoSpacing = pointCount > 1
     ? Math.max(1, (chartWidth - INITIAL_SPACING) / (pointCount - 1))
     : chartWidth;
 
-  const labelInterval = Math.max(1, Math.floor(pointCount / 6));
+  const labelInterval = forecastRange === '7d'
+    ? Math.max(1, Math.floor(pointCount / 4))
+    : Math.max(1, Math.floor(pointCount / 6));
 
   if (loading) {
     return (
@@ -142,7 +170,7 @@ export function ForecastChart({
   const makePoints = (getValue: (s: typeof slots[0]) => number, color: string) =>
     slots.map((s, i) => ({
       value: getValue(s),
-      label: i % labelInterval === 0 ? formatTimeLabel(s.time, timeRange) : '',
+      label: i % labelInterval === 0 ? formatTimeLabel(s.time, timeRange, locale) : '',
       labelTextStyle: { color: Colors.textSecondary, fontSize: 9, width: 48, textAlign: 'center' as const },
       hideDataPoint: pointCount > 30 || i % Math.max(1, Math.floor(pointCount / 12)) !== 0,
       dataPointColor: color,
@@ -171,30 +199,23 @@ export function ForecastChart({
       }
     : undefined;
 
-  const showSurplus = visibleFields.surplus;
+  const balanceChartWidth = screenWidth - PARENT_H_PADDING - CHART_H_PADDING - Y_AXIS_WIDTH - END_SPACING_DEFAULT;
+  const balanceSectionsAbove = balanceStep > 0 ? Math.round(balancePosMax / balanceStep) : 3;
+  const balanceSectionsBelow = balanceStep > 0 ? Math.round(balanceNegMax / balanceStep) : 3;
 
-  const surplusMax = useMemo(() => {
-    if (!showSurplus) return 10;
-    let mx = 10;
-    for (const s of slots) {
-      if (Math.abs(s.surplus) > mx) mx = Math.abs(s.surplus);
-    }
-    return mx;
-  }, [slots, showSurplus]);
-
-  const surplusStep = niceRound(surplusMax / 4) || 1;
-  const surplusYMax = Math.max(surplusStep, Math.ceil(surplusMax / surplusStep) * surplusStep);
-
-  const surplusChartWidth = screenWidth - PARENT_H_PADDING - CHART_H_PADDING - Y_AXIS_WIDTH - END_SPACING_DEFAULT;
-
-  const surplusData = showSurplus
+  const balancePosData = showSurplus
     ? slots.map((s, i) => ({
-        value: s.surplus + surplusYMax,
-        label: i % labelInterval === 0 ? formatTimeLabel(s.time, timeRange) : '',
-        labelTextStyle: { color: Colors.textSecondary, fontSize: 9, width: 48, textAlign: 'center' as const },
-        hideDataPoint: pointCount > 30 || i % Math.max(1, Math.floor(pointCount / 12)) !== 0,
-        dataPointColor: s.surplus >= 0 ? CHART_COLORS.forecast.surplus : CHART_COLORS.forecast.deficit,
-        frontColor: s.surplus >= 0 ? CHART_COLORS.forecast.surplus : CHART_COLORS.forecast.deficit,
+        value: Math.max(0, s.surplus),
+        label: i % labelInterval === 0 ? formatTimeLabel(s.time, timeRange, locale) : '',
+        labelTextStyle: { color: Colors.textSecondary, fontSize: 8, width: 44, textAlign: 'center' as const },
+        hideDataPoint: true,
+      }))
+    : null;
+
+  const balanceNegData = showSurplus
+    ? slots.map((s) => ({
+        value: Math.min(0, s.surplus),
+        hideDataPoint: true,
       }))
     : null;
 
@@ -312,7 +333,7 @@ export function ForecastChart({
               return (
                 <View style={styles.tooltipCard}>
                   <Text style={styles.tooltipTime}>
-                    {formatTimeLabel(s.time, timeRange)}
+                    {formatTimeLabel(s.time, timeRange, locale)}
                   </Text>
                   {visibleFields.pvForecast && (
                     <Text style={styles.tooltipValue}>
@@ -326,10 +347,10 @@ export function ForecastChart({
                       {`${ft.loadForecast}: ${s.load.toFixed(1)} kW`}
                     </Text>
                   )}
-                  {visibleFields.surplus && (
+                  {visibleFields.energyBalance && (
                     <Text style={styles.tooltipValue}>
                       <Text style={{ color: s.surplus >= 0 ? CHART_COLORS.forecast.surplus : CHART_COLORS.forecast.deficit }}>● </Text>
-                      {`${ft.estimatedSurplus}: ${s.surplus >= 0 ? '+' : ''}${s.surplus.toFixed(1)} kW`}
+                      {`${ft.energyBalance}: ${s.surplus >= 0 ? '+' : ''}${s.surplus.toFixed(1)} kW`}
                     </Text>
                   )}
                   {visibleFields.irradiance && (
@@ -345,47 +366,59 @@ export function ForecastChart({
         />
       </View>
 
-      {/* Surplus bar chart */}
-      {showSurplus && surplusData && (
-        <View style={styles.surplusSection}>
-          <Text style={styles.surplusSectionTitle}>{ft.estimatedSurplus} (kW)</Text>
+      {/* Energy Balance line chart */}
+      {showSurplus && balancePosData && balanceNegData && (
+        <View style={styles.balanceSection}>
+          <Text style={styles.balanceSectionTitle}>{ft.energyBalance} (kW)</Text>
+          <View style={styles.balanceLabelsRow}>
+            <Text style={[styles.balanceZoneLabel, { color: CHART_COLORS.forecast.surplus }]}>
+              ▲ {ft.solarSurplus}
+            </Text>
+            <Text style={[styles.balanceZoneLabel, { color: CHART_COLORS.forecast.deficit }]}>
+              ▼ {ft.solarDeficit}
+            </Text>
+          </View>
           <View style={styles.chartWrapper}>
             <LineChart
-              data={surplusData}
-              maxValue={surplusYMax * 2}
-              noOfSections={4}
-              stepValue={surplusStep}
-              width={surplusChartWidth}
-              height={120}
-              spacing={pointCount > 1 ? Math.max(1, (surplusChartWidth - INITIAL_SPACING) / (pointCount - 1)) : surplusChartWidth}
+              data={balancePosData}
+              data2={balanceNegData}
+              maxValue={balancePosMax}
+              mostNegativeValue={-balanceNegMax}
+              noOfSections={balanceSectionsAbove}
+              noOfSectionsBelowXAxis={balanceSectionsBelow}
+              stepValue={balanceStep}
+              width={balanceChartWidth}
+              height={140}
+              spacing={pointCount > 1 ? Math.max(1, (balanceChartWidth - INITIAL_SPACING) / (pointCount - 1)) : balanceChartWidth}
               initialSpacing={INITIAL_SPACING}
               endSpacing={END_SPACING_DEFAULT}
               disableScroll
               color1={CHART_COLORS.forecast.surplus}
+              color2={CHART_COLORS.forecast.deficit}
               thickness1={1.5}
+              thickness2={1.5}
               curved
-              areaChart
-              startFillColor={CHART_COLORS.forecast.surplusArea}
-              endFillColor={CHART_COLORS.forecast.deficitArea}
-              startOpacity={0.5}
-              endOpacity={0.5}
+              areaChart1
+              startFillColor1={CHART_COLORS.forecast.surplusArea}
+              endFillColor1={CHART_COLORS.forecast.surplusArea}
+              startOpacity1={0.5}
+              endOpacity1={0.15}
+              areaChart2
+              startFillColor2={CHART_COLORS.forecast.deficitArea}
+              endFillColor2={CHART_COLORS.forecast.deficitArea}
+              startOpacity2={0.5}
+              endOpacity2={0.15}
+              hideDataPoints
               xAxisColor={Colors.border}
               yAxisColor={Colors.border}
-              xAxisLabelTextStyle={{ color: Colors.textSecondary, fontSize: 9 }}
+              xAxisLabelTextStyle={{ color: Colors.textSecondary, fontSize: 8 }}
               yAxisTextStyle={{ color: Colors.textSecondary, fontSize: 9 }}
-              formatYLabel={(val: string) => {
-                const n = parseFloat(val) - surplusYMax;
-                return n >= 0 ? `+${n.toFixed(0)}` : n.toFixed(0);
-              }}
+              yAxisLabelSuffix=""
               backgroundColor={Colors.surface}
               rulesColor={Colors.border}
               rulesType="dashed"
               yAxisThickness={1}
-              xAxisThickness={1}
-              hideDataPoints={pointCount > 30}
-              showReferenceLine1
-              referenceLine1Position={surplusYMax}
-              referenceLine1Config={{ color: Colors.textLight, dashWidth: 4, dashGap: 4, thickness: 1 }}
+              xAxisThickness={2}
               showVerticalLines={false}
               isAnimated
               animationDuration={400}
@@ -497,14 +530,24 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginVertical: 2,
   },
-  surplusSection: {
+  balanceSection: {
     marginTop: 16,
   },
-  surplusSectionTitle: {
+  balanceSectionTitle: {
     fontSize: 12,
     fontWeight: '600',
     color: Colors.textSecondary,
-    marginBottom: 6,
+    marginBottom: 4,
     paddingHorizontal: 4,
+  },
+  balanceLabelsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    marginBottom: 6,
+  },
+  balanceZoneLabel: {
+    fontSize: 10,
+    fontWeight: '600',
   },
 });

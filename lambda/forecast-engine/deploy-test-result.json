@@ -1,1 +1,0 @@
-{"mode":"forecast_48h","results":[{"site_id":"olmar_1","status":"ok","forecastDays":3,"pointsWritten":72,"pvPeakKw":31.734065021119992,"loadPeakKw":99.4,"loadForecastPoints":72},{"site_id":"domagala_1","status":"ok","forecastDays":3,"pointsWritten":72,"pvPeakKw":64.29482672796,"loadPeakKw":70.39,"loadForecastPoints":72}]}

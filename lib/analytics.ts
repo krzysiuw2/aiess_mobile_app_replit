@@ -426,32 +426,30 @@ export function prepareCyclesBarChart(
 /**
  * Format time for chart x-axis labels
  */
-export function formatTimeLabel(value: any, timeRange: string): string {
+export function formatTimeLabel(value: any, timeRange: string, locale: string = 'en-US'): string {
   const date = value instanceof Date ? value : new Date(value);
   
   switch (timeRange) {
     case '24h':
-      return date.toLocaleTimeString('en-US', { 
+      return date.toLocaleTimeString(locale, { 
         hour: '2-digit', 
         minute: '2-digit',
         hour12: false 
       });
     case '7d':
-      return date.toLocaleDateString('en-US', {
-        weekday: 'short',
-        day: 'numeric',
-      });
+      return date.toLocaleDateString(locale, { weekday: 'narrow' })
+        + '\n' + date.getDate();
     case '30d':
-      return date.toLocaleDateString('en-US', { 
+      return date.toLocaleDateString(locale, { 
         month: 'short', 
         day: 'numeric' 
       });
     case '365d':
-      return date.toLocaleDateString('en-US', { 
+      return date.toLocaleDateString(locale, { 
         month: 'short' 
       });
     default:
-      return date.toLocaleTimeString('en-US', { 
+      return date.toLocaleTimeString(locale, { 
         hour: '2-digit', 
         minute: '2-digit' 
       });
@@ -461,13 +459,13 @@ export function formatTimeLabel(value: any, timeRange: string): string {
 /**
  * Format timestamp for display
  */
-export function formatTimestamp(date: Date): string {
-  return date.toLocaleString('en-US', {
+export function formatTimestamp(date: Date, locale: string = 'en-US'): string {
+  return date.toLocaleString(locale, {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    hour12: true,
+    hour12: locale === 'en-US',
   });
 }
 

@@ -12,6 +12,7 @@ interface WeatherForecastSectionProps {
   data: SimulationDataPoint[];
   forecastRange: '48h' | '7d';
   t: TranslationKeys;
+  language?: string;
 }
 
 const Y_AXIS_WIDTH = 40;
@@ -39,9 +40,10 @@ interface HourSlot {
   weatherCode: number;
 }
 
-export function WeatherForecastSection({ data, forecastRange, t }: WeatherForecastSectionProps) {
+export function WeatherForecastSection({ data, forecastRange, t, language = 'en' }: WeatherForecastSectionProps) {
   const { width: screenWidth } = useWindowDimensions();
   const ft = t.analytics.forecastTab;
+  const locale = language === 'pl' ? 'pl-PL' : 'en-US';
   const chartWidth = screenWidth - PARENT_H_PADDING - CHART_H_PADDING - Y_AXIS_WIDTH - 10;
 
   const slots = useMemo((): HourSlot[] => {
@@ -106,13 +108,16 @@ export function WeatherForecastSection({ data, forecastRange, t }: WeatherForeca
   const autoSpacing = pointCount > 1
     ? Math.max(1, (chartWidth - 10) / (pointCount - 1))
     : chartWidth;
-  const labelInterval = Math.max(1, Math.floor(pointCount / 6));
+  const labelInterval = forecastRange === '7d'
+    ? Math.max(1, Math.floor(pointCount / 4))
+    : Math.max(1, Math.floor(pointCount / 6));
+  const labelWidth = forecastRange === '7d' ? 36 : 48;
 
   const makePoints = (getValue: (s: HourSlot) => number) =>
     slots.map((s, i) => ({
       value: getValue(s),
-      label: i % labelInterval === 0 ? formatTimeLabel(s.time, timeRange) : '',
-      labelTextStyle: { color: Colors.textSecondary, fontSize: 9, width: 48, textAlign: 'center' as const },
+      label: i % labelInterval === 0 ? formatTimeLabel(s.time, timeRange, locale) : '',
+      labelTextStyle: { color: Colors.textSecondary, fontSize: 9, width: labelWidth, textAlign: 'center' as const },
       hideDataPoint: true,
     }));
 

@@ -10,22 +10,23 @@ import { WeatherForecastSection } from './WeatherForecastSection';
 import type { TranslationKeys } from '@/locales';
 
 type ForecastRange = '48h' | '7d';
-type ForecastField = 'pvForecast' | 'loadForecast' | 'irradiance' | 'surplus';
+type ForecastField = 'pvForecast' | 'loadForecast' | 'irradiance' | 'energyBalance';
 
 interface ForecastViewProps {
   simData: SimulationDataPoint[];
   deviceId: string | undefined;
   loading: boolean;
   t: TranslationKeys;
+  language?: string;
 }
 
-export function ForecastView({ simData, deviceId, loading, t }: ForecastViewProps) {
+export function ForecastView({ simData, deviceId, loading, t, language = 'en' }: ForecastViewProps) {
   const ft = t.analytics.forecastTab;
   const [forecastRange, setForecastRange] = useState<ForecastRange>('48h');
   const [visibleFields, setVisibleFields] = useState<Record<ForecastField, boolean>>({
     pvForecast: true,
     loadForecast: true,
-    surplus: true,
+    energyBalance: true,
     irradiance: true,
   });
 
@@ -69,6 +70,7 @@ export function ForecastView({ simData, deviceId, loading, t }: ForecastViewProp
         onToggleField={toggleField}
         loading={loading}
         t={t}
+        language={language}
       />
 
       {/* Forecast vs Actual */}
@@ -93,6 +95,7 @@ export function ForecastView({ simData, deviceId, loading, t }: ForecastViewProp
         data={simData}
         forecastRange={forecastRange}
         t={t}
+        language={language}
       />
     </View>
   );

@@ -19,7 +19,7 @@ const MEASUREMENT = 'energy_simulation';
  * @param {string} source   'forecast' | 'backfill' | 'satellite'
  * @param {{ time: string, pvEstimated?: number, pvForecast?: number,
  *           loadForecast?: number, factoryLoadCorrected?: number,
- *           estimatedSurplus?: number,
+ *           energyBalance?: number,
  *           weatherGti?: number, weatherTemp?: number,
  *           weatherCloudCover?: number, weatherCode?: number,
  *           weatherWindSpeed?: number }[]} points
@@ -52,7 +52,7 @@ function formatLineProtocol(siteId, source, point) {
   if (point.weatherCloudCover != null)    fields.push(`weather_cloud_cover=${round4(point.weatherCloudCover)}`);
   if (point.weatherCode != null)          fields.push(`weather_code=${Math.round(point.weatherCode)}i`);
   if (point.weatherWindSpeed != null)     fields.push(`weather_wind_speed=${round4(point.weatherWindSpeed)}`);
-  if (point.estimatedSurplus != null)    fields.push(`estimated_surplus=${round4(point.estimatedSurplus)}`);
+  if (point.energyBalance != null)       fields.push(`energy_balance=${round4(point.energyBalance)}`);
 
   if (fields.length === 0) return '';
 
