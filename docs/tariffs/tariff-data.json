@@ -1,0 +1,1572 @@
+[
+  {
+    "operator": "pge",
+    "tariff_group": "C11",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2568,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "pge",
+    "tariff_group": "C11",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2568,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "pge",
+    "tariff_group": "C12",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.2653,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0358,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "pge",
+    "tariff_group": "C12",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.2653,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0358,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "pge",
+    "tariff_group": "C21",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2164,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "pge",
+    "tariff_group": "C21",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2164,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "pge",
+    "tariff_group": "C22",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.3244,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0833,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "pge",
+    "tariff_group": "C22",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.3244,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0833,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "pge",
+    "tariff_group": "B21",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.0645,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "pge",
+    "tariff_group": "B21",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.0645,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "pge",
+    "tariff_group": "B22",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.0851,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0447,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "pge",
+    "tariff_group": "B22",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.0851,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0447,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "pge",
+    "tariff_group": "B23",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "peak",
+        "rate_pln_kwh": 0.1134,
+        "schedule": {
+          "weekday": ["07:00-13:00", "16:00-21:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "offpeak",
+        "rate_pln_kwh": 0.0230,
+        "schedule": {
+          "weekday": ["13:00-16:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0230,
+        "schedule": {
+          "weekday": ["21:00-07:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "pge",
+    "tariff_group": "B23",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "peak",
+        "rate_pln_kwh": 0.1134,
+        "schedule": {
+          "weekday": ["07:00-13:00", "16:00-21:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "offpeak",
+        "rate_pln_kwh": 0.0230,
+        "schedule": {
+          "weekday": ["13:00-16:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0230,
+        "schedule": {
+          "weekday": ["21:00-07:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "C11",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2480,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "C11",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2660,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "C12",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.2577,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0454,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "C12",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.2764,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0487,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "C21",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2106,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "C21",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2258,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "C22",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.3154,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0811,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "C22",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.3382,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0869,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "B21",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.0626,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "B21",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.0671,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "B22",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.0825,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0434,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "B22",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.0884,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0465,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "B23",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "peak",
+        "rate_pln_kwh": 0.1100,
+        "schedule": {
+          "weekday": ["07:00-13:00", "16:00-21:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "offpeak",
+        "rate_pln_kwh": 0.0182,
+        "schedule": {
+          "weekday": ["13:00-16:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0182,
+        "schedule": {
+          "weekday": ["21:00-07:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "tauron",
+    "tariff_group": "B23",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "peak",
+        "rate_pln_kwh": 0.1179,
+        "schedule": {
+          "weekday": ["07:00-13:00", "16:00-21:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "offpeak",
+        "rate_pln_kwh": 0.0195,
+        "schedule": {
+          "weekday": ["13:00-16:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0195,
+        "schedule": {
+          "weekday": ["21:00-07:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "C11",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2456,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "C11",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2456,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "C12",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.2780,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0913,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "C12",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.2780,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0913,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "C21",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2076,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "C21",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2076,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "C22",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.3195,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0833,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "C22",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.3195,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0833,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "B21",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.0626,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "B21",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.0626,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "B22",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.0829,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0435,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "B22",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.0829,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0435,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "B23",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "peak",
+        "rate_pln_kwh": 0.1100,
+        "schedule": {
+          "weekday": ["07:00-13:00", "16:00-21:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "offpeak",
+        "rate_pln_kwh": 0.0187,
+        "schedule": {
+          "weekday": ["13:00-16:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0187,
+        "schedule": {
+          "weekday": ["21:00-07:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "enea",
+    "tariff_group": "B23",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "peak",
+        "rate_pln_kwh": 0.1100,
+        "schedule": {
+          "weekday": ["07:00-13:00", "16:00-21:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "offpeak",
+        "rate_pln_kwh": 0.0187,
+        "schedule": {
+          "weekday": ["13:00-16:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0187,
+        "schedule": {
+          "weekday": ["21:00-07:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "C11",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2602,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "C11",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2602,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "C12",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.2691,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0358,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "C12",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.2691,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0358,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "C21",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2195,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "C21",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2195,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "C22",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.3252,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0833,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "C22",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.3252,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0833,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "B21",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.0650,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "B21",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.0650,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "B22",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.0846,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0447,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "B22",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.0846,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0447,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "B23",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "peak",
+        "rate_pln_kwh": 0.1134,
+        "schedule": {
+          "weekday": ["07:00-13:00", "16:00-21:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "offpeak",
+        "rate_pln_kwh": 0.0190,
+        "schedule": {
+          "weekday": ["13:00-16:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0190,
+        "schedule": {
+          "weekday": ["21:00-07:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "energa",
+    "tariff_group": "B23",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "peak",
+        "rate_pln_kwh": 0.1134,
+        "schedule": {
+          "weekday": ["07:00-13:00", "16:00-21:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "offpeak",
+        "rate_pln_kwh": 0.0190,
+        "schedule": {
+          "weekday": ["13:00-16:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0190,
+        "schedule": {
+          "weekday": ["21:00-07:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "C11",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2562,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "C11",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2562,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "C12",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.2602,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0358,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "C12",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.2602,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0358,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "C21",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2164,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "C21",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.2164,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "C22",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.3195,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0833,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "C22",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.3195,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0833,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "B21",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.0610,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "B21",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "all",
+        "rate_pln_kwh": 0.0610,
+        "schedule": {
+          "weekday": ["00:00-24:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "B22",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.0813,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0427,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "B22",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "day",
+        "rate_pln_kwh": 0.0813,
+        "schedule": {
+          "weekday": ["06:00-22:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0427,
+        "schedule": {
+          "weekday": ["22:00-06:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "B23",
+    "valid_year": 2025,
+    "zones": [
+      {
+        "name": "peak",
+        "rate_pln_kwh": 0.1005,
+        "schedule": {
+          "weekday": ["07:00-13:00", "16:00-21:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "offpeak",
+        "rate_pln_kwh": 0.0187,
+        "schedule": {
+          "weekday": ["13:00-16:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0187,
+        "schedule": {
+          "weekday": ["21:00-07:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  },
+  {
+    "operator": "stoen",
+    "tariff_group": "B23",
+    "valid_year": 2026,
+    "zones": [
+      {
+        "name": "peak",
+        "rate_pln_kwh": 0.1005,
+        "schedule": {
+          "weekday": ["07:00-13:00", "16:00-21:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "offpeak",
+        "rate_pln_kwh": 0.0187,
+        "schedule": {
+          "weekday": ["13:00-16:00"],
+          "saturday": [],
+          "sunday_holiday": []
+        }
+      },
+      {
+        "name": "night",
+        "rate_pln_kwh": 0.0187,
+        "schedule": {
+          "weekday": ["21:00-07:00"],
+          "saturday": ["00:00-24:00"],
+          "sunday_holiday": ["00:00-24:00"]
+        }
+      }
+    ]
+  }
+]
