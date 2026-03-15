@@ -10,7 +10,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, ChevronRight, Calendar, Eye, EyeOff, Zap, Battery, BarChart2, TrendingUp, RefreshCw, Sun, Shield, Activity, CloudSun } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Calendar, Eye, EyeOff, Zap, Battery, BarChart2, TrendingUp, RefreshCw, Sun, Shield, Activity, CloudSun, DollarSign } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { FIELD_COLORS, FieldKey, CHART_COLORS } from '@/constants/chartColors';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -47,8 +47,9 @@ import TgePriceChart from '@/components/analytics/TgePriceChart';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
 import { BatteryDataView } from '@/components/analytics/BatteryDataView';
 import { ForecastView } from '@/components/analytics/ForecastView';
+import { FinancialView } from '@/components/analytics/FinancialView';
 
-type AnalyticsTab = 'usage' | 'battery' | 'forecasts';
+type AnalyticsTab = 'usage' | 'forecasts' | 'financial' | 'battery';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -345,6 +346,7 @@ export default function AnalyticsScreen() {
   };
 
   const bt = t.analytics.batteryTab;
+  const ft = t.analytics.financialTab;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -358,36 +360,29 @@ export default function AnalyticsScreen() {
         </View>
       </View>
 
-      {/* Segmented Control: Usage Data / Battery Data */}
+      {/* Segmented Control */}
       <View style={styles.segmentedRow}>
         <View style={styles.segmentedControl}>
-          <TouchableOpacity
-            style={[styles.segmentBtn, activeTab === 'usage' && styles.segmentBtnActive]}
-            onPress={() => setActiveTab('usage')}
-          >
-            <BarChart2 size={14} color={activeTab === 'usage' ? '#fff' : Colors.textSecondary} />
-            <Text style={[styles.segmentText, activeTab === 'usage' && styles.segmentTextActive]}>
-              {bt.usageData}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.segmentBtn, activeTab === 'forecasts' && styles.segmentBtnActive]}
-            onPress={() => setActiveTab('forecasts')}
-          >
-            <CloudSun size={14} color={activeTab === 'forecasts' ? '#fff' : Colors.textSecondary} />
-            <Text style={[styles.segmentText, activeTab === 'forecasts' && styles.segmentTextActive]}>
-              {t.analytics.forecastTab.forecasts}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.segmentBtn, activeTab === 'battery' && styles.segmentBtnActive]}
-            onPress={() => setActiveTab('battery')}
-          >
-            <Activity size={14} color={activeTab === 'battery' ? '#fff' : Colors.textSecondary} />
-            <Text style={[styles.segmentText, activeTab === 'battery' && styles.segmentTextActive]}>
-              {bt.batteryData}
-            </Text>
-          </TouchableOpacity>
+          {([
+            { key: 'usage' as AnalyticsTab, icon: BarChart2, label: bt.usageData },
+            { key: 'forecasts' as AnalyticsTab, icon: CloudSun, label: t.analytics.forecastTab.forecasts },
+            { key: 'financial' as AnalyticsTab, icon: DollarSign, label: ft.financial },
+            { key: 'battery' as AnalyticsTab, icon: Activity, label: bt.batteryData },
+          ]).map(({ key, icon: Icon, label }) => {
+            const isActive = activeTab === key;
+            return (
+              <TouchableOpacity
+                key={key}
+                style={[styles.segmentBtn, isActive && styles.segmentBtnActive]}
+                onPress={() => setActiveTab(key)}
+              >
+                <Icon size={15} color={isActive ? '#fff' : Colors.textSecondary} />
+                {isActive && (
+                  <Text style={styles.segmentTextActive}>{label}</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
@@ -578,6 +573,12 @@ export default function AnalyticsScreen() {
             t={t}
             language={language}
           />
+        ) : activeTab === 'financial' ? (
+          <FinancialView
+            deviceId={selectedDevice?.device_id}
+            t={t}
+            language={language}
+          />
         ) : (
           <BatteryDataView
             deviceId={selectedDevice?.device_id}
@@ -637,22 +638,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   segmentBtn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 5,
     paddingVertical: 9,
+    paddingHorizontal: 12,
   },
   segmentBtnActive: {
+    flex: 1,
     backgroundColor: Colors.primary,
-  },
-  segmentText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.textSecondary,
+    borderRadius: 8,
   },
   segmentTextActive: {
+    fontSize: 12,
+    fontWeight: '600',
     color: '#fff',
   },
   scrollView: {

@@ -13,6 +13,7 @@ import {
   SlidersHorizontal,
   User,
   Smartphone,
+  DollarSign,
   ChevronRight,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -57,6 +58,12 @@ export default function SettingsMenuScreen() {
           title={t.settings.siteSettings}
           description={t.settings.siteSettingsDesc}
           onPress={() => router.push('/(tabs)/settings/site')}
+        />
+        <MenuCard
+          icon={<DollarSign size={24} color={Colors.success} />}
+          title={t.settings.financialSettings}
+          description={t.settings.financialSettingsDesc}
+          onPress={() => router.push('/(tabs)/settings/financial')}
         />
         <MenuCard
           icon={<SlidersHorizontal size={24} color={Colors.primary} />}

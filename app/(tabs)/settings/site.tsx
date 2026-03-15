@@ -13,14 +13,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { ArrowLeft, Shield, Zap, Info, BatteryCharging, Sun, X, MapPin, Battery, Cpu, SunMedium, Plug, DollarSign, BarChart3, Plus, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, Shield, Zap, Info, BatteryCharging, Sun, X, MapPin, Battery, Cpu, SunMedium, Plug, BarChart3, Plus, Trash2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useSchedules } from '@/hooks/useSchedules';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
 import { geocodeSiteAddress } from '@/lib/aws-site-config';
-import type { SiteConfigPvArray, SiteConfigTariffPeriod } from '@/types';
+import type { SiteConfigPvArray } from '@/types';
 
 const BELL_CURVE_BARS = [0.08, 0.18, 0.35, 0.58, 0.78, 0.92, 1.0, 0.95, 0.82, 0.62, 0.38, 0.15];
 const BELL_HOURS = ['6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17'];
@@ -68,11 +68,7 @@ export default function SiteSettingsScreen() {
   const [locationLng, setLocationLng] = useState('');
   const [locationCountry, setLocationCountry] = useState('PL');
   const [isGeocoding, setIsGeocoding] = useState(false);
-  const [tariffType, setTariffType] = useState('flat');
-  const [tariffCurrency, setTariffCurrency] = useState('PLN');
-  const [tariffDemandCharge, setTariffDemandCharge] = useState('');
-  const [tariffFixed, setTariffFixed] = useState('');
-  const [tariffPeriods, setTariffPeriods] = useState<SiteConfigTariffPeriod[]>([]);
+  // Tariff fields moved to Financial Settings screen
   const [loadType, setLoadType] = useState('industrial');
   const [loadPeak, setLoadPeak] = useState('');
   const [loadBase, setLoadBase] = useState('');
@@ -109,11 +105,7 @@ export default function SiteSettingsScreen() {
       setLocationLat(siteConfig.location?.latitude?.toString() || '');
       setLocationLng(siteConfig.location?.longitude?.toString() || '');
       setLocationCountry(siteConfig.location?.country || 'PL');
-      setTariffType(siteConfig.tariff?.type || 'flat');
-      setTariffCurrency(siteConfig.tariff?.currency || 'PLN');
-      setTariffDemandCharge(siteConfig.tariff?.demand_charge_per_kw?.toString() || '');
-      setTariffFixed(siteConfig.tariff?.fixed_monthly?.toString() || '');
-      setTariffPeriods(siteConfig.tariff?.periods || []);
+      // Tariff loaded in Financial Settings
       setLoadType(siteConfig.load_profile?.type || 'industrial');
       setLoadPeak(siteConfig.load_profile?.typical_peak_kw?.toString() || '');
       setLoadBase(siteConfig.load_profile?.typical_base_kw?.toString() || '');
@@ -312,54 +304,6 @@ export default function SiteSettingsScreen() {
     } finally {
       setIsGeocoding(false);
     }
-  };
-
-  const handleSaveTariff = async () => {
-    try {
-      await updateConfig({
-        tariff: {
-          type: tariffType as any,
-          currency: tariffCurrency || 'PLN',
-          demand_charge_per_kw: parseFloat(tariffDemandCharge) || undefined,
-          fixed_monthly: parseFloat(tariffFixed) || undefined,
-          periods: tariffType === 'time_of_use' ? tariffPeriods : undefined,
-        },
-      });
-      Alert.alert(t.common.success, t.settings.tariffSaved);
-    } catch { Alert.alert(t.common.error, t.settings.failedSaveSiteConfig); }
-  };
-
-  const TOU_PRESET_2: SiteConfigTariffPeriod[] = [
-    { name: 'Peak', start: '06:00', end: '22:00', days: [1, 2, 3, 4, 5], import_rate: 0.85, export_rate: 0.40 },
-    { name: 'Off-Peak', start: '22:00', end: '06:00', days: [0, 1, 2, 3, 4, 5, 6], import_rate: 0.45, export_rate: 0.25 },
-  ];
-
-  const TOU_PRESET_3: SiteConfigTariffPeriod[] = [
-    { name: 'Peak', start: '07:00', end: '13:00', days: [1, 2, 3, 4, 5], import_rate: 0.95, export_rate: 0.45 },
-    { name: 'Mid-Peak', start: '13:00', end: '17:00', days: [1, 2, 3, 4, 5], import_rate: 0.65, export_rate: 0.35 },
-    { name: 'Off-Peak', start: '22:00', end: '07:00', days: [0, 1, 2, 3, 4, 5, 6], import_rate: 0.45, export_rate: 0.25 },
-  ];
-
-  const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-
-  const updatePeriod = (idx: number, patch: Partial<SiteConfigTariffPeriod>) => {
-    setTariffPeriods(prev => prev.map((p, i) => i === idx ? { ...p, ...patch } : p));
-  };
-
-  const toggleDay = (periodIdx: number, day: number) => {
-    setTariffPeriods(prev => prev.map((p, i) => {
-      if (i !== periodIdx) return p;
-      const days = p.days.includes(day) ? p.days.filter(d => d !== day) : [...p.days, day].sort();
-      return { ...p, days };
-    }));
-  };
-
-  const addPeriod = () => {
-    setTariffPeriods(prev => [...prev, { name: '', start: '00:00', end: '00:00', days: [1, 2, 3, 4, 5] }]);
-  };
-
-  const removePeriod = (idx: number) => {
-    setTariffPeriods(prev => prev.filter((_, i) => i !== idx));
   };
 
   const handleSaveLoadProfile = async () => {
@@ -906,142 +850,6 @@ export default function SiteSettingsScreen() {
           </View>
           <TouchableOpacity style={styles.saveButton} onPress={handleSaveGridConnection} disabled={isUpdating}>
             <Text style={styles.saveButtonText}>{t.settings.saveGridConnection}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Tariff & Pricing */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <DollarSign size={20} color={Colors.success} />
-            <Text style={styles.sectionTitle}>{t.settings.tariff}</Text>
-          </View>
-          <Text style={styles.sectionDescription}>{t.settings.tariffDesc}</Text>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>{t.settings.tariffType}</Text>
-            <View style={styles.chipRow}>
-              {(['flat', 'time_of_use', 'dynamic'] as const).map(tt => (
-                <TouchableOpacity key={tt} style={[styles.chip3, tariffType === tt && styles.chip3Active]} onPress={() => setTariffType(tt)}>
-                  <Text style={[styles.chip3Text, tariffType === tt && styles.chip3TextActive]}>
-                    {tt === 'flat' ? t.settings.tariffFlat : tt === 'time_of_use' ? t.settings.tariffTou : t.settings.tariffDynamic}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {tariffType === 'time_of_use' && (
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Presets</Text>
-              <View style={styles.chipRow}>
-                <TouchableOpacity style={[styles.chip3, tariffPeriods.length === 2 && styles.chip3Active]} onPress={() => setTariffPeriods([...TOU_PRESET_2])}>
-                  <Text style={[styles.chip3Text, tariffPeriods.length === 2 && styles.chip3TextActive]}>{t.settings.touPreset2}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.chip3, tariffPeriods.length === 3 && styles.chip3Active]} onPress={() => setTariffPeriods([...TOU_PRESET_3])}>
-                  <Text style={[styles.chip3Text, tariffPeriods.length === 3 && styles.chip3TextActive]}>{t.settings.touPreset3}</Text>
-                </TouchableOpacity>
-              </View>
-
-              {tariffPeriods.map((period, idx) => (
-                <View key={idx} style={styles.touPeriodCard}>
-                  <View style={styles.touPeriodHeader}>
-                    <TextInput
-                      style={[styles.textInput, { flex: 1 }]}
-                      value={period.name}
-                      onChangeText={v => updatePeriod(idx, { name: v })}
-                      placeholder={t.settings.touPeriodName}
-                      placeholderTextColor={Colors.textSecondary}
-                    />
-                    {tariffPeriods.length > 1 && (
-                      <TouchableOpacity onPress={() => removePeriod(idx)} style={styles.touDeleteBtn}>
-                        <Trash2 size={16} color={Colors.error} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  <View style={styles.rowInputs}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.touSmallLabel}>{t.settings.touStartTime}</Text>
-                      <TextInput
-                        style={styles.textInput}
-                        value={period.start}
-                        onChangeText={v => updatePeriod(idx, { start: v })}
-                        placeholder="06:00"
-                        placeholderTextColor={Colors.textSecondary}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.touSmallLabel}>{t.settings.touEndTime}</Text>
-                      <TextInput
-                        style={styles.textInput}
-                        value={period.end}
-                        onChangeText={v => updatePeriod(idx, { end: v })}
-                        placeholder="22:00"
-                        placeholderTextColor={Colors.textSecondary}
-                      />
-                    </View>
-                  </View>
-                  <Text style={styles.touSmallLabel}>{t.settings.touDays}</Text>
-                  <View style={styles.touDaysRow}>
-                    {DAY_LABELS.map((label, dayIdx) => (
-                      <TouchableOpacity
-                        key={dayIdx}
-                        style={[styles.touDayChip, period.days.includes(dayIdx) && styles.touDayChipActive]}
-                        onPress={() => toggleDay(idx, dayIdx)}
-                      >
-                        <Text style={[styles.touDayText, period.days.includes(dayIdx) && styles.touDayTextActive]}>{label}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  <View style={styles.rowInputs}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.touSmallLabel}>{t.settings.touImportRate}</Text>
-                      <TextInput
-                        style={styles.textInput}
-                        value={period.import_rate?.toString() || ''}
-                        onChangeText={v => updatePeriod(idx, { import_rate: parseFloat(v) || undefined })}
-                        keyboardType="decimal-pad"
-                        placeholder="0.85"
-                        placeholderTextColor={Colors.textSecondary}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.touSmallLabel}>{t.settings.touExportRate}</Text>
-                      <TextInput
-                        style={styles.textInput}
-                        value={period.export_rate?.toString() || ''}
-                        onChangeText={v => updatePeriod(idx, { export_rate: parseFloat(v) || undefined })}
-                        keyboardType="decimal-pad"
-                        placeholder="0.40"
-                        placeholderTextColor={Colors.textSecondary}
-                      />
-                    </View>
-                  </View>
-                </View>
-              ))}
-
-              <TouchableOpacity style={styles.touAddBtn} onPress={addPeriod}>
-                <Plus size={16} color={Colors.primary} />
-                <Text style={styles.touAddText}>{t.settings.addPeriod}</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <View style={styles.rowInputs}>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>{t.settings.currency}</Text>
-              <TextInput style={styles.textInput} value={tariffCurrency} onChangeText={setTariffCurrency} placeholder="PLN" placeholderTextColor={Colors.textSecondary} />
-            </View>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>{t.settings.demandCharge}</Text>
-              <TextInput style={styles.textInput} value={tariffDemandCharge} onChangeText={v => setTariffDemandCharge(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="25" placeholderTextColor={Colors.textSecondary} />
-            </View>
-          </View>
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>{t.settings.fixedMonthly}</Text>
-            <TextInput style={styles.textInput} value={tariffFixed} onChangeText={v => setTariffFixed(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="150" placeholderTextColor={Colors.textSecondary} />
-          </View>
-          <TouchableOpacity style={styles.saveButton} onPress={handleSaveTariff} disabled={isUpdating}>
-            <Text style={styles.saveButtonText}>{t.settings.saveTariff}</Text>
           </TouchableOpacity>
         </View>
 

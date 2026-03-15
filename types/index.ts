@@ -292,6 +292,7 @@ export interface SiteConfig {
   power_limits?: SiteConfigPowerLimits;
   influxdb?: SiteConfigInfluxDb;
   automation?: SiteConfigAutomation;
+  financial?: FinancialSettings;
   updated_at?: string;
   updated_by?: string;
   created_at?: string;
@@ -329,6 +330,29 @@ export interface BatteryDetailData {
   cellTemps: number[];
   lastUpdate: Date;
 }
+
+// ─── Financial Types (re-export) ─────────────────────────────────
+
+export type {
+  EnergyPriceModel,
+  ExportPriceModel,
+  DistributionOperator,
+  TariffGroup,
+  FinancialSettings,
+  TariffZoneSchedule,
+  TariffZone,
+  DistributionTariffEntry,
+  HourlyFinancialData,
+  MonthlyFinancialSummary,
+  FinancialSubTab,
+  FinancialPeriod,
+} from './financial';
+
+export {
+  DISTRIBUTION_OPERATORS,
+  TARIFF_GROUPS,
+  DEFAULT_FINANCIAL_SETTINGS,
+} from './financial';
 
 // ─── Energy Simulation / Forecast Types ─────────────────────────
 
