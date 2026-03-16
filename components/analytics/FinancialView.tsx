@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, ChevronRight, Settings } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Settings, Info } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
-import type { FinancialSubTab, FinancialPeriod, FinancialSettings } from '@/types/financial';
+import { useDevices } from '@/contexts/DeviceContext';
+import type { FinancialSubTab, FinancialPeriod, FinancialSettings, MonthlyFinancialSummary } from '@/types/financial';
+import { fetchMonthlyFinancialSummary, generateMockMonthlySummaries } from '@/lib/financial';
 import { FinancialBatteryView } from './FinancialBatteryView';
 import { FinancialPVView } from './FinancialPVView';
 import { FinancialSystemView } from './FinancialSystemView';
@@ -28,14 +30,19 @@ export interface FinancialSubViewProps {
   t: any;
   language: string;
   financialSettings: FinancialSettings;
+  monthlySummaries: MonthlyFinancialSummary[];
+  dataLoading: boolean;
 }
 
 export function FinancialView({ deviceId, t, language }: FinancialViewProps) {
   const router = useRouter();
   const { siteConfig, isLoading } = useSiteConfig();
+  const { selectedDevice } = useDevices();
   const ft = t.analytics.financialTab;
 
   const financialSettings = siteConfig?.financial as FinancialSettings | undefined;
+  const batteryCapacityKwh = siteConfig?.battery?.capacity_kwh ?? selectedDevice?.battery_capacity_kwh ?? 0;
+  const siteId = selectedDevice?.device_id ?? null;
 
   const availableTabs = useMemo<FinancialSubTab[]>(() => {
     if (!financialSettings) return [];
@@ -49,6 +56,59 @@ export function FinancialView({ deviceId, t, language }: FinancialViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<FinancialSubTab>('system');
   const [period, setPeriod] = useState<FinancialPeriod>('monthly');
   const [selectedDate, setSelectedDate] = useState(new Date());
+
+  const [monthlySummaries, setMonthlySummaries] = useState<MonthlyFinancialSummary[]>([]);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [isProjected, setIsProjected] = useState(false);
+
+  const dateRange = useMemo(() => {
+    if (period === 'yearly') {
+      const year = selectedDate.getFullYear();
+      return {
+        from: new Date(year, 0, 1),
+        to: new Date(year + 1, 0, 1),
+      };
+    }
+    const to = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1);
+    const from = new Date(to);
+    from.setMonth(from.getMonth() - 12);
+    return { from, to };
+  }, [period, selectedDate]);
+
+  const loadData = useCallback(async () => {
+    if (!siteId || !financialSettings) return;
+
+    setDataLoading(true);
+    try {
+      const data = await fetchMonthlyFinancialSummary(
+        siteId,
+        dateRange.from,
+        dateRange.to,
+        financialSettings,
+        batteryCapacityKwh,
+      );
+
+      if (data.length > 0) {
+        setMonthlySummaries(data);
+        setIsProjected(false);
+      } else {
+        const monthCount = period === 'yearly' ? 12 : 12;
+        setMonthlySummaries(generateMockMonthlySummaries(monthCount, financialSettings));
+        setIsProjected(true);
+      }
+    } catch (err) {
+      console.error('[FinancialView] Fetch failed, using projected data:', err);
+      const monthCount = period === 'yearly' ? 12 : 12;
+      setMonthlySummaries(generateMockMonthlySummaries(monthCount, financialSettings));
+      setIsProjected(true);
+    } finally {
+      setDataLoading(false);
+    }
+  }, [siteId, financialSettings, dateRange, batteryCapacityKwh, period]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const effectiveTab = availableTabs.includes(activeSubTab)
     ? activeSubTab
@@ -107,9 +167,30 @@ export function FinancialView({ deviceId, t, language }: FinancialViewProps) {
     system: ft.system,
   };
 
+  const sharedProps: FinancialSubViewProps = {
+    deviceId,
+    period,
+    selectedDate,
+    t,
+    language,
+    financialSettings,
+    monthlySummaries,
+    dataLoading,
+  };
+
   return (
     <View>
-      {/* Sub-tab pills */}
+      {isProjected && (
+        <View style={styles.projectedBanner}>
+          <Info size={14} color={Colors.warning} />
+          <Text style={styles.projectedText}>
+            {language === 'pl'
+              ? 'Dane szacunkowe \u2014 rzeczywiste pojawi\u0105 si\u0119 po nocnym obliczeniu'
+              : 'Projected data \u2014 real values will appear after nightly calculation'}
+          </Text>
+        </View>
+      )}
+
       {availableTabs.length > 1 && (
         <View style={styles.pillSelector}>
           {availableTabs.map((tab) => (
@@ -134,7 +215,6 @@ export function FinancialView({ deviceId, t, language }: FinancialViewProps) {
         </View>
       )}
 
-      {/* Period toggle */}
       <View style={styles.periodSelector}>
         {(['monthly', 'yearly'] as FinancialPeriod[]).map((p) => (
           <TouchableOpacity
@@ -157,7 +237,6 @@ export function FinancialView({ deviceId, t, language }: FinancialViewProps) {
         ))}
       </View>
 
-      {/* Date navigation */}
       <View style={styles.dateNavigation}>
         <TouchableOpacity
           style={styles.dateNavButton}
@@ -178,37 +257,9 @@ export function FinancialView({ deviceId, t, language }: FinancialViewProps) {
         </TouchableOpacity>
       </View>
 
-      {/* Sub-view content */}
-      {effectiveTab === 'battery' && (
-        <FinancialBatteryView
-          deviceId={deviceId}
-          period={period}
-          selectedDate={selectedDate}
-          t={t}
-          language={language}
-          financialSettings={financialSettings}
-        />
-      )}
-      {effectiveTab === 'pv' && (
-        <FinancialPVView
-          deviceId={deviceId}
-          period={period}
-          selectedDate={selectedDate}
-          t={t}
-          language={language}
-          financialSettings={financialSettings}
-        />
-      )}
-      {effectiveTab === 'system' && (
-        <FinancialSystemView
-          deviceId={deviceId}
-          period={period}
-          selectedDate={selectedDate}
-          t={t}
-          language={language}
-          financialSettings={financialSettings}
-        />
-      )}
+      {effectiveTab === 'battery' && <FinancialBatteryView {...sharedProps} />}
+      {effectiveTab === 'pv' && <FinancialPVView {...sharedProps} />}
+      {effectiveTab === 'system' && <FinancialSystemView {...sharedProps} />}
     </View>
   );
 }
@@ -223,6 +274,24 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
     color: Colors.textSecondary,
+  },
+  projectedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.warning,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  projectedText: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.warning,
+    fontWeight: '500',
   },
   configCard: {
     alignItems: 'center',

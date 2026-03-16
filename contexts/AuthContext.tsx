@@ -1,6 +1,7 @@
 import createContextHook from '@nkzw/create-context-hook';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import type { Session, User } from '@supabase/supabase-js';
 import { UserProfile } from '@/types';
@@ -199,10 +200,57 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     },
   });
 
+  // Account deletion — calls server-side edge function, then clears local data
+  const deleteAccountMutation = useMutation({
+    mutationFn: async () => {
+      console.log('[Auth] Deleting account');
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession?.access_token) throw new Error('Not authenticated');
+
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+      const res = await fetch(`${supabaseUrl}/functions/v1/delete-account`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${currentSession.access_token}`,
+          'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Account deletion failed (${res.status}): ${body}`);
+      }
+    },
+    onSuccess: async () => {
+      try {
+        const allKeys = await AsyncStorage.getAllKeys();
+        const aiessKeys = allKeys.filter(
+          (k) => k.startsWith('@aiess_'),
+        );
+        if (aiessKeys.length > 0) await AsyncStorage.multiRemove(aiessKeys);
+      } catch (e) {
+        console.warn('[Auth] Failed to clear AsyncStorage:', e);
+      }
+
+      try {
+        localStorage.clear();
+      } catch (e) {
+        console.warn('[Auth] Failed to clear localStorage:', e);
+      }
+
+      setSession(null);
+      setUser(null);
+      setProfile(null);
+      queryClient.clear();
+    },
+  });
+
   const { mutateAsync: loginAsync } = loginMutation;
   const { mutateAsync: signupAsync } = signupMutation;
   const { mutateAsync: logoutAsync } = logoutMutation;
   const { mutateAsync: resetPasswordAsync } = resetPasswordMutation;
+  const { mutateAsync: deleteAccountAsync } = deleteAccountMutation;
 
   const login = useCallback((email: string, password: string) => {
     return loginAsync({ email, password });
@@ -220,6 +268,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     return resetPasswordAsync(email);
   }, [resetPasswordAsync]);
 
+  const deleteAccount = useCallback(() => {
+    return deleteAccountAsync();
+  }, [deleteAccountAsync]);
+
   return {
     session,
     user,
@@ -228,11 +280,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     isLoading: !isInitialized,
     isLoginLoading: loginMutation.isPending,
     isSignupLoading: signupMutation.isPending,
+    isDeletingAccount: deleteAccountMutation.isPending,
     loginError: loginMutation.error,
     signupError: signupMutation.error,
     login,
     signup,
     logout,
     resetPassword,
+    deleteAccount,
   };
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { BarChart } from 'react-native-gifted-charts';
 import { Sun, TrendingUp, DollarSign, Zap } from 'lucide-react-native';
@@ -9,96 +9,19 @@ import { ROIProgressCard } from './ROIProgressCard';
 import { ROITimelineChart } from './ROITimelineChart';
 import { KPICard } from './KPICard';
 import { SectionHeader } from './SectionHeader';
-import type { MonthlyFinancialSummary } from '@/types/financial';
 
 const formatPLN = (value: number) =>
   new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value) + ' PLN';
 
 const formatPercent = (value: number) => value.toFixed(1) + '%';
 
-const PV_SEASONAL = [0.25, 0.35, 0.55, 0.8, 1.1, 1.25, 1.3, 1.15, 0.85, 0.55, 0.3, 0.2];
-
-function generateMockData(): MonthlyFinancialSummary[] {
-  const months: MonthlyFinancialSummary[] = [];
-  const base = new Date();
-  base.setMonth(base.getMonth() - 11);
-
-  let cumPV = 0;
-  let cumTotal = 0;
-
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(base);
-    d.setMonth(d.getMonth() + i);
-    const period = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const s = PV_SEASONAL[i];
-
-    const pvProd = Math.round(5200 * s);
-    const selfConsumed = Math.round(pvProd * 0.64);
-    const selfConsumedVal = Math.round(selfConsumed * 0.85);
-    const exported = pvProd - selfConsumed;
-    const exportRev = Math.round(exported * 0.42);
-    const pvSavings = selfConsumedVal + exportRev;
-
-    const batterySavings = Math.round(900 * Math.max(0.6, s));
-    cumPV += pvSavings;
-    cumTotal += pvSavings + batterySavings;
-
-    const gridImport = Math.round(4800 - selfConsumed * 0.8);
-
-    months.push({
-      site_id: 'mock-site',
-      period,
-      energy_cost_pln: Math.round(2800 * Math.max(0.7, s)),
-      distribution_cost_pln: Math.round(920 * Math.max(0.7, s)),
-      seller_margin_cost_pln: Math.round(110 * Math.max(0.7, s)),
-      export_revenue_pln: exportRev,
-      total_cost_pln: Math.round(4100 * Math.max(0.7, s)),
-      pv_self_consumed_kwh: selfConsumed,
-      pv_self_consumed_value_pln: selfConsumedVal,
-      pv_export_revenue_pln: exportRev,
-      pv_total_savings_pln: pvSavings,
-      battery_charge_cost_pln: Math.round(batterySavings * 0.35),
-      battery_discharge_value_pln: Math.round(batterySavings * 1.35),
-      battery_arbitrage_pln: Math.round(batterySavings * 0.6),
-      peak_shaving_savings_pln: Math.round(batterySavings * 0.4),
-      battery_total_savings_pln: batterySavings,
-      total_savings_pln: pvSavings + batterySavings,
-      cumulative_savings_pln: cumTotal,
-      fixed_monthly_fee_pln: 85,
-      moc_zamowiona_cost_pln: Math.round(370 * Math.max(0.7, s)),
-      grid_import_kwh: Math.max(500, gridImport),
-      grid_export_kwh: exported,
-      pv_production_kwh: pvProd,
-      battery_cycles: Math.round(22 * Math.max(0.6, s)),
-      cost_per_cycle_pln: 18.5,
-      savings_per_cycle_pln: 52.3,
-      pv_roi_percent: Math.round((cumPV / 180000) * 1000) / 10,
-      bess_roi_percent: 0,
-      system_roi_percent: 0,
-      pv_break_even_date: '2030-08',
-    });
-  }
-
-  return months;
-}
-
 export function FinancialPVView({
-  deviceId,
-  period,
-  selectedDate,
   t,
-  language,
   financialSettings,
+  monthlySummaries,
+  dataLoading,
 }: FinancialSubViewProps) {
   const ft = t.analytics.financialTab;
-  const [monthlySummaries, setMonthlySummaries] = useState<MonthlyFinancialSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // TODO: Replace with real data from lib/financial.ts
-    setMonthlySummaries(generateMockData());
-    setLoading(false);
-  }, [deviceId, period, selectedDate]);
 
   const totals = useMemo(() => {
     if (monthlySummaries.length === 0) return null;
@@ -214,7 +137,7 @@ export function FinancialPVView({
         color={CHART_COLORS.pv.production}
         savingsKey="pv_total_savings_pln"
         title={ft.roiTimeline}
-        loading={loading}
+        loading={dataLoading}
         t={t}
       />
 

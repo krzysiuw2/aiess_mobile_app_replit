@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { BarChart } from 'react-native-gifted-charts';
 import { TrendingUp, DollarSign, RefreshCw, Zap, Battery } from 'lucide-react-native';
@@ -9,97 +9,18 @@ import { ROIProgressCard } from './ROIProgressCard';
 import { ROITimelineChart } from './ROITimelineChart';
 import { KPICard } from './KPICard';
 import { SectionHeader } from './SectionHeader';
-import type { MonthlyFinancialSummary } from '@/types/financial';
 
 const formatPLN = (value: number) =>
   new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value) + ' PLN';
 
-const SEASONAL = [0.7, 0.75, 0.85, 0.95, 1.1, 1.2, 1.25, 1.15, 1.05, 0.9, 0.8, 0.75];
-
-function generateMockData(): MonthlyFinancialSummary[] {
-  const months: MonthlyFinancialSummary[] = [];
-  const base = new Date();
-  base.setMonth(base.getMonth() - 11);
-
-  let cumBattery = 0;
-  let cumTotal = 0;
-
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(base);
-    d.setMonth(d.getMonth() + i);
-    const period = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const s = SEASONAL[i];
-
-    const arbitrage = Math.round(780 * s);
-    const peakShaving = Math.round(420 * s);
-    const batterySavings = arbitrage + peakShaving;
-    const cycles = Math.round(24 * s);
-    const chargeCost = Math.round(batterySavings * 0.35);
-
-    const pvProd = Math.round(3800 * s);
-    const selfConsumed = Math.round(pvProd * 0.62);
-    const selfConsumedVal = Math.round(selfConsumed * 0.82);
-    const exportRev = Math.round((pvProd - selfConsumed) * 0.42);
-    const pvSavings = selfConsumedVal + exportRev;
-
-    cumBattery += batterySavings;
-    cumTotal += batterySavings + pvSavings;
-
-    months.push({
-      site_id: 'mock-site',
-      period,
-      energy_cost_pln: Math.round(2650 * s),
-      distribution_cost_pln: Math.round(890 * s),
-      seller_margin_cost_pln: Math.round(105 * s),
-      export_revenue_pln: exportRev,
-      total_cost_pln: Math.round(3900 * s),
-      pv_self_consumed_kwh: selfConsumed,
-      pv_self_consumed_value_pln: selfConsumedVal,
-      pv_export_revenue_pln: exportRev,
-      pv_total_savings_pln: pvSavings,
-      battery_charge_cost_pln: chargeCost,
-      battery_discharge_value_pln: Math.round(batterySavings + chargeCost),
-      battery_arbitrage_pln: arbitrage,
-      peak_shaving_savings_pln: peakShaving,
-      battery_total_savings_pln: batterySavings,
-      total_savings_pln: batterySavings + pvSavings,
-      cumulative_savings_pln: cumTotal,
-      fixed_monthly_fee_pln: 85,
-      moc_zamowiona_cost_pln: Math.round(365 * s),
-      grid_import_kwh: Math.round(4200 * s),
-      grid_export_kwh: pvProd - selfConsumed,
-      pv_production_kwh: pvProd,
-      battery_cycles: cycles,
-      cost_per_cycle_pln: cycles > 0 ? Math.round((chargeCost / cycles) * 100) / 100 : 0,
-      savings_per_cycle_pln: cycles > 0 ? Math.round((batterySavings / cycles) * 100) / 100 : 0,
-      pv_roi_percent: 0,
-      bess_roi_percent: Math.round((cumBattery / 120000) * 1000) / 10,
-      system_roi_percent: 0,
-      bess_break_even_date: '2031-03',
-    });
-  }
-
-  return months;
-}
-
 export function FinancialBatteryView({
-  deviceId,
-  period,
-  selectedDate,
   t,
-  language,
   financialSettings,
+  monthlySummaries,
+  dataLoading,
 }: FinancialSubViewProps) {
   const ft = t.analytics.financialTab;
   const { width: screenWidth } = useWindowDimensions();
-  const [monthlySummaries, setMonthlySummaries] = useState<MonthlyFinancialSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // TODO: Replace with real data from lib/financial.ts
-    setMonthlySummaries(generateMockData());
-    setLoading(false);
-  }, [deviceId, period, selectedDate]);
 
   const totals = useMemo(() => {
     if (monthlySummaries.length === 0) return null;
@@ -208,7 +129,7 @@ export function FinancialBatteryView({
         color={CHART_COLORS.battery.line}
         savingsKey="battery_total_savings_pln"
         title={ft.roiTimeline}
-        loading={loading}
+        loading={dataLoading}
         t={t}
       />
 
