@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator,
 import { Clock, ChevronDown, ChevronUp, MessageSquare, Send, BrainCircuit, CalendarDays, Zap, Check, X } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
-import type { AgentDecision, AgentType } from '@/types/ai-agent';
+import type { AgentDecision, AgentType, StrategyChoice, ValidationStatus, StrategyForecast } from '@/types';
 
 interface DecisionTimelineProps {
   decisions: AgentDecision[];
@@ -29,9 +29,45 @@ const STATUS_COLORS: Record<string, string> = {
   rolled_back: '#DC2626',
 };
 
+const VALIDATION_COLORS: Record<ValidationStatus, string> = {
+  ok: '#059669',
+  warning: '#CA8A04',
+  error: '#DC2626',
+};
+
+function formatEngineStrategyName(raw: string | undefined): string | null {
+  if (!raw?.trim()) return null;
+  return raw
+    .split(/[\s_]+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function strategyTierLabel(choice: StrategyChoice | undefined, wiz: { riskAggressive: string; riskBalanced: string; riskConservative: string }): string {
+  if (choice === 'A') return wiz.riskAggressive;
+  if (choice === 'C') return wiz.riskConservative;
+  return wiz.riskBalanced;
+}
+
+function interpolateForecastSummary(template: string, savings: string, pct: string) {
+  return template.replace('{{savings}}', savings).replace('{{pct}}', pct);
+}
+
+function forecastDecisionSummaryLine(forecast: StrategyForecast | undefined, template: string): string | null {
+  if (!forecast?.summary) return null;
+  const { estimated_savings_pln, self_consumption_pct } = forecast.summary;
+  if (estimated_savings_pln == null && self_consumption_pct == null) return null;
+  return interpolateForecastSummary(
+    template,
+    (estimated_savings_pln ?? 0).toFixed(1),
+    (self_consumption_pct ?? 0).toFixed(0),
+  );
+}
+
 export function DecisionTimeline({ decisions, onSubmitComment, isSubmittingComment, onApprove, onReject, isApproving, isRejecting }: DecisionTimelineProps) {
   const { t } = useSettings();
   const dt = t.aiAgent.decisions;
+  const wiz = t.aiAgent.wizard;
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
   const [commentingSK, setCommentingSK] = useState<string | null>(null);
@@ -90,6 +126,10 @@ export function DecisionTimeline({ decisions, onSubmitComment, isSubmittingComme
   };
 
   const getAgentLabel = (type: AgentType) => dt[type] || type;
+  const forecastSummaryTemplate =
+    typeof dt.forecastSummary === 'string'
+      ? dt.forecastSummary
+      : 'Est. savings: {{savings}} PLN, Self-consumption: {{pct}}%';
 
   if (decisions.length === 0) {
     return (
@@ -114,6 +154,7 @@ export function DecisionTimeline({ decisions, onSubmitComment, isSubmittingComme
         const isExpanded = expandedId === d.SK;
         const Icon = AGENT_ICONS[d.agent_type] || BrainCircuit;
         const statusColor = STATUS_COLORS[d.status] || Colors.textSecondary;
+        const decisionForecastLine = forecastDecisionSummaryLine(d.forecast, forecastSummaryTemplate);
 
         return (
           <TouchableOpacity
@@ -135,11 +176,52 @@ export function DecisionTimeline({ decisions, onSubmitComment, isSubmittingComme
                   {dt[`status_${d.status}` as keyof typeof dt] || d.status}
                 </Text>
               </View>
+              {d.validation_status && (
+                <View style={[s.validationDot, { backgroundColor: VALIDATION_COLORS[d.validation_status] }]} />
+              )}
               {isExpanded ? <ChevronUp size={16} color={Colors.textSecondary} /> : <ChevronDown size={16} color={Colors.textSecondary} />}
             </View>
 
             {isExpanded && (
               <View style={s.expandedContent}>
+                {d.selected_strategy && (
+                  <View style={s.section}>
+                    <Text style={s.sectionLabel}>{dt.strategy}</Text>
+                    <Text style={s.strategyTitle}>
+                      {d.selected_strategy} — {formatEngineStrategyName(d.forecast?.strategy) ?? strategyTierLabel(d.selected_strategy, wiz)}
+                    </Text>
+                    <Text style={s.strategyRisk}>
+                      {dt.riskLevel}: {strategyTierLabel(d.selected_strategy, wiz)}
+                    </Text>
+                    {d.strategy_adjustments && Object.keys(d.strategy_adjustments).length > 0 && (
+                      <Text style={s.adjustmentsText}>
+                        {Object.entries(d.strategy_adjustments)
+                          .map(([k, v]) => `${k}: ${v}`)
+                          .join(' · ')}
+                      </Text>
+                    )}
+                  </View>
+                )}
+
+                {(d.validation_status || d.fallback_used) && (
+                  <View style={s.metaRow}>
+                    {d.validation_status && (
+                      <View style={[s.pill, { backgroundColor: VALIDATION_COLORS[d.validation_status] + '18' }]}>
+                        <Text style={[s.pillText, { color: VALIDATION_COLORS[d.validation_status] }]}>
+                          {dt.validation}: {dt[`validation_${d.validation_status}` as keyof typeof dt] ?? d.validation_status}
+                        </Text>
+                      </View>
+                    )}
+                    {d.fallback_used && (
+                      <View style={[s.pill, { backgroundColor: '#E0E7FF' }]}>
+                        <Text style={[s.pillText, { color: '#4338CA' }]}>{dt.fallbackUsed}</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {decisionForecastLine ? <Text style={s.forecastLine}>{decisionForecastLine}</Text> : null}
+
                 {d.reasoning && (
                   <View style={s.section}>
                     <Text style={s.sectionLabel}>{dt.reasoning}</Text>
@@ -147,7 +229,7 @@ export function DecisionTimeline({ decisions, onSubmitComment, isSubmittingComme
                   </View>
                 )}
 
-                {d.rules_created?.length > 0 && (
+                {!d.selected_strategy && d.rules_created?.length > 0 && (
                   <View style={s.section}>
                     <Text style={s.sectionLabel}>{dt.rulesCreated}</Text>
                     {d.rules_created.map((r, i) => (
@@ -158,21 +240,23 @@ export function DecisionTimeline({ decisions, onSubmitComment, isSubmittingComme
                   </View>
                 )}
 
-                {(d as any).rules_modified?.length > 0 && (
+                {!d.selected_strategy && d.rules_modified?.length > 0 && (
                   <View style={s.section}>
                     <Text style={s.sectionLabel}>{dt.rulesModified ?? 'Rules Modified'}</Text>
-                    {(d as any).rules_modified.map((r: any, i: number) => (
+                    {d.rules_modified.map((r, i) => (
                       <View key={i} style={[s.ruleChip, { backgroundColor: '#FFF7ED' }]}>
-                        <Text style={[s.ruleText, { color: '#92400E' }]}>P{r.priority} {r.action} {r.time_window || ''}</Text>
+                        <Text style={[s.ruleText, { color: '#92400E' }]}>
+                          {r.id} {r.change ? `— ${r.change}` : ''}
+                        </Text>
                       </View>
                     ))}
                   </View>
                 )}
 
-                {(d as any).rules_deleted?.length > 0 && (
+                {!d.selected_strategy && d.rules_deleted?.length > 0 && (
                   <View style={s.section}>
                     <Text style={s.sectionLabel}>{dt.rulesDeleted ?? 'Rules Deleted'}</Text>
-                    {(d as any).rules_deleted.map((id: string, i: number) => (
+                    {d.rules_deleted.map((id, i) => (
                       <View key={i} style={[s.ruleChip, { backgroundColor: '#FEF2F2' }]}>
                         <Text style={[s.ruleText, { color: '#991B1B', textDecorationLine: 'line-through' }]}>{id}</Text>
                       </View>
@@ -289,10 +373,18 @@ const s = StyleSheet.create({
   timestamp: { fontSize: 11, color: Colors.textSecondary },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   statusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+  validationDot: { width: 8, height: 8, borderRadius: 4 },
   expandedContent: { marginTop: 12, gap: 10, paddingLeft: 42 },
   section: { gap: 4 },
   sectionLabel: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
   reasoningText: { fontSize: 13, color: Colors.text, lineHeight: 18 },
+  strategyTitle: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  strategyRisk: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  adjustmentsText: { fontSize: 11, color: Colors.textSecondary, marginTop: 4, fontFamily: 'monospace' },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  pill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  pillText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+  forecastLine: { fontSize: 12, color: Colors.text, fontWeight: '600' },
   ruleChip: { backgroundColor: Colors.background, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start', marginTop: 2 },
   ruleText: { fontSize: 12, color: Colors.text, fontFamily: 'monospace' },
   savingsRow: { flexDirection: 'row', gap: 12 },

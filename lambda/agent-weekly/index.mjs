@@ -12,7 +12,7 @@ const bedrock = new BedrockRuntimeClient({ region: 'eu-central-1' });
 const SITE_CONFIG_TABLE = process.env.SITE_CONFIG_TABLE || 'site_config';
 const STATE_TABLE = process.env.AGENT_STATE_TABLE || 'aiess_agent_state';
 const DECISIONS_TABLE = process.env.AGENT_DECISIONS_TABLE || 'aiess_agent_decisions';
-const OPT_ENGINE_FUNCTION = process.env.OPT_ENGINE_FUNCTION || 'aiess-optimization-engine';
+const OPT_ENGINE_V2_FUNCTION = process.env.OPT_ENGINE_V2_FUNCTION || 'aiess-optimization-engine-v2';
 const BEDROCK_MODEL_ID = 'eu.anthropic.claude-sonnet-4-6';
 const MAX_LESSONS = 50;
 
@@ -97,13 +97,16 @@ function aggregateWeekPerformance(decisions) {
 
 async function invokeOptimizationEngine(siteId, siteConfig) {
   const res = await lambda.send(new InvokeCommand({
-    FunctionName: OPT_ENGINE_FUNCTION,
+    FunctionName: OPT_ENGINE_V2_FUNCTION,
     InvocationType: 'RequestResponse',
     Payload: JSON.stringify({ site_id: siteId, site_config: siteConfig, mode: 'weekly' }),
   }));
   const payload = JSON.parse(Buffer.from(res.Payload).toString());
   if (res.FunctionError) throw new Error(`OptEngine error: ${JSON.stringify(payload)}`);
-  return payload;
+  if (payload.statusCode != null && payload.statusCode !== 200) {
+    throw new Error(`OptEngine error: ${JSON.stringify(payload.error || payload)}`);
+  }
+  return payload.body !== undefined ? payload.body : payload;
 }
 
 // ─── Bedrock LLM Call ───────────────────────────────────────────
@@ -152,6 +155,7 @@ ${description}
 - Optimization goals (priority order): ${(profile.goal_priority_order || profile.optimization_goals || []).join(', ') || 'none set'}
 - Backup reserve: ${backupReserve > 0 ? backupReserve + '%' : 'not set (use judgment)'}
 - Risk tolerance: ${profile.risk_tolerance || 'balanced'}
+- Peak shaving confidence (peak_confidence): ${siteConfig.peak_confidence != null ? siteConfig.peak_confidence : '0.99 (engine default)'}
 - Customer constraints: ${profile.constraints_text || 'none'}
 - Seasonal notes: ${profile.seasonal_notes || 'none'}
 
@@ -188,13 +192,30 @@ When no charging opportunity is expected for extended periods (e.g. consecutive 
 - Lessons from daily agents: ${weekPerf.lessons_from_week.length > 0 ? weekPerf.lessons_from_week.join('; ') : 'none'}
 - Customer feedback: ${weekPerf.customer_feedback.length > 0 ? weekPerf.customer_feedback.join('; ') : 'none'}
 
-## 7-Day Forecast Summary (from optimization engine)
+${forecast.strategies?.length ? `## Optimization engine (v2) — 3 strategy packages
+The engine produced **three strategy packages**: **aggressive**, **balanced**, and **conservative**. Each package bundles rules with a simulated per-strategy **forecast** (hourly flow and summary). Use this for weekly context: which risk posture fits the site this week, and how PV / grid / SoC should trend — deployment chooses a package; do not treat the output as loose "hints" or isolated charge/discharge windows.
+
+- Current SoC: ${forecast.current_soc != null ? `${forecast.current_soc}%` : 'unknown'}
+- TGE prices (horizon): ${forecast.data_summary?.tge_price_range
+    ? `min ${forecast.data_summary.tge_price_range.min}, max ${forecast.data_summary.tge_price_range.max}, avg ${forecast.data_summary.tge_price_range.avg} PLN/MWh`
+    : forecast.data_summary?.price_range
+      ? `min ${forecast.data_summary.price_range.min}, max ${forecast.data_summary.price_range.max}`
+      : 'n/a'}
+- PV / load (horizon): ${forecast.data_summary?.pv_total_kwh != null ? `${forecast.data_summary.pv_total_kwh} kWh PV, ${forecast.data_summary.load_total_kwh} kWh load` : 'n/a'}${forecast.data_summary?.surplus_total_kwh != null ? `, surplus ${forecast.data_summary.surplus_total_kwh} kWh` : ''}
+
+**Per package:**
+${forecast.strategies.map((s) => {
+    const sum = s.forecast?.summary || {};
+    return `- **${s.name}** (${s.risk || 'n/a'}): simulation_valid=${s.simulation_valid}; estimated_savings_pln≈${sum.estimated_savings_pln != null ? sum.estimated_savings_pln : 'n/a'}; SoC ${sum.soc_start ?? '?'}% → ${sum.soc_end ?? '?'}%; peak grid import ${sum.peak_grid_import_kw ?? '?'} kW; self-consumption ${sum.self_consumption_pct ?? '?'}%`;
+  }).join('\n')}
+${forecast.tradeoff_analysis ? `
+**Trade-off analysis:** ${JSON.stringify(forecast.tradeoff_analysis)}` : ''}` : `## 7-Day Forecast Summary (from optimization engine)
 - Charge windows found: ${forecast.charge_windows?.length || 0}
 - Discharge windows found: ${forecast.discharge_windows?.length || 0}
 - Peak shaving needed: ${forecast.peak_shaving_needed ? 'YES' : 'no'}
 - Bell curve active: ${forecast.bell_curve_active ? 'YES' : 'no'}
 - Projected weekly savings: arbitrage ${forecast.projected_savings?.arbitrage_pln?.toFixed(2) || '0.00'} PLN, peak shaving ${forecast.projected_savings?.peak_shaving_pln?.toFixed(2) || '0.00'} PLN, autokonsumpcja PV ${forecast.projected_savings?.pv_self_consumption_pln?.toFixed(2) || '0.00'} PLN
-- Constraints applied: ${(forecast.constraints_applied || []).join(', ') || 'none'}
+- Constraints applied: ${(forecast.constraints_applied || []).join(', ') || 'none'}`}
 ${forecast.load_pv_profile?.data_available ? `
 ## CRITICAL: Load vs PV Summary
 - PV peak: ${forecast.load_pv_profile.pv_actual_peak_kw || pvPeak} kW
@@ -309,9 +330,11 @@ async function logWeeklyDecision(siteId, weeklyPlan, weekPerf, forecast) {
       timestamp: now,
       agent_type: 'weekly',
       input_summary: {
-        tge_prices_range: forecast.data_summary?.price_range || null,
-        pv_forecast_kwh: null,
-        load_forecast_kwh: null,
+        tge_prices_range: forecast.data_summary?.tge_price_range
+          || forecast.data_summary?.price_range
+          || null,
+        pv_forecast_kwh: forecast.data_summary?.pv_total_kwh ?? null,
+        load_forecast_kwh: forecast.data_summary?.load_total_kwh ?? null,
         current_soc: forecast.current_soc ?? null,
         battery_capacity_kwh: null,
       },
@@ -319,14 +342,28 @@ async function logWeeklyDecision(siteId, weeklyPlan, weekPerf, forecast) {
       rules_created: [],
       rules_modified: [],
       rules_deleted: [],
-      predicted_outcome: {
-        arbitrage_pln: forecast.projected_savings?.arbitrage_pln || 0,
-        peak_shaving_pln: forecast.projected_savings?.peak_shaving_pln || 0,
-        pv_savings_pln: forecast.projected_savings?.pv_self_consumption_pln || 0,
-        total_savings_pln: (forecast.projected_savings?.arbitrage_pln || 0)
-          + (forecast.projected_savings?.peak_shaving_pln || 0)
-          + (forecast.projected_savings?.pv_self_consumption_pln || 0),
-      },
+      predicted_outcome: (() => {
+        const ps = forecast.projected_savings;
+        if (ps) {
+          return {
+            arbitrage_pln: ps.arbitrage_pln || 0,
+            peak_shaving_pln: ps.peak_shaving_pln || 0,
+            pv_savings_pln: ps.pv_self_consumption_pln || 0,
+            total_savings_pln: (ps.arbitrage_pln || 0)
+              + (ps.peak_shaving_pln || 0)
+              + (ps.pv_self_consumption_pln || 0),
+          };
+        }
+        const bal = (forecast.strategies || []).find(s => s.name === 'balanced');
+        const est = bal?.forecast?.summary?.estimated_savings_pln;
+        const t = typeof est === 'number' ? est : 0;
+        return {
+          arbitrage_pln: 0,
+          peak_shaving_pln: 0,
+          pv_savings_pln: 0,
+          total_savings_pln: t,
+        };
+      })(),
       actual_outcome: null,
       delta: null,
       lesson_learned: null,

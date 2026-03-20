@@ -18,6 +18,7 @@ export interface SiteConfigAiProfile {
   shift_pattern_detail?: string;
   wizard_completed?: boolean;
   wizard_completed_at?: string;
+  peak_confidence?: number;
 }
 
 export type OptimizationGoal =
@@ -81,6 +82,59 @@ export interface AgentDecisionComment {
   created_at: string;
 }
 
+export interface ForecastHourly {
+  hour: number;
+  soc_pct: number;
+  battery_kw: number;
+  grid_kw: number;
+  pv_kw: number;
+  load_kw: number;
+  pv_self_consumed_kw: number;
+  pv_to_battery_kw: number;
+  pv_exported_kw: number;
+  grid_import_kw: number;
+  grid_export_kw: number;
+  batt_to_load_kw: number;
+  batt_to_grid_kw: number;
+  active_rule?: string;
+  price_pln_mwh: number;
+  net_cost_pln: number;
+}
+
+export interface ForecastSummary {
+  total_grid_import_kwh: number;
+  total_grid_export_kwh: number;
+  total_pv_self_consumed_kwh: number;
+  total_pv_to_battery_kwh: number;
+  self_consumption_pct: number;
+  soc_start: number;
+  soc_end: number;
+  soc_min: number;
+  soc_max: number;
+  peak_grid_import_kw: number;
+  peak_grid_export_kw: number;
+  total_net_cost_pln: number;
+  estimated_savings_pln: number;
+}
+
+export interface StrategyForecast {
+  strategy: string;
+  horizon_hours: number;
+  hourly: ForecastHourly[];
+  summary: ForecastSummary;
+}
+
+export interface StrategyPackage {
+  name: string;
+  rules: Record<string, unknown>[];
+  forecast: StrategyForecast;
+  simulation_valid: boolean;
+  risk: string;
+}
+
+export type StrategyChoice = 'A' | 'B' | 'C';
+export type ValidationStatus = 'ok' | 'warning' | 'error';
+
 export interface AgentDecision {
   PK: string;
   SK: string;
@@ -99,6 +153,11 @@ export interface AgentDecision {
   customer_comments?: AgentDecisionComment[];
   status: DecisionStatus;
   ttl?: number;
+  selected_strategy?: StrategyChoice;
+  strategy_adjustments?: Record<string, number>;
+  forecast?: StrategyForecast;
+  validation_status?: ValidationStatus;
+  fallback_used?: boolean;
 }
 
 // ─── Lesson ─────────────────────────────────────────────────────
@@ -174,19 +233,24 @@ export interface BellCurveLimit {
 }
 
 export interface OptimizationResult {
-  charge_windows: ChargeWindow[];
-  discharge_windows: DischargeWindow[];
-  pv_surplus_windows: PvSurplusWindow[];
-  peak_shaving_needed: boolean;
-  peak_shaving_windows?: PeakShavingWindow[];
-  bell_curve_active: boolean;
-  bell_curve_limits?: BellCurveLimit[];
-  projected_savings: {
-    arbitrage_pln: number;
-    peak_shaving_pln: number;
-    pv_self_consumption_pln: number;
+  site_id: string;
+  timestamp: string;
+  mode: string;
+  current_soc: number;
+  strategies: StrategyPackage[];
+  tradeoff_analysis: {
+    winner: string;
+    arbitrage_value_per_kwh: number;
+    pv_value_per_kwh: number;
+    night_charge_kwh: number;
+    room_for_pv_kwh: number;
   };
-  constraints_applied: string[];
+  data_summary: {
+    tge_price_range: { min: number; max: number; avg: number };
+    pv_total_kwh: number;
+    load_total_kwh: number;
+    surplus_total_kwh: number;
+  };
 }
 
 // ─── API Query Params ───────────────────────────────────────────

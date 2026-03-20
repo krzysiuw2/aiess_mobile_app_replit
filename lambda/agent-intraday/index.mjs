@@ -16,7 +16,7 @@ const SCHEDULES_API_KEY = process.env.SCHEDULES_API_KEY || '';
 const SITE_CONFIG_TABLE = process.env.SITE_CONFIG_TABLE || 'site_config';
 const STATE_TABLE = process.env.AGENT_STATE_TABLE || 'aiess_agent_state';
 const DECISIONS_TABLE = process.env.AGENT_DECISIONS_TABLE || 'aiess_agent_decisions';
-const OPT_FUNCTION = process.env.OPTIMIZATION_FUNCTION || 'aiess-optimization-engine';
+const OPT_FUNCTION = process.env.OPTIMIZATION_V2_FUNCTION || 'aiess-optimization-engine-v2';
 
 const BEDROCK_MODEL = 'anthropic.claude-3-haiku-20240307-v1:0';
 const TTL_30_DAYS = 30 * 24 * 60 * 60;
@@ -201,7 +201,10 @@ async function invokeOptimizationEngine(siteId, siteConfig) {
 
   const result = JSON.parse(new TextDecoder().decode(Payload));
   if (result.errorMessage) throw new Error(`OptEngine error: ${result.errorMessage}`);
-  return result;
+  if (result.statusCode != null && result.statusCode !== 200) {
+    throw new Error(`OptEngine error: ${JSON.stringify(result.error || result)}`);
+  }
+  return result.body !== undefined ? result.body : result;
 }
 
 // ─── Schedules API ──────────────────────────────────────────────
@@ -380,10 +383,15 @@ CURRENT DEVIATIONS:
 WEEKLY STRATEGY: ${weeklyStrategy}
 RECENT LESSONS: ${lessons || 'none'}
 
-OPTIMIZATION ENGINE (12h lookahead) suggests:
-- Charge windows: ${JSON.stringify(optimResult?.charge_windows || [])}
-- Discharge windows: ${JSON.stringify(optimResult?.discharge_windows || [])}
-- Peak shaving needed: ${optimResult?.peak_shaving_needed || false}
+OPTIMIZATION ENGINE (v2) produced **3 strategy packages** (aggressive / balanced / conservative). Each has rules and its own simulated forecast — your job is **minimal P6 tuning** for the next few hours, aligned with weekly strategy and the intended package behavior, **not** a full rule regeneration for the day.
+
+Strategy snapshot:
+${optimResult?.strategies?.length
+    ? optimResult.strategies.map((s) => {
+        const sum = s.forecast?.summary || {};
+        return `- ${s.name} (${s.risk || 'n/a'}): simulation_valid=${s.simulation_valid}; savings≈${sum.estimated_savings_pln ?? 'n/a'} PLN; SoC → ${sum.soc_end ?? '?'}%`;
+      }).join('\n')
+    : `- (legacy) charge_windows: ${JSON.stringify(optimResult?.charge_windows || [])}; discharge_windows: ${JSON.stringify(optimResult?.discharge_windows || [])}; peak_shaving_needed: ${optimResult?.peak_shaving_needed || false}`}
 
 Respond ONLY with a JSON object:
 {

@@ -1,0 +1,4 @@
+numpy
+influxdb-client
+boto3
+awslambdaric

@@ -4,9 +4,49 @@ import type {
   AgentDecision,
   AgentDecisionQuery,
   AgentNotification,
+  StrategyForecast,
+  StrategyChoice,
 } from '@/types/ai-agent';
 
 // ─── Agent State ────────────────────────────────────────────────
+
+export async function getAgentForecast(siteId: string): Promise<{
+  forecast: StrategyForecast | null;
+  selected_strategy: StrategyChoice | null;
+  timestamp: string | null;
+  site_id: string;
+}> {
+  try {
+    const response = await callAwsProxy(`/agent/forecast/${siteId}`);
+    if (!response.ok) {
+      return {
+        forecast: null,
+        selected_strategy: null,
+        timestamp: null,
+        site_id: siteId,
+      };
+    }
+    const data = (await response.json()) as {
+      forecast?: StrategyForecast | null;
+      selected_strategy?: StrategyChoice | null;
+      timestamp?: string | null;
+      site_id?: string;
+    };
+    return {
+      forecast: data.forecast ?? null,
+      selected_strategy: data.selected_strategy ?? null,
+      timestamp: data.timestamp ?? null,
+      site_id: data.site_id ?? siteId,
+    };
+  } catch {
+    return {
+      forecast: null,
+      selected_strategy: null,
+      timestamp: null,
+      site_id: siteId,
+    };
+  }
+}
 
 export async function getAgentState(siteId: string): Promise<AgentState | null> {
   try {

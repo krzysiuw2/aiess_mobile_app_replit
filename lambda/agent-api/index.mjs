@@ -61,6 +61,37 @@ async function queryDecisions(siteId, { agent_type, days, limit } = {}) {
   return results;
 }
 
+async function getLatestForecast(siteId) {
+  const pk = `DECISION#${siteId}`;
+  let lastKey;
+  const pageSize = 25;
+
+  for (;;) {
+    const params = {
+      TableName: DECISIONS_TABLE,
+      KeyConditionExpression: 'PK = :pk',
+      ExpressionAttributeValues: { ':pk': pk },
+      ScanIndexForward: false,
+      Limit: pageSize,
+    };
+    if (lastKey) params.ExclusiveStartKey = lastKey;
+
+    const { Items, LastEvaluatedKey } = await docClient.send(new QueryCommand(params));
+    const row = (Items || []).find(d => d.forecast != null);
+    if (row) {
+      return {
+        forecast: row.forecast,
+        selected_strategy: row.selected_strategy ?? null,
+        timestamp: row.timestamp ?? null,
+        site_id: siteId,
+      };
+    }
+    if (!LastEvaluatedKey) break;
+    lastKey = LastEvaluatedKey;
+  }
+  return null;
+}
+
 // ─── Add Comment ────────────────────────────────────────────────
 
 async function addComment(siteId, decisionSK, commentText) {
@@ -129,7 +160,7 @@ async function getDecision(siteId, decisionSK) {
   return Items?.[0] || null;
 }
 
-async function writeScheduleRules(siteId, rules) {
+async function deploySchToShadow(siteId, sch) {
   const SCHEDULES_API = process.env.SCHEDULES_API || '';
   const SCHEDULES_API_KEY = process.env.SCHEDULES_API_KEY || '';
   if (!SCHEDULES_API) throw new Error('SCHEDULES_API not configured');
@@ -137,27 +168,22 @@ async function writeScheduleRules(siteId, rules) {
   const res = await fetch(`${SCHEDULES_API}/schedules/${siteId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': SCHEDULES_API_KEY },
-    body: JSON.stringify({ rules }),
+    body: JSON.stringify({ site_id: siteId, sch }),
   });
   if (!res.ok) throw new Error(`Schedules API ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
-async function approveDecision(siteId, decisionSK, selectedRuleIds) {
+async function approveDecision(siteId, decisionSK) {
   const decision = await getDecision(siteId, decisionSK);
   if (!decision) throw new Error('Decision not found');
   if (decision.status !== 'pending_approval') throw new Error(`Decision is ${decision.status}, cannot approve`);
 
-  const state = await getAgentState(siteId);
-  const snapshot = state?.schedule_snapshot;
-  let rulesToApply = snapshot?.rules || [];
+  const sch = decision.proposed_sch || {};
+  const ruleCount = ['p_6', 'p_7', 'p_8'].reduce((n, k) => n + (sch[k]?.length || 0), 0);
 
-  if (selectedRuleIds?.length) {
-    rulesToApply = rulesToApply.filter(r => selectedRuleIds.includes(r.id));
-  }
-
-  if (rulesToApply.length > 0) {
-    await writeScheduleRules(siteId, rulesToApply);
+  if (ruleCount > 0) {
+    await deploySchToShadow(siteId, sch);
   }
 
   await docClient.send(new UpdateCommand({
@@ -168,11 +194,11 @@ async function approveDecision(siteId, decisionSK, selectedRuleIds) {
     ExpressionAttributeValues: {
       ':approved': 'approved',
       ':ts': new Date().toISOString(),
-      ':cnt': rulesToApply.length,
+      ':cnt': ruleCount,
     },
   }));
 
-  return { status: 'approved', rules_applied: rulesToApply.length };
+  return { status: 'approved', rules_applied: ruleCount };
 }
 
 async function rejectDecision(siteId, decisionSK, reason) {
@@ -255,6 +281,15 @@ export const handler = async (event) => {
       return response(200, state);
     }
 
+    // GET /agent/forecast/{site_id}
+    const forecastMatch = path.match(/\/agent\/forecast\/([^/]+)$/);
+    if (forecastMatch && method === 'GET') {
+      const siteId = forecastMatch[1];
+      const data = await getLatestForecast(siteId);
+      if (!data) return response(404, { error: 'No forecast found' });
+      return response(200, data);
+    }
+
     // GET /agent/decisions/{site_id}
     const decisionsMatch = path.match(/\/agent\/decisions\/([^/]+)$/);
     if (decisionsMatch && method === 'GET') {
@@ -303,7 +338,7 @@ export const handler = async (event) => {
       if (!body?.decision_sk) {
         return response(400, { error: 'decision_sk is required' });
       }
-      const result = await approveDecision(siteId, body.decision_sk, body.selected_rule_ids);
+      const result = await approveDecision(siteId, body.decision_sk);
       return response(200, result);
     }
 

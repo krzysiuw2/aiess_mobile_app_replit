@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { ArrowLeft, Shield, Zap, Info, BatteryCharging, Sun, X, MapPin, Battery, Cpu, SunMedium, Plug, BarChart3, Plus, Trash2, BrainCircuit, CheckCircle2, AlertCircle } from 'lucide-react-native';
+import { ArrowLeft, Shield, Zap, Info, BatteryCharging, Sun, X, MapPin, Battery, Cpu, SunMedium, Plug, BarChart3, Plus, Minus, Trash2, BrainCircuit, CheckCircle2, AlertCircle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useDevices } from '@/contexts/DeviceContext';
@@ -46,6 +46,7 @@ export default function SiteSettingsScreen() {
   const [savingSafety, setSavingSafety] = useState(false);
   const [savingSiteLimit, setSavingSiteLimit] = useState(false);
   const [showAiWizard, setShowAiWizard] = useState(false);
+  const [peakConfidence, setPeakConfidence] = useState('0.99');
 
   // Phase 2 state
   const [battManufacturer, setBattManufacturer] = useState('');
@@ -115,6 +116,10 @@ export default function SiteSettingsScreen() {
       setLoadOpEnd(siteConfig.load_profile?.operating_hours?.end || '');
       setLoadShift(siteConfig.load_profile?.shift_pattern || '');
       setLoadSeasonal(siteConfig.load_profile?.seasonal_notes || '');
+      const pc = siteConfig.ai_profile?.peak_confidence;
+      setPeakConfidence(
+        (typeof pc === 'number' && !Number.isNaN(pc) ? pc : 0.99).toFixed(2),
+      );
     }
   }, [siteConfig]);
 
@@ -308,6 +313,40 @@ export default function SiteSettingsScreen() {
     }
   };
 
+  const roundPeakConfidence = (v: number) => Math.round(v * 100) / 100;
+
+  const bumpPeakConfidence = (delta: number) => {
+    const cur = parseFloat(peakConfidence);
+    const base = Number.isFinite(cur) ? cur : 0.99;
+    const next = roundPeakConfidence(Math.min(1, Math.max(0.9, base + delta)));
+    setPeakConfidence(next.toFixed(2));
+  };
+
+  const handleSavePeakConfidence = async () => {
+    const v = parseFloat(peakConfidence);
+    if (!Number.isFinite(v)) {
+      Alert.alert(t.common.error, t.common.pleaseEnterValidNumbers);
+      return;
+    }
+    const clamped = roundPeakConfidence(Math.min(1, Math.max(0.9, v)));
+    if (clamped < 0.9 || clamped > 1) {
+      Alert.alert(t.common.error, t.common.pleaseEnterValidNumbers);
+      return;
+    }
+    try {
+      await updateConfig({
+        ai_profile: {
+          ...siteConfig?.ai_profile,
+          peak_confidence: clamped,
+        },
+      });
+      setPeakConfidence(clamped.toFixed(2));
+      Alert.alert(t.common.success, t.settings.peak_confidence_saved);
+    } catch {
+      Alert.alert(t.common.error, t.settings.failedSaveSiteConfig);
+    }
+  };
+
   const handleSaveLoadProfile = async () => {
     try {
       await updateConfig({
@@ -467,6 +506,57 @@ export default function SiteSettingsScreen() {
             <Text style={styles.sectionTitle}>{t.aiAgent.aiProfile}</Text>
           </View>
           <Text style={styles.sectionDescription}>{t.aiAgent.aiProfileDesc}</Text>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>{t.settings.peak_confidence}</Text>
+            <Text style={styles.hintText}>{t.settings.peak_confidence_desc}</Text>
+            <View style={styles.peakConfidenceRow}>
+              <TouchableOpacity
+                style={styles.peakConfidenceStep}
+                onPress={() => bumpPeakConfidence(-0.01)}
+                disabled={isUpdating || parseFloat(peakConfidence) <= 0.9}
+              >
+                <Minus size={22} color={Colors.text} />
+              </TouchableOpacity>
+              <TextInput
+                style={[styles.textInput, styles.peakConfidenceInput]}
+                value={peakConfidence}
+                onChangeText={(v) => {
+                  const cleaned = v.replace(/[^0-9.]/g, '');
+                  setPeakConfidence(cleaned);
+                }}
+                onBlur={() => {
+                  const v = parseFloat(peakConfidence);
+                  if (!Number.isFinite(v)) {
+                    setPeakConfidence((siteConfig?.ai_profile?.peak_confidence ?? 0.99).toFixed(2));
+                    return;
+                  }
+                  setPeakConfidence(roundPeakConfidence(Math.min(1, Math.max(0.9, v))).toFixed(2));
+                }}
+                keyboardType="decimal-pad"
+                placeholder="0.99"
+                placeholderTextColor={Colors.textSecondary}
+              />
+              <TouchableOpacity
+                style={styles.peakConfidenceStep}
+                onPress={() => bumpPeakConfidence(0.01)}
+                disabled={isUpdating || parseFloat(peakConfidence) >= 1}
+              >
+                <Plus size={22} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={[styles.saveButton, { marginBottom: 12 }]}
+            onPress={handleSavePeakConfidence}
+            disabled={isUpdating}
+          >
+            {isUpdating ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.saveButtonText}>{t.common.save}</Text>
+            )}
+          </TouchableOpacity>
 
           {siteConfig?.ai_profile?.wizard_completed ? (
             <View style={{ gap: 10 }}>
@@ -1358,6 +1448,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  peakConfidenceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+  },
+  peakConfidenceStep: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  peakConfidenceInput: {
+    flex: 1,
+    textAlign: 'center',
+    fontWeight: '600',
+    paddingVertical: 12,
   },
   touPeriodCard: {
     backgroundColor: Colors.background,

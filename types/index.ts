@@ -232,6 +232,7 @@ export interface SiteConfigGridConnection {
   export_allowed?: boolean;
   export_follows_sun?: boolean;
   export_limit_kw?: number;
+  import_limit_kw?: number;
   metering_point_id?: string;
 }
 
@@ -278,6 +279,7 @@ export interface SiteConfigAutomation {
   daily_time?: string;
   weekly_day?: number;
   weekly_time?: string;
+  use_custom_fallback_rules?: boolean;
 }
 
 export interface SiteConfig {
@@ -370,6 +372,12 @@ export type {
   AgentDecisionOutcome,
   AgentDecisionRuleCreated,
   AgentDecisionRuleModified,
+  ForecastHourly,
+  ForecastSummary,
+  StrategyForecast,
+  StrategyPackage,
+  StrategyChoice,
+  ValidationStatus,
   AgentLesson,
   LessonCategory,
   AgentState,

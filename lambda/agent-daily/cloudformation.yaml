@@ -31,9 +31,9 @@ Parameters:
   InfluxOrg:
     Type: String
     Default: aiess
-  OptimizationEngineFunction:
+  OptimizationEngineV2Function:
     Type: String
-    Default: aiess-optimization-engine
+    Default: aiess-optimization-engine-v2
 
 Resources:
   AgentDailyLambdaRole:
@@ -79,7 +79,7 @@ Resources:
                 Effect: Allow
                 Action:
                   - lambda:InvokeFunction
-                Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OptimizationEngineFunction}'
+                Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OptimizationEngineV2Function}'
               - Sid: BedrockInvokeModel
                 Effect: Allow
                 Action:
@@ -106,7 +106,7 @@ Resources:
           INFLUX_URL: !Ref InfluxUrl
           INFLUX_TOKEN: !Ref InfluxToken
           INFLUX_ORG: !Ref InfluxOrg
-          OPTIMIZATION_ENGINE_FUNCTION: !Ref OptimizationEngineFunction
+          OPTIMIZATION_ENGINE_V2_FUNCTION: !Ref OptimizationEngineV2Function
 
   AgentDailyRule:
     Type: AWS::Events::Rule

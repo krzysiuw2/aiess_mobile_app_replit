@@ -13,13 +13,12 @@ const SCHEDULES_API_KEY = process.env.SCHEDULES_API_KEY || '';
 const INFLUX_URL = process.env.INFLUX_URL || 'https://eu-central-1-1.aws.cloud2.influxdata.com';
 const INFLUX_TOKEN = process.env.INFLUX_TOKEN || '';
 const INFLUX_ORG = process.env.INFLUX_ORG || 'aiess';
+const BEDROCK_TIMEOUT_MS = Number(process.env.BEDROCK_TIMEOUT_MS || 55_000);
 
 const ddb = new DynamoDBClient({ region: REGION });
 const docClient = DynamoDBDocumentClient.from(ddb);
 const lambda = new LambdaClient({ region: REGION });
 const bedrock = new BedrockRuntimeClient({ region: REGION });
-
-// ─── DynamoDB Helpers ────────────────────────────────────────────
 
 async function scanAutomationEnabledSites() {
   const items = [];
@@ -75,33 +74,29 @@ async function logDecision(decision) {
   }));
 }
 
-// ─── Schedules API ───────────────────────────────────────────────
-
-async function fetchCurrentSchedules(siteId) {
-  if (!SCHEDULES_API) return [];
+async function fetchScheduleSch(siteId) {
+  if (!SCHEDULES_API) return {};
   const res = await fetch(`${SCHEDULES_API}/schedules/${siteId}`, {
     headers: { 'x-api-key': SCHEDULES_API_KEY },
   });
   if (!res.ok) {
     console.warn(`[AgentDaily] Schedules API ${res.status} for ${siteId}`);
-    return [];
+    return {};
   }
   const data = await res.json();
-
-  // Flatten the { sch: { p_6: [...], p_7: [...], p_8: [...], p_9: [...] } } structure
-  const rules = [];
-  const sch = data?.sch || data;
-  for (const [priorityKey, priorityRules] of Object.entries(sch)) {
-    if (!Array.isArray(priorityRules)) continue;
-    const pNum = parseInt(priorityKey.replace('p_', ''), 10);
-    for (const rule of priorityRules) {
-      rules.push({ ...rule, p: pNum || rule.p });
-    }
-  }
-  return rules;
+  const sch = data?.sch || {};
+  return typeof sch === 'object' && sch !== null ? { ...sch } : {};
 }
 
-async function writeScheduleRules(siteId, rules) {
+function mergeSchReplaceP678(currentSch, replacement) {
+  const out = { ...(currentSch || {}) };
+  out.p_6 = Array.isArray(replacement.p_6) ? replacement.p_6 : [];
+  out.p_7 = Array.isArray(replacement.p_7) ? replacement.p_7 : [];
+  out.p_8 = Array.isArray(replacement.p_8) ? replacement.p_8 : [];
+  return out;
+}
+
+async function deployScheduleSch(siteId, sch) {
   if (!SCHEDULES_API) throw new Error('SCHEDULES_API not configured');
   const res = await fetch(`${SCHEDULES_API}/schedules/${siteId}`, {
     method: 'PUT',
@@ -109,13 +104,58 @@ async function writeScheduleRules(siteId, rules) {
       'Content-Type': 'application/json',
       'x-api-key': SCHEDULES_API_KEY,
     },
-    body: JSON.stringify({ rules }),
+    body: JSON.stringify({ site_id: siteId, sch }),
   });
   if (!res.ok) throw new Error(`Schedules API PUT ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
-// ─── Recent Customer Comments ────────────────────────────────────
+function rulesToSchBuckets(rules) {
+  const sch = { p_6: [], p_7: [], p_8: [] };
+  for (const rule of rules) {
+    const pr = Number(rule.priority ?? rule.p ?? 7);
+    const key = pr === 6 ? 'p_6' : pr === 8 ? 'p_8' : 'p_7';
+    sch[key].push(rule);
+  }
+  return sch;
+}
+
+function cloneRules(rules) {
+  return JSON.parse(JSON.stringify(rules));
+}
+
+function clamp(n, lo, hi) {
+  return Math.min(hi, Math.max(lo, n));
+}
+
+function applyBoundedAdjustments(rules, adjustments) {
+  if (!adjustments || typeof adjustments !== 'object') return rules;
+  const out = cloneRules(rules);
+  for (const rule of out) {
+    const pr = Number(rule.priority ?? rule.p);
+    const a = rule.a || {};
+    const c = rule.c || {};
+    if (pr === 8 && a.t === 'dis' && c.gpv != null && adjustments.peak_shaving_threshold_kw != null) {
+      const base = Number(c.gpv);
+      const v = Number(adjustments.peak_shaving_threshold_kw);
+      if (!Number.isNaN(base) && !Number.isNaN(v)) {
+        const lo = base * 0.9;
+        const hi = base * 1.1;
+        c.gpv = Math.round(clamp(v, lo, hi) * 10) / 10;
+        rule.c = c;
+      }
+    }
+    if (a.t === 'dt' && a.soc != null && adjustments.discharge_soc_target != null) {
+      const base = Number(a.soc);
+      const v = Number(adjustments.discharge_soc_target);
+      if (!Number.isNaN(base) && !Number.isNaN(v)) {
+        a.soc = Math.round(clamp(v, base - 10, base + 10));
+        rule.a = a;
+      }
+    }
+  }
+  return out;
+}
 
 async function fetchRecentComments(siteId, days = 7) {
   const since = new Date(Date.now() - days * 86400_000).toISOString();
@@ -140,8 +180,6 @@ async function fetchRecentComments(siteId, days = 7) {
   }
   return comments;
 }
-
-// ─── InfluxDB Telemetry ─────────────────────────────────────────
 
 async function fluxQuery(query) {
   const res = await fetch(`${INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}`, {
@@ -183,19 +221,48 @@ async function fetchYesterdayTelemetry(siteId) {
   }
 }
 
-// ─── Optimization Engine ─────────────────────────────────────────
-
-async function invokeOptimizationEngine(siteId, siteConfig) {
+async function invokeOptimizationEngineV2(siteId, siteConfig) {
   const payload = { site_id: siteId, site_config: siteConfig, mode: 'daily' };
-  const { Payload } = await lambda.send(new InvokeCommand({
-    FunctionName: process.env.OPTIMIZATION_ENGINE_FUNCTION || 'aiess-optimization-engine',
+  const fn = process.env.OPTIMIZATION_ENGINE_V2_FUNCTION || 'aiess-optimization-engine-v2';
+  const { Payload, FunctionError } = await lambda.send(new InvokeCommand({
+    FunctionName: fn,
     InvocationType: 'RequestResponse',
     Payload: JSON.stringify(payload),
   }));
-  return JSON.parse(Buffer.from(Payload).toString());
+  const raw = JSON.parse(Buffer.from(Payload).toString());
+  if (FunctionError) {
+    const msg = raw.errorMessage || raw.message || JSON.stringify(raw);
+    throw new Error(`Optimization engine Lambda error: ${msg}`);
+  }
+  const inner = raw.body !== undefined ? raw.body : raw;
+  const body = typeof inner === 'string' ? JSON.parse(inner) : inner;
+  const code = raw.statusCode;
+  if (code != null && code !== 200) {
+    throw new Error(body?.error || `Optimization engine status ${code}`);
+  }
+  if (!body?.strategies || !Array.isArray(body.strategies) || body.strategies.length < 1) {
+    throw new Error('Optimization engine returned no strategies');
+  }
+  return body;
 }
 
-// ─── Outcome Tracking ────────────────────────────────────────────
+function strategiesByName(strategies) {
+  const m = {};
+  for (const s of strategies) {
+    if (s?.name) m[String(s.name).toLowerCase()] = s;
+  }
+  return m;
+}
+
+function pickStrategy(strategies, letter) {
+  const by = strategiesByName(strategies);
+  const L = String(letter ?? '').trim().toUpperCase();
+  if (L === 'A') return by.aggressive;
+  if (L === 'B') return by.balanced;
+  if (L === 'C') return by.conservative;
+  const low = String(letter ?? '').trim().toLowerCase();
+  return by[low] || null;
+}
 
 function evaluateYesterdayOutcome(telemetry, previousDecision) {
   if (!telemetry.length || !previousDecision) {
@@ -259,8 +326,6 @@ function evaluateYesterdayOutcome(telemetry, previousDecision) {
   };
 }
 
-// ─── Bedrock LLM Call ────────────────────────────────────────────
-
 function detectLanguage(siteConfig) {
   const lang = siteConfig.ai_profile?.preferred_language
     || siteConfig.general?.language
@@ -270,115 +335,95 @@ function detectLanguage(siteConfig) {
 
 function buildSystemPrompt(siteConfig) {
   const language = detectLanguage(siteConfig);
-  const backupReserve = siteConfig.ai_profile?.backup_reserve_percent ?? 0;
-  const batteryKwh = siteConfig.battery?.capacity_kwh || 100;
-  const maxCharge = siteConfig.power_limits?.max_charge_kw || 50;
-  const maxDischarge = siteConfig.power_limits?.max_discharge_kw || 50;
-  const pvPeak = siteConfig.pv_system?.total_peak_kw || 0;
-  const gridCapacity = siteConfig.grid_connection?.capacity_kva;
+  return `You are an energy strategy selector for a BESS site. The optimization engine already produced three candidate strategies (aggressive, balanced, conservative). Your job is to pick exactly one letter: A, B, or C, optionally suggest small bounded parameter tweaks, and assess validation.
 
-  return `You are an AI energy management agent for a BESS (Battery Energy Storage System) site in Poland.
+LANGUAGE: Write "reasoning" in ${language}. JSON keys stay in English.
 
-LANGUAGE: Write ALL reasoning and descriptions in ${language}. Use Polish energy terminology:
-- "autokonsumpcja" (not "self-consumption")
-- "moc zamówiona" (contracted power / demand charge)
-- "taryfa dystrybucyjna" (distribution tariff)
-- "strefa szczytowa/pozaszczytowa/nocna" (peak/off-peak/night zone)
-- "krzywa bell" or "krzywa dzwonowa" (bell curve for export following PV)
-Technical identifiers (rule IDs, JSON keys) stay in English.
+MAPPING:
+- A = aggressive (higher savings potential, moderate risk)
+- B = balanced
+- C = conservative (lower risk, very_low risk label)
 
-HARDWARE:
-- Battery: ${batteryKwh} kWh (${siteConfig.battery?.chemistry || 'LFP'})
-- Max charge: ${maxCharge} kW, max discharge: ${maxDischarge} kW
-- PV installation: ${pvPeak} kW peak
-- Grid connection: ${gridCapacity ? gridCapacity + ' kVA' : 'unknown'}
-- Export allowed: ${siteConfig.grid_connection?.export_allowed ?? true}
-- Export follows sun (bell curve): ${siteConfig.grid_connection?.export_follows_sun || false}
+ADJUSTMENTS (optional object; omit keys you do not want to change):
+- peak_shaving_threshold_kw: absolute grid-power threshold kW for peak-shaving discharge (engine-derived baseline; you may suggest a value within ±10% of the baseline shown)
+- discharge_soc_target: target SoC % for discharge-to-target rules (within ±10 percentage points of baseline shown)
 
-CRITICAL — EXPORT LIMIT & PV EXCESS ABSORPTION (P8 priority):
-${siteConfig.grid_connection?.export_limit_kw ? `Export limit: ${siteConfig.grid_connection.export_limit_kw} kW.` : 'Export limit: check site description or assume inverter-level curtailment exists.'}
-This is mainly a WEEKEND and HOLIDAY problem. On workdays the factory load (40-70 kW) absorbs most PV, so surplus rarely exceeds the export limit. But on weekends/holidays when load is near zero, the FULL PV output (~${pvPeak} kW) hits the grid and triggers inverter curtailment = FREE ENERGY WASTED.
-Create P8 charging rules for weekends/holidays during PV hours to absorb excess before the export limit is hit:
-- When grid power is negative (exporting) and approaching the limit, battery should charge
-- Example: export limit 50 kW → start charging when grid export exceeds ~35 kW (15 kW margin)
-- Weekend with zero load: surplus ≈ full PV → charge at max rate up to ${maxCharge} kW → battery to 100%
-- On workdays: only if load drops unusually low and surplus spikes (rare, but possible during breaks/holidays)
-- This captures energy that inverter curtailment would throw away — battery charging is ALWAYS better than curtailment
-- Inverter shutdown/curtailment = absolute LAST resort safety mechanism, NOT normal operation
-- Active during PV production hours (roughly 08:00-16:00, peak 10:00-14:00)
-
-CRITICAL — WEEKEND vs WEEKDAY PV SURPLUS:
-If the site has PV and does NOT operate on weekends/holidays:
-- WEEKDAYS: Factory load (typically 40-70 kW) consumes most PV → limited surplus, maybe only at peak sun (11-13)
-- WEEKENDS: Factory load drops to near-zero → virtually ALL PV becomes surplus (up to ${pvPeak} kW for 6+ hours!)
-- On weekends: charge the battery to 100% SoC from FREE PV energy. This is the best opportunity!
-- On Friday evening: consider NOT discharging fully — preserve SoC for weekend PV charging cycle
-- On Sunday/Monday: battery at 100% → discharge during Monday peak factory load to offset grid consumption
-This weekday/weekend asymmetry is KEY to optimization. Always check what day of week the schedule is for.
-
-BATTERY HEALTH — STANDBY SoC:
-When no charging opportunity is expected for extended periods (consecutive cloudy days, sites without PV during holidays), maintain a healthy standby SoC of 20-40% to prolong LFP battery life. But if PV charging IS available (sunny day, especially weekends), charge fully — standby SoC only applies when NO charge source exists.
-${backupReserve > 0 ? `Customer-configured backup reserve: ${backupReserve}% (never go below this)` : 'No backup reserve configured — use your judgment for safe minimums.'}
-
-CRITICAL — LOAD vs PV ANALYSIS:
-You will receive a "load_pv_profile" section from the optimization engine. Study it carefully:
-- Compare avg_load_kw against PV output hour by hour
-- PV surplus (net_surplus_kw > 0) means the battery CAN charge from PV
-- PV deficit (net_surplus_kw < 0) means the factory consumes MORE than PV produces — no free energy to charge
-- Do NOT assume PV surplus exists just because there is a PV installation — look at the actual numbers
-- On WORKDAYS: surplus hours are typically limited to peak sun (11:00-13:00) and may be very small
-- On WEEKENDS/HOLIDAYS: if factory is closed, surplus = nearly full PV output for many hours — CHARGE!
-
-DISTRIBUTION TARIFF:
-You will receive "tariff_zone_summary" showing distribution charge zones (B23, C22, etc.). Even when the energy price is flat, distribution tariff varies by time of day:
-- Charging during cheaper distribution zones (off-peak/night) saves on distribution costs
-- However, if the price difference is small relative to 10% round-trip efficiency loss, note this in reasoning
-- Factor distribution tariff into charge/discharge timing decisions
-
-RULE MANAGEMENT:
-You will receive CURRENT schedule rules. For each, decide:
-1. KEEP — rule is fine as-is
-2. MODIFY — needs parameter adjustment
-3. DELETE — no longer optimal (only AI-sourced rules)
-4. ADD — new rule needed
-
-Rules with source "ai" (s: "ai") = AI-created, freely modifiable/deletable.
-Rules WITHOUT "ai" source = MANUAL customer rules — do NOT delete, only suggest changes in reasoning.
-
-OUTPUT FORMAT (strict JSON):
+OUTPUT: a single JSON object, no markdown:
 {
-  "rules_keep": ["<rule_id>", ...],
-  "rules_modify": [{ "id": "<existing_id>", "priority": <6|7|8>, "action": { "type": "charge"|"discharge"|"idle"|"limit_export", "power_kw": <number>, "target_soc": <number, optional> }, "conditions": { "time_start": "HH:MM", "time_end": "HH:MM", "soc_min": <number, optional>, "soc_max": <number, optional> }, "days": ["mon",...] }],
-  "rules_delete": ["<rule_id>", ...],
-  "rules_add": [{ "id": "ai-daily-<suffix>", "priority": <6|7|8>, "action": {...}, "conditions": {...}, "days": [...] }],
-  "reasoning": "<strategy explanation in ${language}>"
+  "strategy": "A"|"B"|"C",
+  "adjustments": { },
+  "validation_status": "ok"|"warning",
+  "reasoning": "short explanation"
 }
 
-PRIORITY LEVELS:
-- P6: Standard arbitrage / cost optimization
-- P7: Peak shaving / moc zamówiona management
-- P8: Autokonsumpcja PV / bell curve rules
-
-Only P6-P8 are in scope. P9 (safety) is never altered.
-Only output valid JSON. No markdown fences.`;
+Use "warning" in validation_status if the chosen strategy has simulation_valid false or if risk conflicts with the site's stated risk_tolerance. Otherwise "ok".`;
 }
 
-function buildUserPrompt({ siteConfig, agentState, optimResult, currentSchedules, recentComments, outcomeEvaluation }) {
+function strategySummariesForPrompt(strategies) {
+  const letterOf = { aggressive: 'A', balanced: 'B', conservative: 'C' };
+  return strategies.map((s) => {
+    const name = s.name || '';
+    const letter = letterOf[String(name).toLowerCase()] || '?';
+    const sum = s.forecast?.summary || {};
+    return {
+      letter,
+      name,
+      risk: s.risk,
+      simulation_valid: s.simulation_valid,
+      estimated_savings_pln: sum.estimated_savings_pln,
+      total_net_cost_pln: sum.total_net_cost_pln,
+      peak_grid_import_kw: sum.peak_grid_import_kw,
+      self_consumption_pct: sum.self_consumption_pct,
+      soc_end: sum.soc_end,
+    };
+  });
+}
+
+function baselinesForAdjustments(strategy) {
+  const rules = strategy?.rules || [];
+  let peak_shaving_threshold_kw = null;
+  const discharge_soc_targets = [];
+  for (const rule of rules) {
+    const pr = Number(rule.priority ?? rule.p);
+    const a = rule.a || {};
+    const c = rule.c || {};
+    if (pr === 8 && a.t === 'dis' && c.gpv != null) peak_shaving_threshold_kw = c.gpv;
+    if (a.t === 'dt' && a.soc != null) discharge_soc_targets.push(a.soc);
+  }
+  return {
+    peak_shaving_threshold_kw,
+    discharge_soc_target: discharge_soc_targets.length ? discharge_soc_targets[0] : null,
+  };
+}
+
+function buildUserPrompt({
+  siteConfig,
+  agentState,
+  enginePayload,
+  recentComments,
+  outcomeEvaluation,
+}) {
   const language = detectLanguage(siteConfig);
-
-  const formattedRules = (currentSchedules || []).map(r => ({
-    id: r.id,
-    source: r.s === 'ai' ? 'AI (previous run)' : 'MANUAL (customer)',
-    priority: r.p,
-    action: r.a,
-    conditions: r.c,
-    days: r.d,
-    active: r.act !== false,
-  }));
+  const strategies = enginePayload.strategies || [];
+  const summaries = strategySummariesForPrompt(strategies);
+  const baselines = {};
+  for (const s of strategies) {
+    baselines[s.name] = baselinesForAdjustments(s);
+  }
 
   const parts = [
-    '=== SITE PROFILE ===',
-    JSON.stringify(siteConfig.ai_profile || {}, null, 2),
+    '=== STRATEGY OPTIONS (choose A, B, or C) ===',
+    JSON.stringify(summaries, null, 2),
+    '',
+    '=== PARAMETER BASELINES (for bounded adjustments) ===',
+    JSON.stringify(baselines, null, 2),
+    '',
+    '=== SITE PROFILE (automation / goals) ===',
+    JSON.stringify({
+      business_type: siteConfig.ai_profile?.business_type,
+      risk_tolerance: siteConfig.ai_profile?.risk_tolerance,
+      optimization_goals: siteConfig.ai_profile?.optimization_goals,
+    }, null, 2),
     '',
     '=== SITE DESCRIPTION ===',
     siteConfig.general?.description || 'No description provided',
@@ -386,64 +431,18 @@ function buildUserPrompt({ siteConfig, agentState, optimResult, currentSchedules
     '=== WEEKLY PLAN ===',
     JSON.stringify(agentState?.weekly_plan || { note: 'No weekly plan available' }, null, 2),
     '',
+    '=== ENGINE CONTEXT ===',
+    JSON.stringify({
+      tradeoff_analysis: enginePayload.tradeoff_analysis,
+      data_summary: enginePayload.data_summary,
+      current_soc: enginePayload.current_soc,
+    }, null, 2),
+    '',
   ];
 
-  // Highlight load vs PV profile separately for maximum LLM attention
-  const lpProfile = optimResult?.load_pv_profile;
-  if (lpProfile?.data_available) {
-    parts.push('=== ⚡ CRITICAL: LOAD vs PV PROFILE (actual data) ===');
-    parts.push(`PV peak installation: ${lpProfile.pv_peak_kw} kW`);
-    parts.push(`PV actual peak (today/forecast): ${lpProfile.pv_actual_peak_kw} kW`);
-    parts.push(`Load PEAK: ${lpProfile.load_peak_kw} kW`);
-    parts.push(`Load AVERAGE: ${lpProfile.load_avg_kw} kW`);
-    parts.push(`Hours with net PV surplus (>1 kW): ${lpProfile.surplus_hours_count}`);
-    if (lpProfile.surplus_hours_count <= 3) {
-      parts.push('⚠️ VERY LIMITED PV surplus — the factory consumes most/all PV. Do NOT plan large PV charging windows.');
-    }
-    parts.push('Hourly breakdown (kW):');
-    for (const h of (lpProfile.hourly_profile || [])) {
-      const tag = h.net_surplus_kw > 1 ? '☀️surplus' : h.net_surplus_kw < -10 ? '🏭deficit' : '~neutral';
-      parts.push(`  ${String(h.hour).padStart(2, '0')}:00 → PV: ${h.avg_pv_kw}, Load: ${h.avg_load_kw}, Net: ${h.net_surplus_kw} (${tag})`);
-    }
-    parts.push('');
-  } else {
-    parts.push('=== LOAD vs PV ===');
-    parts.push(`No forecast data available. PV peak: ${lpProfile?.pv_peak_kw || siteConfig.pv_system?.total_peak_kw || '?'} kW.`);
-    parts.push(`Estimate load from site description. Typical small industrial: 40-70 kW.`);
-    parts.push('');
-  }
-
-  // Highlight tariff zones
-  const tariffSummary = optimResult?.tariff_zone_summary;
-  if (tariffSummary && tariffSummary.length > 0) {
-    parts.push('=== TARYFA DYSTRYBUCYJNA (distribution tariff zones) ===');
-    for (const z of tariffSummary) {
-      parts.push(`  ${z.zone}: ${z.rate_pln_kwh} PLN/kWh (${z.hours}, ${z.hour_count}h)`);
-    }
-    parts.push('Note: factor this into charge timing. Cheaper zones = better for charging. But consider 10% RTE loss.');
-    parts.push('');
-  }
-
-  parts.push('=== OPTIMIZATION ENGINE OUTPUT ===');
-  // Strip load_pv_profile and tariff_zone_summary from engine output to avoid duplication
-  const strippedResult = { ...optimResult };
-  delete strippedResult.load_pv_profile;
-  delete strippedResult.tariff_zone_summary;
-  parts.push(JSON.stringify(strippedResult, null, 2));
-  parts.push('');
-
-  parts.push('=== CURRENT SCHEDULE RULES (manage these) ===');
-  parts.push(
-    formattedRules.length > 0
-      ? JSON.stringify(formattedRules, null, 2)
-      : 'No existing rules. Create new ones from scratch.'
-  );
-  parts.push('');
-
   if (agentState?.lessons?.length) {
-    const recent = agentState.lessons.slice(-10);
     parts.push('=== LESSONS LEARNED ===');
-    parts.push(JSON.stringify(recent, null, 2));
+    parts.push(JSON.stringify(agentState.lessons.slice(-10), null, 2));
     parts.push('');
   }
 
@@ -454,43 +453,20 @@ function buildUserPrompt({ siteConfig, agentState, optimResult, currentSchedules
   }
 
   if (outcomeEvaluation?.evaluated) {
-    parts.push('=== YESTERDAY OUTCOME EVALUATION ===');
+    parts.push('=== YESTERDAY OUTCOME ===');
     parts.push(JSON.stringify(outcomeEvaluation, null, 2));
     parts.push('');
   }
 
   parts.push(
-    `Based on the above data, produce an optimized daily schedule by managing existing rules. ` +
-    `For each existing rule, decide: KEEP, MODIFY, or DELETE. Add new rules only when needed. ` +
-    `Do NOT delete manual (customer) rules — only AI rules. ` +
-    `CRITICAL: Look at the load vs PV profile — if surplus hours are few, do not create large PV charging windows. ` +
-    `Consider the standby SoC concept — don't discharge to minimum if no charging opportunity follows soon. ` +
-    `Consider the weekly plan guidance, lessons from past decisions, and any customer feedback. ` +
-    `Write the reasoning in ${language}. Output only the JSON object.`
+    `Select the best strategy for today. Respect risk_tolerance and optimization_goals. ` +
+    `Output only the JSON object. Reasoning in ${language}.`
   );
 
   return parts.join('\n');
 }
 
-async function callBedrock(systemPrompt, userPrompt) {
-  const body = JSON.stringify({
-    anthropic_version: 'bedrock-2023-05-31',
-    max_tokens: 4096,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-    temperature: 0.3,
-  });
-
-  const response = await bedrock.send(new InvokeModelCommand({
-    modelId: 'eu.anthropic.claude-sonnet-4-6',
-    contentType: 'application/json',
-    accept: 'application/json',
-    body,
-  }));
-
-  const result = JSON.parse(Buffer.from(response.body).toString());
-  const text = result.content?.[0]?.text || '';
-
+function parseBedrockJson(text) {
   try {
     return JSON.parse(text);
   } catch {
@@ -500,41 +476,90 @@ async function callBedrock(systemPrompt, userPrompt) {
   }
 }
 
-// ─── Apply Rules Based on Automation Mode ────────────────────────
+function isValidStrategyLetter(s) {
+  return s === 'A' || s === 'B' || s === 'C';
+}
 
-async function applyRules(siteId, rules, automationMode) {
+function normalizeStrategyLetter(raw) {
+  const s = String(raw ?? '').trim().toUpperCase();
+  if (s === 'A' || s === 'B' || s === 'C') return s;
+  if (s === 'AGGRESSIVE') return 'A';
+  if (s === 'BALANCED') return 'B';
+  if (s === 'CONSERVATIVE') return 'C';
+  return '';
+}
+
+async function callBedrockStrategySelect(systemPrompt, userPrompt) {
+  const body = JSON.stringify({
+    anthropic_version: 'bedrock-2023-05-31',
+    max_tokens: 512,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+    temperature: 0.2,
+  });
+
+  const cmd = new InvokeModelCommand({
+    modelId: 'eu.anthropic.claude-sonnet-4-6',
+    contentType: 'application/json',
+    accept: 'application/json',
+    body,
+  });
+
+  const response = await Promise.race([
+    bedrock.send(cmd),
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('bedrock_timeout')), BEDROCK_TIMEOUT_MS);
+    }),
+  ]);
+
+  const result = JSON.parse(Buffer.from(response.body).toString());
+  const text = result.content?.[0]?.text || '';
+  return parseBedrockJson(text);
+}
+
+function predictedOutcomeFromForecast(forecast) {
+  const sum = forecast?.summary || {};
+  const total = Number(sum.estimated_savings_pln) || 0;
+  return {
+    arbitrage_pln: 0,
+    peak_shaving_pln: 0,
+    pv_savings_pln: 0,
+    total_savings_pln: total,
+  };
+}
+
+async function applyStrategyDeployment(siteId, mergedSch, automationMode) {
   switch (automationMode) {
     case 'automatic': {
-      console.log(`[AgentDaily] ${siteId}: automatic mode — writing ${rules.length} rules`);
-      await writeScheduleRules(siteId, rules);
+      const ruleCount = ['p_6', 'p_7', 'p_8'].reduce((n, k) => n + (mergedSch[k]?.length || 0), 0);
+      console.log(`[AgentDaily] ${siteId}: automatic mode — deploying ${ruleCount} rules (P6–P8)`);
+      await deployScheduleSch(siteId, mergedSch);
       return 'applied';
     }
     case 'semi-automatic': {
-      console.log(`[AgentDaily] ${siteId}: semi-automatic mode — storing ${rules.length} rules as pending`);
+      console.log(`[AgentDaily] ${siteId}: semi-automatic — pending approval (${['p_6', 'p_7', 'p_8'].reduce((n, k) => n + (mergedSch[k]?.length || 0), 0)} rules)`);
       return 'pending_approval';
     }
     case 'manual':
     default: {
-      console.log(`[AgentDaily] ${siteId}: manual mode — logged ${rules.length} rules only`);
+      console.log(`[AgentDaily] ${siteId}: manual mode — logged only`);
       return 'pending_approval';
     }
   }
 }
-
-// ─── Process Single Site ─────────────────────────────────────────
 
 async function processSite(siteConfig) {
   const siteId = siteConfig.site_id;
   const automationMode = siteConfig.automation?.mode || 'manual';
   console.log(`[AgentDaily] Processing ${siteId} (mode: ${automationMode})`);
 
-  const [agentState, currentSchedules, recentComments] = await Promise.all([
+  const [agentState, recentComments] = await Promise.all([
     getAgentState(siteId),
-    fetchCurrentSchedules(siteId),
     fetchRecentComments(siteId),
   ]);
 
-  const optimResult = await invokeOptimizationEngine(siteId, siteConfig);
+  const enginePayload = await invokeOptimizationEngineV2(siteId, siteConfig);
+  const strategies = enginePayload.strategies;
 
   const telemetry = await fetchYesterdayTelemetry(siteId);
 
@@ -585,43 +610,65 @@ async function processSite(siteConfig) {
   const userPrompt = buildUserPrompt({
     siteConfig,
     agentState,
-    optimResult,
-    currentSchedules,
+    enginePayload,
     recentComments,
     outcomeEvaluation,
   });
 
-  const llmResponse = await callBedrock(systemPrompt, userPrompt);
-  const reasoning = llmResponse.reasoning || '';
+  let selectedLetter = 'B';
+  let adjustments = {};
+  let reasoning = '';
+  let validation_status = 'ok';
+  let fallback_used = false;
 
-  const rulesKeep = llmResponse.rules_keep || [];
-  const rulesModify = llmResponse.rules_modify || [];
-  const rulesDelete = llmResponse.rules_delete || [];
-  const rulesAdd = llmResponse.rules_add || [];
-
-  // Backward compat: if old-format "rules" array is returned, treat as all-new
-  if (llmResponse.rules && !llmResponse.rules_add) {
-    rulesAdd.push(...llmResponse.rules);
+  try {
+    const llm = await callBedrockStrategySelect(systemPrompt, userPrompt);
+    const norm = normalizeStrategyLetter(llm.strategy);
+    if (!isValidStrategyLetter(norm)) {
+      throw new Error(`invalid strategy: ${llm.strategy}`);
+    }
+    selectedLetter = norm;
+    adjustments = llm.adjustments && typeof llm.adjustments === 'object' ? llm.adjustments : {};
+    reasoning = llm.reasoning || '';
+    if (llm.validation_status === 'warning' || llm.validation_status === 'ok') {
+      validation_status = llm.validation_status;
+    } else {
+      validation_status = 'warning';
+    }
+  } catch (e) {
+    console.warn(`[AgentDaily] ${siteId}: LLM fallback to B —`, e.message);
+    fallback_used = true;
+    selectedLetter = 'B';
+    adjustments = {};
+    validation_status = 'warning';
+    reasoning = detectLanguage(siteConfig) === 'Polish'
+      ? 'Automatyczny wybór strategii B (zrównoważonej) z powodu błędu lub niepewnej odpowiedzi modelu.'
+      : 'Automatic selection of strategy B (balanced) due to model error or invalid response.';
   }
 
-  // Build the final rule set: kept originals + modified + new
-  const keptOriginals = currentSchedules.filter(r => rulesKeep.includes(r.id));
-  const finalRules = [...keptOriginals, ...rulesModify, ...rulesAdd];
+  let chosen = pickStrategy(strategies, selectedLetter);
+  if (!chosen) {
+    console.warn(`[AgentDaily] ${siteId}: strategy letter ${selectedLetter} not found — using balanced`);
+    chosen = pickStrategy(strategies, 'B') || strategies[0];
+    if (!fallback_used) fallback_used = true;
+  }
+  const selectedKey =
+    chosen?.name === 'aggressive' ? 'A' : chosen?.name === 'conservative' ? 'C' : 'B';
 
-  const status = await applyRules(siteId, finalRules, automationMode);
+  let rules = cloneRules(chosen.rules || []);
+  rules = applyBoundedAdjustments(rules, adjustments);
+  const strategySch = rulesToSchBuckets(rules);
+
+  let mergedSch = strategySch;
+  if (SCHEDULES_API && (automationMode === 'automatic' || automationMode === 'semi-automatic')) {
+    const currentSch = await fetchScheduleSch(siteId);
+    mergedSch = mergeSchReplaceP678(currentSch, strategySch);
+  }
+
+  const status = await applyStrategyDeployment(siteId, mergedSch, automationMode);
 
   const now = new Date().toISOString();
-
-  const formatRule = (r) => ({
-    id: r.id,
-    priority: r.priority || r.p,
-    action: r.action
-      ? `${r.action.type} ${r.action.power_kw || ''}kW`.trim()
-      : r.a ? `${r.a.t} ${r.a.pw || ''}kW`.trim() : '',
-    time_window: r.conditions
-      ? `${r.conditions.time_start}-${r.conditions.time_end}`
-      : r.c ? `${r.c.ts || ''}-${r.c.te || ''}` : undefined,
-  });
+  const forecast = chosen.forecast || {};
 
   const decision = {
     PK: `DECISION#${siteId}`,
@@ -630,34 +677,30 @@ async function processSite(siteConfig) {
     timestamp: now,
     agent_type: 'daily',
     input_summary: {
-      tge_prices_range: optimResult.data_summary?.price_range || null,
-      pv_forecast_kwh: optimResult.data_summary?.forecast_points || 0,
-      load_forecast_kwh: optimResult.data_summary?.forecast_points || 0,
-      current_soc: optimResult.current_soc,
+      tge_prices_range: enginePayload.data_summary?.tge_price_range || null,
+      pv_forecast_kwh: enginePayload.data_summary?.pv_total_kwh ?? null,
+      load_forecast_kwh: enginePayload.data_summary?.load_total_kwh ?? null,
+      current_soc: enginePayload.current_soc,
       battery_capacity_kwh: siteConfig.battery?.capacity_kwh || 100,
     },
+    selected_strategy: selectedKey,
+    strategy_adjustments: adjustments,
+    forecast,
+    validation_status,
+    fallback_used,
     reasoning,
-    rules_created: rulesAdd.map(formatRule),
-    rules_modified: rulesModify.map(formatRule),
-    rules_deleted: rulesDelete,
-    rules_kept: rulesKeep,
-    predicted_outcome: {
-      arbitrage_pln: optimResult.projected_savings?.arbitrage_pln || 0,
-      peak_shaving_pln: optimResult.projected_savings?.peak_shaving_pln || 0,
-      pv_savings_pln: optimResult.projected_savings?.pv_self_consumption_pln || 0,
-      total_savings_pln:
-        (optimResult.projected_savings?.arbitrage_pln || 0) +
-        (optimResult.projected_savings?.peak_shaving_pln || 0) +
-        (optimResult.projected_savings?.pv_self_consumption_pln || 0),
-    },
+    predicted_outcome: predictedOutcomeFromForecast(forecast),
     status,
+    proposed_sch: mergedSch,
     ttl: Math.floor(Date.now() / 1000) + 90 * 86400,
   };
 
   await logDecision(decision);
 
   const scheduleSnapshot = {
-    rules: finalRules,
+    sch: mergedSch,
+    selected_strategy: selectedKey,
+    strategy_adjustments: adjustments,
     generated_at: now,
     automation_mode: automationMode,
     status,
@@ -665,6 +708,7 @@ async function processSite(siteConfig) {
   await updateAgentState(siteId, scheduleSnapshot);
 
   if (status === 'pending_approval') {
+    const ruleN = ['p_6', 'p_7', 'p_8'].reduce((n, k) => n + (mergedSch[k]?.length || 0), 0);
     const notif = {
       PK: `NOTIFICATION#${siteId}`,
       SK: `DAILY#${now}`,
@@ -672,7 +716,7 @@ async function processSite(siteConfig) {
       site_id: siteId,
       type: 'schedule_proposed',
       title: 'New daily schedule proposed',
-      message: `AI agent proposed ${finalRules.length} schedule rules (${rulesAdd.length} new, ${rulesModify.length} modified, ${rulesDelete.length} deleted). ${reasoning.slice(0, 120)}`,
+      message: `Strategy ${selectedKey} proposed (${ruleN} rules P6–P8). ${reasoning.slice(0, 120)}`,
       created_at: now,
       read: false,
       decision_sk: now,
@@ -680,11 +724,10 @@ async function processSite(siteConfig) {
     await docClient.send(new PutCommand({ TableName: DECISIONS_TABLE, Item: notif }));
   }
 
-  console.log(`[AgentDaily] ${siteId}: done — ${finalRules.length} rules (${rulesAdd.length} new, ${rulesModify.length} modified, ${rulesDelete.length} deleted), status=${status}`);
-  return { siteId, rulesCount: finalRules.length, status, reasoning: reasoning.slice(0, 200) };
+  const ruleN = ['p_6', 'p_7', 'p_8'].reduce((n, k) => n + (mergedSch[k]?.length || 0), 0);
+  console.log(`[AgentDaily] ${siteId}: done — strategy ${selectedKey}, ${ruleN} rules, status=${status}, fallback=${fallback_used}`);
+  return { siteId, selected_strategy: selectedKey, rulesCount: ruleN, status, reasoning: reasoning.slice(0, 200) };
 }
-
-// ─── Main Handler ────────────────────────────────────────────────
 
 export const handler = async (event) => {
   console.log('[AgentDaily] Invoked', JSON.stringify(event));

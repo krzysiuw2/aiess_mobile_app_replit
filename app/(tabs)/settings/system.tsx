@@ -7,14 +7,16 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { ArrowLeft, CheckCircle, Clock, Calendar, CalendarDays, Play, BrainCircuit, Zap } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, Clock, Calendar, CalendarDays, Play, BrainCircuit, Zap, Shield } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
+import { useSchedules } from '@/hooks/useSchedules';
 import { useQueryClient } from '@tanstack/react-query';
 import { triggerAgentRun } from '@/lib/aws-agent';
 import type { SystemMode, SiteConfigAutomation } from '@/types';
@@ -24,9 +26,10 @@ const DAILY_HOURS = Array.from({ length: 24 }, (_, i) => `${i.toString().padStar
 const WEEKLY_DAYS = [0, 1, 2, 3, 4, 5, 6]; // Sun..Sat
 
 export default function SystemSettingsScreen() {
-  const { t, language } = useSettings();
+  const { t } = useSettings();
   const { selectedDevice } = useDevices();
   const { siteConfig, updateConfig, isLoading } = useSiteConfig();
+  const { rawSchedules } = useSchedules();
   const queryClient = useQueryClient();
 
   const [saving, setSaving] = useState(false);
@@ -46,7 +49,27 @@ export default function SystemSettingsScreen() {
     daily_time: siteConfig?.automation?.daily_time ?? '11:00',
     weekly_day: siteConfig?.automation?.weekly_day ?? 0,
     weekly_time: siteConfig?.automation?.weekly_time ?? '11:00',
+    use_custom_fallback_rules: siteConfig?.automation?.use_custom_fallback_rules ?? false,
   }), [siteConfig, isDynamicTariff]);
+
+  const p9HthKw = useMemo(() => {
+    const sl = rawSchedules?.sch?.p_9?.find(r => r.a.t === 'sl');
+    return sl?.a.hth;
+  }, [rawSchedules]);
+
+  const effectiveImportKw = useMemo(() => {
+    const fin = siteConfig?.financial;
+    const cands: number[] = [];
+    const moc = fin?.moc_zamowiona_after_bess_kw ?? fin?.moc_zamowiona_before_bess_kw;
+    if (moc != null && moc > 0) cands.push(moc);
+    const kva = siteConfig?.grid_connection?.capacity_kva;
+    if (kva != null && kva > 0) cands.push(kva);
+    const imp = siteConfig?.grid_connection?.import_limit_kw;
+    if (imp != null && imp > 0) cands.push(imp);
+    if (cands.length > 0) return Math.min(...cands);
+    if (p9HthKw != null && p9HthKw > 0) return p9HthKw;
+    return 70;
+  }, [siteConfig, p9HthKw]);
 
   const saveAutomation = useCallback(async (patch: Partial<SiteConfigAutomation>) => {
     try {
@@ -129,6 +152,53 @@ export default function SystemSettingsScreen() {
             </View>
           )}
         </View>
+
+        {!isLoading && (
+          <View style={styles.section}>
+            <View style={styles.fallbackSectionHeader}>
+              <Shield size={20} color={Colors.primary} />
+              <Text style={styles.sectionTitle}>{t.settings.fallback_rules}</Text>
+            </View>
+            <Text style={styles.sectionDescription}>{t.settings.fallback_rules_desc}</Text>
+
+            <View style={styles.fallbackCard}>
+              <Text style={styles.fallbackCardTitle}>{t.settings.zero_export_protection}</Text>
+              <Text style={styles.fallbackCardBody}>{t.settings.fallback_rule_zero_desc}</Text>
+            </View>
+            <View style={styles.fallbackCard}>
+              <Text style={styles.fallbackCardTitle}>{t.settings.peak_shave_protection}</Text>
+              <Text style={styles.fallbackCardBody}>
+                {t.settings.fallback_rule_peak_desc.replace('{kw}', String(effectiveImportKw))}
+              </Text>
+            </View>
+            <View style={styles.fallbackCard}>
+              <Text style={styles.fallbackCardTitle}>{t.settings.standby_fallback}</Text>
+              <Text style={styles.fallbackCardBody}>{t.settings.fallback_rule_standby_desc}</Text>
+            </View>
+
+            <View style={styles.fallbackToggleRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={styles.intervalTitle}>{t.settings.custom_fallback}</Text>
+              </View>
+              <Switch
+                value={auto.use_custom_fallback_rules}
+                onValueChange={(v) => saveAutomation({ use_custom_fallback_rules: v })}
+                disabled={saving}
+                trackColor={{ false: Colors.border, true: Colors.primaryLight }}
+                thumbColor={auto.use_custom_fallback_rules ? Colors.primary : Colors.textSecondary}
+              />
+            </View>
+            {auto.use_custom_fallback_rules && (
+              <TouchableOpacity
+                style={styles.fallbackScheduleLink}
+                onPress={() => router.push('/(tabs)/schedule')}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.fallbackScheduleLinkText}>{t.tabs.schedule}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {/* Section 2: AI Automation (only for automatic/semi-automatic) */}
         {showAutomation && (
@@ -339,4 +409,37 @@ const styles = StyleSheet.create({
   triggerRow: { gap: 10 },
   triggerBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.surface, borderRadius: 14, padding: 14, borderWidth: 1.5 },
   triggerLabel: { flex: 1, fontSize: 15, fontWeight: '600' },
+  fallbackSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  fallbackCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 10,
+  },
+  fallbackCardTitle: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 6 },
+  fallbackCardBody: { fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
+  fallbackToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  fallbackScheduleLink: {
+    marginTop: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryLight,
+  },
+  fallbackScheduleLinkText: { fontSize: 15, fontWeight: '600', color: Colors.primary },
 });
