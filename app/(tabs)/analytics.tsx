@@ -10,7 +10,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, ChevronRight, Calendar, Eye, EyeOff, Zap, Battery, BarChart2, TrendingUp, RefreshCw, Sun, Shield, Activity, CloudSun, DollarSign } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Calendar, Eye, EyeOff, Zap, Battery, BarChart2, TrendingUp, RefreshCw, Sun, Shield, Activity, CloudSun, DollarSign, BrainCircuit } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { FIELD_COLORS, FieldKey, CHART_COLORS } from '@/constants/chartColors';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -48,8 +48,9 @@ import { useSiteConfig } from '@/hooks/useSiteConfig';
 import { BatteryDataView } from '@/components/analytics/BatteryDataView';
 import { ForecastView } from '@/components/analytics/ForecastView';
 import { FinancialView } from '@/components/analytics/FinancialView';
+import { AiLogicView } from '@/components/ai-agent/AiLogicView';
 
-type AnalyticsTab = 'usage' | 'forecasts' | 'financial' | 'battery';
+type AnalyticsTab = 'usage' | 'forecasts' | 'financial' | 'battery' | 'ai_logic';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -368,6 +369,7 @@ export default function AnalyticsScreen() {
             { key: 'forecasts' as AnalyticsTab, icon: CloudSun, label: t.analytics.forecastTab.forecasts },
             { key: 'financial' as AnalyticsTab, icon: DollarSign, label: ft.financial },
             { key: 'battery' as AnalyticsTab, icon: Activity, label: bt.batteryData },
+            { key: 'ai_logic' as AnalyticsTab, icon: BrainCircuit, label: t.aiAgent.logicTab },
           ]).map(({ key, icon: Icon, label }) => {
             const isActive = activeTab === key;
             return (
@@ -579,6 +581,8 @@ export default function AnalyticsScreen() {
             t={t}
             language={language}
           />
+        ) : activeTab === 'ai_logic' ? (
+          <AiLogicView />
         ) : (
           <BatteryDataView
             deviceId={selectedDevice?.device_id}

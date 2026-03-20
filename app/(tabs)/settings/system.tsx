@@ -10,10 +10,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { ArrowLeft, CheckCircle, Clock, Calendar, CalendarDays } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, Clock, Calendar, CalendarDays, Play, BrainCircuit, Zap } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useDevices } from '@/contexts/DeviceContext';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
+import { useQueryClient } from '@tanstack/react-query';
+import { triggerAgentRun } from '@/lib/aws-agent';
 import type { SystemMode, SiteConfigAutomation } from '@/types';
 
 const INTRADAY_OPTIONS = [15, 30, 60];
@@ -22,9 +25,12 @@ const WEEKLY_DAYS = [0, 1, 2, 3, 4, 5, 6]; // Sun..Sat
 
 export default function SystemSettingsScreen() {
   const { t, language } = useSettings();
+  const { selectedDevice } = useDevices();
   const { siteConfig, updateConfig, isLoading } = useSiteConfig();
+  const queryClient = useQueryClient();
 
   const [saving, setSaving] = useState(false);
+  const [triggeringAgent, setTriggeringAgent] = useState<string | null>(null);
 
   const dayLabels: Record<number, string> = useMemo(() => ({
     0: t.settings.daySun, 1: t.settings.dayMon, 2: t.settings.dayTue,
@@ -234,6 +240,54 @@ export default function SystemSettingsScreen() {
             </View>
           </View>
         )}
+
+        {/* Section 3: Manual Agent Trigger */}
+        {showAutomation && selectedDevice?.device_id && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t.aiAgent?.manualTrigger ?? 'Manual Agent Trigger'}</Text>
+            <Text style={styles.sectionDescription}>{t.aiAgent?.manualTriggerDesc ?? 'Run an AI agent manually for testing or immediate optimization.'}</Text>
+
+            <View style={styles.triggerRow}>
+              {([
+                { type: 'weekly' as const, label: t.aiAgent?.decisions?.weekly ?? 'Weekly', icon: CalendarDays, color: '#7C3AED' },
+                { type: 'daily' as const, label: t.aiAgent?.decisions?.daily ?? 'Daily', icon: BrainCircuit, color: Colors.primary },
+                { type: 'intraday' as const, label: t.aiAgent?.decisions?.intraday ?? 'Intraday', icon: Zap, color: '#D97706' },
+              ]).map(({ type, label, icon: Icon, color }) => {
+                const isTriggering = triggeringAgent === type;
+                return (
+                  <TouchableOpacity
+                    key={type}
+                    style={[styles.triggerBtn, { borderColor: color + '40' }]}
+                    disabled={!!triggeringAgent}
+                    activeOpacity={0.7}
+                    onPress={async () => {
+                      setTriggeringAgent(type);
+                      try {
+                        await triggerAgentRun(selectedDevice.device_id, type);
+                        queryClient.invalidateQueries({ queryKey: ['agentState'] });
+                        queryClient.invalidateQueries({ queryKey: ['agentDecisions'] });
+                        queryClient.invalidateQueries({ queryKey: ['agentNotifications'] });
+                        Alert.alert(t.common.success, `${label} agent triggered`);
+                      } catch {
+                        Alert.alert(t.common.error, `Failed to trigger ${type} agent`);
+                      } finally {
+                        setTriggeringAgent(null);
+                      }
+                    }}
+                  >
+                    {isTriggering ? (
+                      <ActivityIndicator size="small" color={color} />
+                    ) : (
+                      <Icon size={20} color={color} />
+                    )}
+                    <Text style={[styles.triggerLabel, { color }]}>{label}</Text>
+                    <Play size={14} color={color} />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -282,4 +336,7 @@ const styles = StyleSheet.create({
   hourChipRec: { borderColor: '#D97706', borderStyle: 'dashed' },
   recBadge: { fontSize: 9, color: '#D97706', fontWeight: '600', marginTop: 2, textTransform: 'uppercase' },
   recBadgeSmall: { fontSize: 8, color: '#D97706', fontWeight: '600', marginTop: 1, textTransform: 'uppercase' },
+  triggerRow: { gap: 10 },
+  triggerBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.surface, borderRadius: 14, padding: 14, borderWidth: 1.5 },
+  triggerLabel: { flex: 1, fontSize: 15, fontWeight: '600' },
 });

@@ -13,13 +13,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { ArrowLeft, Shield, Zap, Info, BatteryCharging, Sun, X, MapPin, Battery, Cpu, SunMedium, Plug, BarChart3, Plus, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, Shield, Zap, Info, BatteryCharging, Sun, X, MapPin, Battery, Cpu, SunMedium, Plug, BarChart3, Plus, Trash2, BrainCircuit, CheckCircle2, AlertCircle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useSchedules } from '@/hooks/useSchedules';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
 import { geocodeSiteAddress } from '@/lib/aws-site-config';
+import OnboardingWizard from '@/components/ai-agent/OnboardingWizard';
 import type { SiteConfigPvArray } from '@/types';
 
 const BELL_CURVE_BARS = [0.08, 0.18, 0.35, 0.58, 0.78, 0.92, 1.0, 0.95, 0.82, 0.62, 0.38, 0.15];
@@ -44,6 +45,7 @@ export default function SiteSettingsScreen() {
   const [showSunFollowPopup, setShowSunFollowPopup] = useState(false);
   const [savingSafety, setSavingSafety] = useState(false);
   const [savingSiteLimit, setSavingSiteLimit] = useState(false);
+  const [showAiWizard, setShowAiWizard] = useState(false);
 
   // Phase 2 state
   const [battManufacturer, setBattManufacturer] = useState('');
@@ -457,6 +459,79 @@ export default function SiteSettingsScreen() {
             )}
           </TouchableOpacity>
         </View>
+
+        {/* AI Profile Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <BrainCircuit size={20} color={Colors.primary} />
+            <Text style={styles.sectionTitle}>{t.aiAgent.aiProfile}</Text>
+          </View>
+          <Text style={styles.sectionDescription}>{t.aiAgent.aiProfileDesc}</Text>
+
+          {siteConfig?.ai_profile?.wizard_completed ? (
+            <View style={{ gap: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.primaryLight, borderRadius: 10, padding: 12 }}>
+                <CheckCircle2 size={18} color={Colors.primary} />
+                <Text style={{ fontSize: 13, fontWeight: '600', color: Colors.primary, flex: 1 }}>
+                  {t.aiAgent.profileComplete}
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {siteConfig.ai_profile.business_type && (
+                  <View style={{ backgroundColor: Colors.background, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: Colors.border }}>
+                    <Text style={{ fontSize: 12, color: Colors.textSecondary }}>
+                      {t.aiAgent.wizard[`type_${siteConfig.ai_profile.business_type}` as keyof typeof t.aiAgent.wizard]}
+                    </Text>
+                  </View>
+                )}
+                {siteConfig.ai_profile.risk_tolerance && (
+                  <View style={{ backgroundColor: Colors.background, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: Colors.border }}>
+                    <Text style={{ fontSize: 12, color: Colors.textSecondary }}>
+                      {t.aiAgent.wizard[`risk${siteConfig.ai_profile.risk_tolerance.charAt(0).toUpperCase() + siteConfig.ai_profile.risk_tolerance.slice(1)}` as keyof typeof t.aiAgent.wizard]}
+                    </Text>
+                  </View>
+                )}
+                {siteConfig.ai_profile.optimization_goals?.map(g => (
+                  <View key={g} style={{ backgroundColor: Colors.background, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: Colors.border }}>
+                    <Text style={{ fontSize: 12, color: Colors.textSecondary }}>
+                      {t.aiAgent.wizard[`goal${g === 'maximize_arbitrage' ? 'Arbitrage' : g === 'peak_shaving' ? 'PeakShaving' : g === 'pv_self_consumption' ? 'PvSelfConsumption' : 'ReduceBill'}` as keyof typeof t.aiAgent.wizard]}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              <TouchableOpacity
+                style={[styles.saveButton, { backgroundColor: Colors.primary + '15', marginTop: 4 }]}
+                onPress={() => setShowAiWizard(true)}
+              >
+                <Text style={[styles.saveButtonText, { color: Colors.primary }]}>{t.aiAgent.editProfile}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={{ gap: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF3C7', borderRadius: 10, padding: 12 }}>
+                <AlertCircle size={18} color="#D97706" />
+                <Text style={{ fontSize: 13, fontWeight: '500', color: '#92400E', flex: 1 }}>
+                  {t.aiAgent.profileIncomplete}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={() => setShowAiWizard(true)}
+              >
+                <Text style={styles.saveButtonText}>{t.aiAgent.setupProfile}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        <OnboardingWizard
+          visible={showAiWizard}
+          onClose={() => setShowAiWizard(false)}
+          initialValues={{
+            aiProfile: siteConfig?.ai_profile,
+            siteDescription: siteConfig?.general?.description,
+          }}
+        />
 
         {/* Safety SoC Limits */}
         <View style={styles.section}>

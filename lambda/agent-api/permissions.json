@@ -1,0 +1,38 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:Query",
+        "dynamodb:UpdateItem",
+        "dynamodb:PutItem"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:eu-central-1:896709973986:table/aiess_agent_state",
+        "arn:aws:dynamodb:eu-central-1:896709973986:table/aiess_agent_decisions"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "lambda:InvokeFunction"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-central-1:896709973986:function:aiess-agent-weekly",
+        "arn:aws:lambda:eu-central-1:896709973986:function:aiess-agent-daily",
+        "arn:aws:lambda:eu-central-1:896709973986:function:aiess-agent-intraday"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:eu-central-1:896709973986:*"
+    }
+  ]
+}

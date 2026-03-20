@@ -231,6 +231,7 @@ export interface SiteConfigGridConnection {
   contract_type?: string;
   export_allowed?: boolean;
   export_follows_sun?: boolean;
+  export_limit_kw?: number;
   metering_point_id?: string;
 }
 
@@ -293,6 +294,7 @@ export interface SiteConfig {
   influxdb?: SiteConfigInfluxDb;
   automation?: SiteConfigAutomation;
   financial?: FinancialSettings;
+  ai_profile?: SiteConfigAiProfile;
   updated_at?: string;
   updated_by?: string;
   created_at?: string;
@@ -353,6 +355,30 @@ export {
   TARIFF_GROUPS,
   DEFAULT_FINANCIAL_SETTINGS,
 } from './financial';
+
+// ─── AI Agent Types (re-export) ──────────────────────────────────
+
+export type {
+  SiteConfigAiProfile,
+  OptimizationGoal,
+  WeeklyPlan,
+  AgentType,
+  DecisionStatus,
+  AgentDecision,
+  AgentDecisionComment,
+  AgentDecisionInputSummary,
+  AgentDecisionOutcome,
+  AgentDecisionRuleCreated,
+  AgentDecisionRuleModified,
+  AgentLesson,
+  LessonCategory,
+  AgentState,
+  AgentPerformance30d,
+  OptimizationResult,
+  AgentDecisionQuery,
+  AgentNotificationType,
+  AgentNotification,
+} from './ai-agent';
 
 // ─── Energy Simulation / Forecast Types ─────────────────────────
 

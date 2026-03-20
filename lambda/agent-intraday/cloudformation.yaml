@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  AIESS Intraday Agent — Gated LLM architecture, 95% pure math.
+  EventBridge rate(15 min), Bedrock only on significant deviation.
+
+Parameters:
+  InfluxUrl:
+    Type: String
+    Description: InfluxDB Cloud URL
+  InfluxToken:
+    Type: String
+    NoEcho: true
+    Description: InfluxDB API Token
+  InfluxOrg:
+    Type: String
+    Default: aiess
+  SchedulesApi:
+    Type: String
+    Description: Schedules API base URL
+  SchedulesApiKey:
+    Type: String
+    NoEcho: true
+    Description: Schedules API key
+  SiteConfigTable:
+    Type: String
+    Default: site_config
+  AgentStateTable:
+    Type: String
+    Default: aiess_agent_state
+  AgentDecisionsTable:
+    Type: String
+    Default: aiess_agent_decisions
+  OptimizationFunction:
+    Type: String
+    Default: aiess-optimization-engine
+
+Resources:
+  IntradayAgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: IntradayAgentLambdaRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: IntradayAgentAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DynamoDBSiteConfig
+                Effect: Allow
+                Action:
+                  - dynamodb:Scan
+                  - dynamodb:GetItem
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${SiteConfigTable}'
+              - Sid: DynamoDBAgentState
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:PutItem
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AgentStateTable}'
+              - Sid: DynamoDBAgentDecisions
+                Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AgentDecisionsTable}'
+              - Sid: LambdaInvokeOptEngine
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OptimizationFunction}'
+              - Sid: BedrockInvoke
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.*'
+
+  IntradayAgentLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: aiess-agent-intraday
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Timeout: 120
+      MemorySize: 256
+      ReservedConcurrentExecutions: 1
+      Role: !GetAtt IntradayAgentRole.Arn
+      Environment:
+        Variables:
+          INFLUX_URL: !Ref InfluxUrl
+          INFLUX_TOKEN: !Ref InfluxToken
+          INFLUX_ORG: !Ref InfluxOrg
+          SCHEDULES_API: !Ref SchedulesApi
+          SCHEDULES_API_KEY: !Ref SchedulesApiKey
+          SITE_CONFIG_TABLE: !Ref SiteConfigTable
+          AGENT_STATE_TABLE: !Ref AgentStateTable
+          AGENT_DECISIONS_TABLE: !Ref AgentDecisionsTable
+          OPTIMIZATION_FUNCTION: !Ref OptimizationFunction
+
+  IntradayScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: aiess-agent-intraday-15m
+      Description: Run intraday agent every 15 minutes
+      ScheduleExpression: 'rate(15 minutes)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt IntradayAgentLambda.Arn
+          Id: IntradayCheck
+          RetryPolicy:
+            MaximumRetryAttempts: 0
+
+  IntradaySchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref IntradayAgentLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt IntradayScheduleRule.Arn
+
+Outputs:
+  LambdaArn:
+    Value: !GetAtt IntradayAgentLambda.Arn
+  LambdaName:
+    Value: !Ref IntradayAgentLambda
+  ScheduleRuleArn:
+    Value: !GetAtt IntradayScheduleRule.Arn
+  EstimatedMonthlyCost:
+    Value: '<$2/month (96 invocations/day × Lambda ~$0.01 + Bedrock ~$0.02/call × ~5% hit rate)'

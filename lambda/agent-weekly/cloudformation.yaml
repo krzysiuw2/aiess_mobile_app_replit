@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AIESS Weekly Agent – EventBridge scheduled Lambda
+
+Parameters:
+  FunctionName:
+    Type: String
+    Default: aiess-agent-weekly
+  SiteConfigTable:
+    Type: String
+    Default: site_config
+  AgentStateTable:
+    Type: String
+    Default: aiess_agent_state
+  AgentDecisionsTable:
+    Type: String
+    Default: aiess_agent_decisions
+  OptEngineFunction:
+    Type: String
+    Default: aiess-optimization-engine
+
+Resources:
+
+  WeeklyAgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${FunctionName}-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub '${FunctionName}-policy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DynamoDBReadWrite
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:UpdateItem
+                  - dynamodb:PutItem
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${SiteConfigTable}'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AgentStateTable}'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AgentDecisionsTable}'
+              - Sid: LambdaInvoke
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OptEngineFunction}'
+              - Sid: BedrockInvoke
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/eu.anthropic.claude-sonnet-4-6'
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+
+  WeeklyAgentFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref FunctionName
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt WeeklyAgentRole.Arn
+      Timeout: 300
+      MemorySize: 256
+      Code:
+        ZipFile: |
+          // Placeholder – deploy real code via CI/CD or S3
+          export const handler = async () => ({ status: 'placeholder' });
+      Environment:
+        Variables:
+          SITE_CONFIG_TABLE: !Ref SiteConfigTable
+          AGENT_STATE_TABLE: !Ref AgentStateTable
+          AGENT_DECISIONS_TABLE: !Ref AgentDecisionsTable
+          OPT_ENGINE_FUNCTION: !Ref OptEngineFunction
+
+  WeeklyScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${FunctionName}-schedule'
+      Description: Triggers weekly agent every Sunday at 09:00 UTC
+      ScheduleExpression: 'cron(0 9 ? * SUN *)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt WeeklyAgentFunction.Arn
+          Id: WeeklyAgentTarget
+          RetryPolicy:
+            MaximumRetryAttempts: 1
+
+  WeeklySchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WeeklyAgentFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt WeeklyScheduleRule.Arn
+
+Outputs:
+  FunctionArn:
+    Value: !GetAtt WeeklyAgentFunction.Arn
+  ScheduleRuleArn:
+    Value: !GetAtt WeeklyScheduleRule.Arn

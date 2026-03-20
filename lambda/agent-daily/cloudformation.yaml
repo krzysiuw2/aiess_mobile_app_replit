@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  AIESS Agent Daily — Lambda + EventBridge daily at 10:00 UTC.
+  Reads site configs, invokes optimization-engine, calls Bedrock LLM,
+  produces daily battery schedule rules.
+  Estimated cost: ~$0.50/site/day (mostly Bedrock token usage).
+
+Parameters:
+  SiteConfigTable:
+    Type: String
+    Default: site_config
+  AgentStateTable:
+    Type: String
+    Default: aiess_agent_state
+  AgentDecisionsTable:
+    Type: String
+    Default: aiess_agent_decisions
+  SchedulesApi:
+    Type: String
+    Description: Base URL of the Schedules API
+  SchedulesApiKey:
+    Type: String
+    NoEcho: true
+    Description: API key for the Schedules API
+  InfluxUrl:
+    Type: String
+    Default: 'https://eu-central-1-1.aws.cloud2.influxdata.com'
+  InfluxToken:
+    Type: String
+    NoEcho: true
+  InfluxOrg:
+    Type: String
+    Default: aiess
+  OptimizationEngineFunction:
+    Type: String
+    Default: aiess-optimization-engine
+
+Resources:
+  AgentDailyLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AgentDailyLambdaRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AgentDailyAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DynamoDBSiteConfig
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Scan
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${SiteConfigTable}'
+              - Sid: DynamoDBAgentState
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AgentStateTable}'
+              - Sid: DynamoDBAgentDecisions
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AgentDecisionsTable}'
+              - Sid: LambdaInvokeOptEngine
+                Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OptimizationEngineFunction}'
+              - Sid: BedrockInvokeModel
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/*'
+
+  AgentDailyLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: aiess-agent-daily
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Timeout: 300
+      MemorySize: 512
+      ReservedConcurrentExecutions: 3
+      Role: !GetAtt AgentDailyLambdaRole.Arn
+      Environment:
+        Variables:
+          SITE_CONFIG_TABLE: !Ref SiteConfigTable
+          AGENT_STATE_TABLE: !Ref AgentStateTable
+          AGENT_DECISIONS_TABLE: !Ref AgentDecisionsTable
+          SCHEDULES_API: !Ref SchedulesApi
+          SCHEDULES_API_KEY: !Ref SchedulesApiKey
+          INFLUX_URL: !Ref InfluxUrl
+          INFLUX_TOKEN: !Ref InfluxToken
+          INFLUX_ORG: !Ref InfluxOrg
+          OPTIMIZATION_ENGINE_FUNCTION: !Ref OptimizationEngineFunction
+
+  AgentDailyRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: aiess-agent-daily
+      Description: Trigger daily agent at 10:00 UTC
+      ScheduleExpression: 'cron(0 10 * * ? *)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt AgentDailyLambda.Arn
+          Id: AgentDaily
+          Input: '{}'
+          RetryPolicy:
+            MaximumRetryAttempts: 1
+
+  AgentDailyPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AgentDailyLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AgentDailyRule.Arn
+
+Outputs:
+  LambdaArn:
+    Value: !GetAtt AgentDailyLambda.Arn
+  LambdaName:
+    Value: !Ref AgentDailyLambda
+  EventRuleArn:
+    Value: !GetAtt AgentDailyRule.Arn
+  EstimatedMonthlyCost:
+    Value: '~$15/site/month (Bedrock: ~$0.45/day, Lambda: ~$0.05/day, DynamoDB: negligible)'
