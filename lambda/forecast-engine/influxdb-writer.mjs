@@ -86,6 +86,124 @@ async function postToInflux(lineProtocol) {
 }
 
 /**
+ * Write satellite-observed radiation data points to InfluxDB.
+ * Stored under source=satellite for calibration ground truth.
+ */
+export async function writeSatelliteData(siteId, points) {
+  if (!INFLUX_URL || !INFLUX_TOKEN) {
+    throw new Error('InfluxDB configuration missing');
+  }
+  if (points.length === 0) return;
+
+  const lines = points.map(p => {
+    const tags = `site_id=${escapeTag(siteId)},source=satellite`;
+    const fields = [];
+    if (p.satelliteGhi != null) fields.push(`satellite_ghi=${round4(p.satelliteGhi)}`);
+    if (p.satelliteGti != null) fields.push(`satellite_gti=${round4(p.satelliteGti)}`);
+    if (p.satelliteDni != null) fields.push(`satellite_dni=${round4(p.satelliteDni)}`);
+    if (p.satelliteDhi != null) fields.push(`satellite_dhi=${round4(p.satelliteDhi)}`);
+    if (fields.length === 0) return '';
+    const tsNano = toNanoTimestamp(p.time);
+    return `${MEASUREMENT},${tags} ${fields.join(',')} ${tsNano}`;
+  }).filter(l => l).join('\n');
+
+  if (lines) await postToInflux(lines);
+}
+
+/**
+ * Write reconstructed PV data points (from energy balance) to InfluxDB.
+ * Stored under source=reconstructed with confidence scores.
+ */
+export async function writeReconstructedPvData(siteId, points) {
+  if (!INFLUX_URL || !INFLUX_TOKEN) {
+    throw new Error('InfluxDB configuration missing');
+  }
+  if (points.length === 0) return;
+
+  const lines = points.map(p => {
+    const tags = `site_id=${escapeTag(siteId)},source=reconstructed`;
+    const fields = [];
+    if (p.pvReconstructed != null) fields.push(`pv_reconstructed=${round4(p.pvReconstructed)}`);
+    if (p.pvConfidence != null) fields.push(`pv_confidence=${round4(p.pvConfidence)}`);
+    if (fields.length === 0) return '';
+    const tsNano = toNanoTimestamp(p.time);
+    return `${MEASUREMENT},${tags} ${fields.join(',')} ${tsNano}`;
+  }).filter(l => l).join('\n');
+
+  if (lines) await postToInflux(lines);
+}
+
+/**
+ * Read a single field from energy_simulation filtered by source tag.
+ * Returns Map<hourKey, value>.
+ */
+export async function readSimulationField(siteId, field, source, rangeDays) {
+  const query = `
+    from(bucket: "${INFLUX_BUCKET}")
+      |> range(start: -${rangeDays}d)
+      |> filter(fn: (r) => r._measurement == "${MEASUREMENT}")
+      |> filter(fn: (r) => r.site_id == "${siteId}")
+      |> filter(fn: (r) => r.source == "${source}")
+      |> filter(fn: (r) => r._field == "${field}")
+      |> yield(name: "result")
+  `;
+
+  const csv = await fluxQuery(query);
+  return parseBatteryPowerCsv(csv);
+}
+
+/**
+ * Read grid_power_mean and pcs_power_mean telemetry for a date range.
+ * Returns Map<hourKey, { gridPower: number, pcsPower: number }>.
+ */
+export async function readTelemetryFields(siteId, startDate, endDate) {
+  const query = `
+    from(bucket: "aiess_v1_1h")
+      |> range(start: ${startDate}T00:00:00Z, stop: ${endDate}T23:59:59Z)
+      |> filter(fn: (r) => r._measurement == "energy_telemetry")
+      |> filter(fn: (r) => r.site_id == "${siteId}")
+      |> filter(fn: (r) => r._field == "grid_power_mean" or r._field == "pcs_power_mean")
+      |> yield(name: "result")
+  `;
+
+  const csv = await fluxQuery(query);
+  return parseTelemetryFieldsCsv(csv);
+}
+
+function parseTelemetryFieldsCsv(csv) {
+  const map = new Map();
+  const lines = csv.trim().split('\n').filter(l => l && !l.startsWith('#'));
+  if (lines.length < 2) return map;
+
+  let headers = null;
+  for (const line of lines) {
+    const cols = line.split(',');
+    if (!headers) { headers = cols; continue; }
+    if (cols.length < headers.length) continue;
+
+    const timeIdx = headers.indexOf('_time');
+    const valueIdx = headers.indexOf('_value');
+    const fieldIdx = headers.indexOf('_field');
+
+    const time = cols[timeIdx]?.trim();
+    const value = parseFloat(cols[valueIdx]?.trim());
+    const field = cols[fieldIdx]?.trim();
+    if (!time || isNaN(value)) continue;
+
+    const hourKey = new Date(time).toISOString().slice(0, 13) + ':00:00.000Z';
+
+    if (!map.has(hourKey)) {
+      map.set(hourKey, { gridPower: 0, pcsPower: 0 });
+    }
+    const entry = map.get(hourKey);
+    if (field === 'grid_power_mean') entry.gridPower = value;
+    else if (field === 'pcs_power_mean') entry.pcsPower = value;
+  }
+
+  return map;
+}
+
+/**
  * Read historical battery power (pcs_power) from InfluxDB for backfill.
  * Returns hourly-averaged pcs_power for the given date range.
  *
@@ -101,6 +219,25 @@ export async function readHistoricalBatteryPower(siteId, startDate, endDate) {
       |> filter(fn: (r) => r._measurement == "energy_telemetry")
       |> filter(fn: (r) => r.site_id == "${siteId}")
       |> filter(fn: (r) => r._field == "pcs_power_mean")
+      |> yield(name: "result")
+  `;
+
+  const csv = await fluxQuery(query);
+  return parseBatteryPowerCsv(csv);
+}
+
+/**
+ * Read actual PV meter readings (total_pv_power_mean) for a date range.
+ * Only available for sites with monitored PV arrays (hardware PV meter).
+ * Returns Map<hourKey, pvKw>.
+ */
+export async function readActualPvMeter(siteId, startDate, endDate) {
+  const query = `
+    from(bucket: "aiess_v1_1h")
+      |> range(start: ${startDate}T00:00:00Z, stop: ${endDate}T23:59:59Z)
+      |> filter(fn: (r) => r._measurement == "energy_telemetry")
+      |> filter(fn: (r) => r.site_id == "${siteId}")
+      |> filter(fn: (r) => r._field == "total_pv_power_mean")
       |> yield(name: "result")
   `;
 

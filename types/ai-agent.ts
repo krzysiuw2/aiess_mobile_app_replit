@@ -132,8 +132,47 @@ export interface StrategyPackage {
   risk: string;
 }
 
+export interface StrategySummary {
+  letter: StrategyChoice;
+  name: string;
+  risk: string;
+  simulation_valid: boolean;
+  rule_count: number;
+  estimated_savings_pln: number | null;
+  total_net_cost_pln: number | null;
+  peak_grid_import_kw: number | null;
+  self_consumption_pct: number | null;
+  soc_end: number | null;
+}
+
 export type StrategyChoice = 'A' | 'B' | 'C';
 export type ValidationStatus = 'ok' | 'warning' | 'error';
+
+export interface ScheduleRule {
+  id?: string;
+  p?: number;
+  priority?: number;
+  a?: { t?: string; p?: number; soc?: number; s?: string };
+  c?: {
+    ts?: string;
+    te?: string;
+    d?: number[];
+    smin?: number;
+    smax?: number;
+    gop?: string;
+    gpv?: number;
+    gpv2?: number;
+  };
+  vu?: string;
+  e?: boolean;
+}
+
+export interface ProposedSch {
+  p_5?: ScheduleRule[];
+  p_6?: ScheduleRule[];
+  p_7?: ScheduleRule[];
+  p_8?: ScheduleRule[];
+}
 
 export interface AgentDecision {
   PK: string;
@@ -154,10 +193,12 @@ export interface AgentDecision {
   status: DecisionStatus;
   ttl?: number;
   selected_strategy?: StrategyChoice;
+  all_strategy_summaries?: StrategySummary[];
   strategy_adjustments?: Record<string, number>;
   forecast?: StrategyForecast;
   validation_status?: ValidationStatus;
   fallback_used?: boolean;
+  proposed_sch?: ProposedSch;
 }
 
 // ─── Lesson ─────────────────────────────────────────────────────

@@ -312,7 +312,7 @@ export async function fetchLiveData(siteId: string): Promise<LiveData | null> {
     const liveData: LiveData = {
       gridPower: round1(gridPower),
       batteryPower: round1(batteryPower),
-      batterySoc: Math.round(batterySoc),
+      batterySoc: round1(batterySoc),
       batteryStatus,
       pvPower: round1(pvPower),
       pvEstimated: round1(pvEstimated),
@@ -464,11 +464,11 @@ export async function fetchChartData(
         gridPower: Math.round(gridPower * 10) / 10,
         batteryPower: Math.round(batteryPower * 10) / 10,
         pvPower: Math.round(pvPower * 10) / 10,
-        soc: Math.round(soc),
+        soc: Math.round(soc * 10) / 10,
         factoryLoad: Math.round(calculateFactoryLoad(gridPower, pvPower, batteryPower) * 10) / 10,
         compensatedPower: Math.round(compensatedPower * 10) / 10,
-        socMin: !isNaN(socMinRaw) ? Math.round(socMinRaw) : undefined,
-        socMax: !isNaN(socMaxRaw) ? Math.round(socMaxRaw) : undefined,
+        socMin: !isNaN(socMinRaw) ? Math.round(socMinRaw * 10) / 10 : undefined,
+        socMax: !isNaN(socMaxRaw) ? Math.round(socMaxRaw * 10) / 10 : undefined,
       };
     }).sort((a, b) => a.time.getTime() - b.time.getTime());
   } catch (error) {

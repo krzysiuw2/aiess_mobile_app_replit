@@ -31,6 +31,15 @@ def load_site_config(site_id: str) -> dict[str, Any]:
     if peak_confidence is None:
         peak_confidence = 0.99
 
+    energy_price_model = financial.get("energy_price_model", "tge_rdn")
+    fixed_price = financial.get("fixed_price_pln_kwh")
+    export_price_model = financial.get("export_price_model", "tge_rdn")
+
+    if energy_price_model == "fixed" and fixed_price is not None:
+        avg_tariff = float(fixed_price)
+    else:
+        avg_tariff = 0.55
+
     return {
         "site_id": site_id,
         "battery_capacity_kwh": battery.get("capacity_kwh"),
@@ -51,6 +60,10 @@ def load_site_config(site_id: str) -> dict[str, Any]:
         "round_trip_efficiency": ROUND_TRIP_EFFICIENCY,
         "distribution_operator": financial.get("distribution_operator"),
         "distribution_tariff_group": financial.get("distribution_tariff_group"),
+        "energy_price_model": energy_price_model,
+        "fixed_price_pln_kwh": float(fixed_price) if fixed_price is not None else None,
+        "export_price_model": export_price_model,
+        "avg_tariff_rate_pln_kwh": avg_tariff,
         "financial": financial,
         "grid_connection": grid,
         "power_limits": power_limits,

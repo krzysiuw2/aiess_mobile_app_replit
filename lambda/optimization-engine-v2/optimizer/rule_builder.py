@@ -88,6 +88,18 @@ def build_forecast_energy_flow(
         (total_pv_self + total_pv_batt) / pv_sum * 100.0 if pv_sum > 0 else 0.0
     )
 
+    baseline_cost = 0.0
+    for h in range(n):
+        load = float(load_forecast[h]) if h < len(load_forecast) else 0.0
+        pv = float(pv_forecast[h]) if h < len(pv_forecast) else 0.0
+        price = float(prices[h]) if h < len(prices) else 0.0
+        grid_no_batt = load - pv
+        if grid_no_batt > 0:
+            baseline_cost += grid_no_batt * (price / 1000.0)
+        else:
+            baseline_cost -= abs(grid_no_batt) * (price / 1000.0)
+    savings = baseline_cost - total_cost
+
     return {
         "strategy": strategy_name,
         "horizon_hours": len(hourly_flow),
@@ -113,6 +125,7 @@ def build_forecast_energy_flow(
                 max((float(f["grid_export_kw"]) for f in hourly_flow), default=0.0), 1
             ),
             "total_net_cost_pln": round(total_cost, 2),
-            "estimated_savings_pln": round(-total_cost, 2),
+            "baseline_cost_pln": round(baseline_cost, 2),
+            "estimated_savings_pln": round(savings, 2),
         },
     }

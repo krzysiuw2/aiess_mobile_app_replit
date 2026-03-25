@@ -1,0 +1,25 @@
+{
+    "events": [
+        {
+            "timestamp": 1774008195033,
+            "message": "INIT_START Runtime Version: nodejs:20.v95\tRuntime Version ARN: arn:aws:lambda:eu-central-1::runtime:2d788b26ac416854c5eb831c9f46cb2e0a0ddcee84b1a9b114acbdfdb644c8c1\n",
+            "ingestionTime": 1774008198763
+        },
+        {
+            "timestamp": 1774008195577,
+            "message": "START RequestId: ad177faf-2077-42eb-9546-fd62361f1e82 Version: $LATEST\n",
+            "ingestionTime": 1774008198763
+        },
+        {
+            "timestamp": 1774008195579,
+            "message": "2026-03-20T12:03:15.579Z\tad177faf-2077-42eb-9546-fd62361f1e82\tINFO\t[WeeklyAgent] Starting weekly run {\"site_id\":\"domagala_1\",\"manual_trigger\":true}\n",
+            "ingestionTime": 1774008198763
+        },
+        {
+            "timestamp": 1774008195681,
+            "message": "2026-03-20T12:03:15.681Z\tad177faf-2077-42eb-9546-fd62361f1e82\tINFO\t[WeeklyAgent] Processing 1 site(s)\n",
+            "ingestionTime": 1774008198763
+        },
+        {
+            "timestamp": 1774008195681,
+            "message": 

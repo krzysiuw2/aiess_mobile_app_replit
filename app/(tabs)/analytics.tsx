@@ -38,6 +38,7 @@ import { EnergyFlowChart } from '@/components/analytics/EnergyFlowChart';
 import { EnergySummaryCards } from '@/components/analytics/EnergySummaryCards';
 import { KPICard } from '@/components/analytics/KPICard';
 import { SectionHeader } from '@/components/analytics/SectionHeader';
+import { NotificationBell } from '@/components/ai-agent/NotificationBell';
 import { EnergyDonutChart } from '@/components/analytics/EnergyDonutChart';
 import { EnergyBarsChart } from '@/components/analytics/EnergyBarsChart';
 import { SocBandChart } from '@/components/analytics/SocBandChart';
@@ -359,6 +360,7 @@ export default function AnalyticsScreen() {
             {selectedDevice?.name || t.analytics?.subtitle || 'Energy flow analysis'}
           </Text>
         </View>
+        <NotificationBell />
       </View>
 
       {/* Segmented Control */}

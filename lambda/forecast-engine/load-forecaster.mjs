@@ -57,6 +57,55 @@ export function buildLoadProfile(loadMap, classifyFn) {
 }
 
 /**
+ * Build a load profile that includes both median and standard deviation per bucket.
+ * Used by the calibration engine to score PV reconstruction confidence.
+ *
+ * @param {Map<string, number>} loadMap  ISO timestamp -> factory_load_corrected kW
+ * @param {(dateStr: string) => { dayType: string, localHour: number }} classifyFn
+ * @returns {Map<string, { median: number, stdDev: number, count: number }>}
+ */
+export function buildLoadProfileWithStdDev(loadMap, classifyFn) {
+  const buckets = new Map();
+
+  for (const [timeStr, load] of loadMap) {
+    if (load <= 0) continue;
+    const { dayType, localHour } = classifyFn(timeStr);
+    const key = `${dayType}_${localHour}`;
+
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(load);
+  }
+
+  const profile = new Map();
+  for (const [key, values] of buckets) {
+    profile.set(key, {
+      median: median(values),
+      stdDev: stdDev(values),
+      count: values.length,
+    });
+  }
+
+  let holidayCount = 0;
+  for (const [key] of profile) {
+    if (key.startsWith('holiday_')) holidayCount++;
+  }
+
+  if (holidayCount < 12) {
+    for (let h = 0; h < 24; h++) {
+      const holidayKey = `holiday_${h}`;
+      if (!profile.has(holidayKey) || buckets.get(holidayKey)?.length < 3) {
+        const weekendVal = profile.get(`weekend_${h}`);
+        if (weekendVal != null) {
+          profile.set(holidayKey, weekendVal);
+        }
+      }
+    }
+  }
+
+  return profile;
+}
+
+/**
  * Compute temperature correction coefficients per day-type.
  * Simple linear regression: load_residual = a * temp + b
  *
@@ -188,6 +237,13 @@ function median(arr) {
   const sorted = [...arr].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function stdDev(arr) {
+  if (arr.length < 2) return 0;
+  const mean = arr.reduce((s, v) => s + v, 0) / arr.length;
+  const variance = arr.reduce((s, v) => s + (v - mean) ** 2, 0) / (arr.length - 1);
+  return Math.sqrt(variance);
 }
 
 function linearRegression(xs, ys) {

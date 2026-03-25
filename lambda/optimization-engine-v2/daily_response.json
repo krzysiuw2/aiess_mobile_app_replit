@@ -1,0 +1,1 @@
+{"processed":1,"errors":0,"elapsed_ms":13859,"results":[{"siteId":"domagala_1","selected_strategy":"C","rulesCount":4,"status":"pending_approval","reasoning":"Strategia A jest nieważna symulacyjnie (simulation_valid: false) i generuje straty — odpada. Strategie B i C mają identyczne wyniki finansowe i operacyjne, więc różnica sprowadza się do poziomu ryzyka"}],"errors_detail":[]}

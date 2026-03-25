@@ -5,6 +5,7 @@ from typing import Any
 from .helpers import lerp
 from .rule_builder import build_forecast_energy_flow
 from .soc_simulator import simulate_soc_trajectory
+from . import decision_log as dlog
 
 STRATEGIES: list[dict[str, Any]] = [
     {"name": "aggressive", "aggression": 1.2, "risk": "moderate"},
@@ -51,6 +52,7 @@ def generate_strategies(
     eff_imp = _effective_import_kw(config) or 1e9
 
     strategies: list[dict[str, Any]] = []
+    charge_reason = tradeoff["charge_reason"]
 
     for strat in STRATEGIES:
         name = str(strat["name"])
@@ -82,6 +84,12 @@ def generate_strategies(
                 "sx": 95,
             },
         }
+        dlog.rule_reason(
+            f"opt-ps-{tag}",
+            f"Peak shaving: discharge up to {round(mx_d * agg, 1)} kW when grid > {ps_threshold} kW "
+            f"(moc={moc} kW minus {margin_frac*100:.0f}% margin)",
+            {"threshold_kw": ps_threshold, "power_kw": round(mx_d * agg, 1), "soc_range": "10-95%"},
+        )
 
         p6_rule: dict[str, Any] = {
             "id": f"opt-pv-{tag}",
@@ -96,6 +104,11 @@ def generate_strategies(
                 "sx": p6_sx,
             },
         }
+        dlog.rule_reason(
+            f"opt-pv-{tag}",
+            f"PV surplus capture: charge at {mx_c} kW when grid < {p6_threshold} kW (exporting), SoC cap {p6_sx}%",
+            {"threshold_kw": p6_threshold, "max_soc": p6_sx},
+        )
 
         p7_rules: list[dict[str, Any]] = []
 
@@ -106,6 +119,11 @@ def generate_strategies(
             night_target = min(night_target, soc_max)
             dis_soc = round(lerp(30.0, 50.0, 1.0 - t_norm))
 
+            dlog.rule_reason(
+                f"opt-arb-c-{tag}",
+                f"Arbitrage charge: buy cheap ({cw['start_hour']:02d}:00-{cw['end_hour']+1:02d}:00) to SoC {round(night_target)}%",
+                {"window": f"{cw['start_hour']:02d}-{cw['end_hour']+1:02d}", "target_soc": round(night_target)},
+            )
             p7_rules.append(
                 {
                     "id": f"opt-arb-c-{tag}",
@@ -125,6 +143,11 @@ def generate_strategies(
                     },
                     "d": "wkd",
                 }
+            )
+            dlog.rule_reason(
+                f"opt-arb-d-{tag}",
+                f"Arbitrage discharge: sell expensive ({dw['start_hour']:02d}:00-{dw['end_hour']+1:02d}:00) down to SoC {dis_soc}%",
+                {"window": f"{dw['start_hour']:02d}-{dw['end_hour']+1:02d}", "target_soc": dis_soc},
             )
             p7_rules.append(
                 {
@@ -146,7 +169,7 @@ def generate_strategies(
                     "d": "wkd",
                 }
             )
-        elif tradeoff["charge_reason"] in (
+        elif charge_reason in (
             "peak_shaving_readiness",
             "peak_reserve_plus_pv",
         ):
@@ -154,6 +177,24 @@ def generate_strategies(
                 float(tradeoff["peak_reserve_soc"]) * agg,
                 soc_max,
             )
+
+            already_above = current_soc >= reserve_soc
+            if already_above:
+                dlog.rule_reason(
+                    f"opt-reserve-c-{tag}",
+                    f"Night reserve charge to SoC {round(reserve_soc)}% — WILL NOT TRIGGER: current SoC "
+                    f"{current_soc:.0f}% already above target. Rule exists as safety net for overnight drain.",
+                    {"target_soc": round(reserve_soc), "current_soc": round(current_soc, 1)},
+                )
+            else:
+                charge_kwh_needed = (reserve_soc - current_soc) / 100 * cap
+                dlog.rule_reason(
+                    f"opt-reserve-c-{tag}",
+                    f"Night reserve charge to SoC {round(reserve_soc)}% (need +{charge_kwh_needed:.0f} kWh from {current_soc:.0f}%). "
+                    f"Reason: {charge_reason} — build reserve for potential peak shaving events.",
+                    {"target_soc": round(reserve_soc), "charge_kwh": round(charge_kwh_needed, 1)},
+                )
+
             p7_rules.append(
                 {
                     "id": f"opt-reserve-c-{tag}",
@@ -172,6 +213,12 @@ def generate_strategies(
                 }
             )
             if tradeoff.get("pre_weekend_discharge"):
+                dlog.rule_reason(
+                    f"opt-fri-empty-{tag}",
+                    f"Friday discharge to SoC {round(soc_min + 5.0)}% (14:00-21:00). "
+                    f"Purpose: empty battery before weekend to make room for PV surplus capture Saturday/Sunday.",
+                    {"target_soc": round(soc_min + 5.0)},
+                )
                 p7_rules.append(
                     {
                         "id": f"opt-fri-empty-{tag}",
@@ -189,11 +236,21 @@ def generate_strategies(
                         "d": [4],
                     }
                 )
+            else:
+                dlog.rule_skipped(
+                    f"opt-fri-empty-{tag}",
+                    "pre_weekend_discharge is False (weekend or holiday)",
+                )
         elif float(tradeoff["night_charge_kwh"]) > 0:
             night_target = current_soc + (
                 float(tradeoff["night_charge_kwh"]) / cap * 100.0
             )
             night_target = min(night_target, soc_max)
+            dlog.rule_reason(
+                f"opt-night-c-{tag}",
+                f"Generic night charge to SoC {round(night_target)}%. Reason: {charge_reason}",
+                {"target_soc": round(night_target), "charge_kwh": round(tradeoff["night_charge_kwh"], 1)},
+            )
             p7_rules.append(
                 {
                     "id": f"opt-night-c-{tag}",
@@ -211,8 +268,12 @@ def generate_strategies(
                     "d": "wkd",
                 }
             )
+        else:
+            dlog.rule_skipped(
+                f"P7 rules for {tag}",
+                f"No arbitrage, no PV reserve, no night charge needed (charge_reason={charge_reason}, night_charge_kwh=0)",
+            )
 
-        # P8 first (highest priority wins in simulation)
         rules = [p8_rule, *p7_rules, p6_rule]
         sim = simulate_soc_trajectory(rules, net_grid, current_soc, config)
         forecast = build_forecast_energy_flow(

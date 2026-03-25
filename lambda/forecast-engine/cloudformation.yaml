@@ -52,6 +52,7 @@ Resources:
                 Action:
                   - dynamodb:GetItem
                   - dynamodb:Scan
+                  - dynamodb:UpdateItem
                 Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${SiteConfigTable}'
               - Effect: Allow
                 Action:
@@ -67,7 +68,7 @@ Resources:
       FunctionName: aiess-forecast-engine
       Runtime: nodejs20.x
       Handler: index.handler
-      Timeout: 60
+      Timeout: 120
       MemorySize: 256
       ReservedConcurrentExecutions: 5
       Role: !GetAtt ForecastEngineLambdaRole.Arn
@@ -126,6 +127,29 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt Forecast7dRule.Arn
+
+  # Self-alignment: daily at 09:00 UTC (after satellite data + telemetry available)
+  SelfAlignRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: aiess-forecast-self-align
+      Description: Daily PV forecast self-calibration (satellite + reconstruction + calibration)
+      ScheduleExpression: 'cron(0 9 * * ? *)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt ForecastEngineLambda.Arn
+          Id: SelfAlign
+          Input: '{"mode": "self_align"}'
+          RetryPolicy:
+            MaximumRetryAttempts: 1
+
+  SelfAlignPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ForecastEngineLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt SelfAlignRule.Arn
 
 Outputs:
   LambdaArn:

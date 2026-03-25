@@ -670,6 +670,23 @@ async function processSite(siteConfig) {
   const now = new Date().toISOString();
   const forecast = chosen.forecast || {};
 
+  const allStrategySummaries = strategies.map((s) => {
+    const letter = s.name === 'aggressive' ? 'A' : s.name === 'conservative' ? 'C' : 'B';
+    const sum = s.forecast?.summary || {};
+    return {
+      letter,
+      name: s.name,
+      risk: s.risk,
+      simulation_valid: s.simulation_valid,
+      rule_count: (s.rules || []).length,
+      estimated_savings_pln: sum.estimated_savings_pln ?? null,
+      total_net_cost_pln: sum.total_net_cost_pln ?? null,
+      peak_grid_import_kw: sum.peak_grid_import_kw ?? null,
+      self_consumption_pct: sum.self_consumption_pct ?? null,
+      soc_end: sum.soc_end ?? null,
+    };
+  });
+
   const decision = {
     PK: `DECISION#${siteId}`,
     SK: now,
@@ -684,6 +701,7 @@ async function processSite(siteConfig) {
       battery_capacity_kwh: siteConfig.battery?.capacity_kwh || 100,
     },
     selected_strategy: selectedKey,
+    all_strategy_summaries: allStrategySummaries,
     strategy_adjustments: adjustments,
     forecast,
     validation_status,

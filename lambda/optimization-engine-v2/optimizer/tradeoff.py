@@ -15,8 +15,13 @@ def resolve_tradeoff(
     is_pre_holiday: bool = False,
 ) -> dict[str, Any]:
     """day_of_week: Monday=0 .. Sunday=6 (datetime.weekday() convention)."""
-    is_pre_weekend = (day_of_week == 4) or is_pre_holiday
-    is_weekend = (day_of_week in (5, 6)) or is_holiday
+    operating_days = config.get("operating_days", [0, 1, 2, 3, 4])
+    is_non_operating = day_of_week not in operating_days
+    next_day = (day_of_week + 1) % 7
+    is_pre_non_operating = not is_non_operating and next_day not in operating_days
+
+    is_pre_weekend = is_pre_non_operating or is_pre_holiday
+    is_weekend = is_non_operating or is_holiday
 
     cap = float(config["battery_capacity_kwh"])
     soc_min = float(config["safety_soc_min"])
@@ -56,13 +61,12 @@ def resolve_tradeoff(
         room_for_pv = usable - night_charge_kwh
         charge_reason = "peak_shaving_readiness"
         charge_days = [0, 1, 2, 3]
-        pre_weekend_discharge = not is_weekend
     elif not price_result.get("profitable") and potential_pv_kwh > 0:
         night_charge_kwh = max(0.0, peak_reserve_kwh - potential_pv_kwh)
         room_for_pv = usable - night_charge_kwh
         charge_reason = "peak_reserve_plus_pv"
         charge_days = [0, 1, 2, 3]
-        pre_weekend_discharge = not is_weekend
+        pre_weekend_discharge = is_pre_weekend
     elif pv_value_per_kwh > arbitrage_value:
         room_for_pv = min(potential_pv_kwh, usable * 0.6)
         night_charge_kwh = max(usable - room_for_pv, peak_reserve_kwh)

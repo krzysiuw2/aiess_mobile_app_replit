@@ -5,6 +5,8 @@
  *   forecast_48h  — 48-hour PV + load forecast (runs every 3h via EventBridge)
  *   forecast_7d   — 7-day PV + load forecast (runs daily via EventBridge)
  *   backfill      — Historical PV estimation + factory load reconstruction
+ *   self_align             — Satellite fetch + PV reconstruction + calibration (daily at 09:00 UTC)
+ *   calibration_backfill   — One-time historical backfill (pass start_date, end_date)
  * 
  * Environment variables:
  *   SITE_CONFIG_TABLE   DynamoDB table name (default: site_config)
@@ -21,11 +23,12 @@ import { unmarshall } from '@aws-sdk/util-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
 
 import { fetchWeatherForOrientations } from './open-meteo-client.mjs';
-import { calculateSitePv, getUniqueOrientations } from './pv-calculator.mjs';
+import { calculateSitePv, calculateSitePvFromSubhourly, getUniqueOrientations } from './pv-calculator.mjs';
 import { writeSimulationData, readHistoricalBatteryPower, readHistoricalGridPower, readHistoricalSimulation } from './influxdb-writer.mjs';
-import { buildLoadProfile, buildTempCorrection, forecastLoad, computeScaleFactors } from './load-forecaster.mjs';
+import { buildLoadProfile, buildLoadProfileWithStdDev, buildTempCorrection, forecastLoad, computeScaleFactors } from './load-forecaster.mjs';
 import { getHolidaysForRange, createClassifier } from './day-type-classifier.mjs';
 import { loadEnergaFromS3, parseEnergaData } from './energa-parser.mjs';
+import { runSatelliteFetch, runPvReconstruction, runCalibration, computeIntradayCorrection, runSelfAlignBackfill } from './calibration-engine.mjs';
 
 const ddb = new DynamoDBClient({});
 const s3 = new S3Client({});
@@ -71,6 +74,15 @@ export const handler = async (event) => {
         case 'backfill':
           result = await runBackfill(site, event);
           break;
+        case 'self_align':
+          result = await runSelfAlign(site);
+          break;
+        case 'calibration_backfill': {
+          const startDate = event.start_date || '2025-01-01';
+          const endDate = event.end_date || new Date().toISOString().slice(0, 10);
+          result = await runSelfAlignBackfill(site, startDate, endDate);
+          break;
+        }
         default:
           throw new Error(`Unknown mode: ${mode}`);
       }
@@ -92,20 +104,37 @@ async function runForecast(site, forecastDays) {
   const orientationsAll = getUniqueOrientations(arrays, 'all');
   const orientationsUnmonitored = getUniqueOrientations(arrays, 'unmonitored_only');
 
-  const weatherAll = await fetchWeatherForOrientations(location, orientationsAll, 'forecast', {
+  const { hourly: weatherAllHourly, subhourly: weatherAllSubhourly } = await fetchWeatherForOrientations(location, orientationsAll, 'forecast', {
     forecastDays,
     apiKey: OPEN_METEO_API_KEY,
   });
 
-  const pvForecastTs = calculateSitePv(weatherAll, arrays, 'all');
+  // Apply calibration correction from self-alignment pipeline
+  const calibration = site.pv_calibration || {};
+  const calFactor = (calibration.gti_correction ?? 1.0) * (calibration.pv_efficiency_correction ?? 1.0);
+  if (calFactor !== 1.0) {
+    console.log(`[ForecastEngine] Applying PV calibration factor ${calFactor.toFixed(4)} for ${site_id}`);
+  }
+
+  const hasSubhourly = weatherAllSubhourly.size > 0;
+  const pvForecastTs = hasSubhourly
+    ? calculateSitePvFromSubhourly(weatherAllSubhourly, arrays, 'all', null, calFactor)
+    : calculateSitePv(weatherAllHourly, arrays, 'all', null, calFactor);
 
   let pvEstimatedTs = [];
   if (orientationsUnmonitored.length > 0) {
-    pvEstimatedTs = calculateSitePv(weatherAll, arrays, 'unmonitored_only');
+    pvEstimatedTs = hasSubhourly
+      ? calculateSitePvFromSubhourly(weatherAllSubhourly, arrays, 'unmonitored_only', null, calFactor)
+      : calculateSitePv(weatherAllHourly, arrays, 'unmonitored_only', null, calFactor);
+  }
+
+  if (hasSubhourly) {
+    const totalSubhourlyPts = [...weatherAllSubhourly.values()].reduce((s, r) => s + r.length, 0);
+    console.log(`[ForecastEngine] Using 15-min resolution for PV: ${totalSubhourlyPts} sub-hourly points`);
   }
 
   const weatherFirstKey = orientationsAll[0]?.key;
-  const weatherRows = weatherFirstKey ? weatherAll.get(weatherFirstKey) : [];
+  const weatherRows = weatherFirstKey ? weatherAllHourly.get(weatherFirstKey) : [];
 
   let loadForecastTs = [];
   try {
@@ -128,6 +157,28 @@ async function runForecast(site, forecastDays) {
 
       const sfLog = [...scaleFactors.entries()].map(([k, v]) => `${k}=${v.toFixed(2)}`).join(', ');
       console.log(`[ForecastEngine] Load forecast: ${loadForecastTs.length} pts, peak: ${Math.max(...loadForecastTs.map(p => p.loadKw), 0).toFixed(1)} kW, holidays: ${holidaySet.size}, scale: {${sfLog}}`);
+
+      // Intraday correction: compare recent actual PV vs forecast, adjust future hours
+      try {
+        const profileWithStdDev = buildLoadProfileWithStdDev(loadMap, classifyFn);
+        const intradayResult = await computeIntradayCorrection(site_id, profileWithStdDev, classifyFn);
+        if (intradayResult.applied) {
+          const nowMs = Date.now();
+          for (const pt of pvForecastTs) {
+            if (new Date(pt.time).getTime() > nowMs) {
+              pt.pvKw *= intradayResult.correction;
+            }
+          }
+          for (const pt of pvEstimatedTs) {
+            if (new Date(pt.time).getTime() > nowMs) {
+              pt.pvKw *= intradayResult.correction;
+            }
+          }
+          console.log(`[ForecastEngine] Intraday PV correction: ${intradayResult.correction.toFixed(3)} (from ${intradayResult.sampleCount} recent hours)`);
+        }
+      } catch (intradayErr) {
+        console.warn(`[ForecastEngine] Intraday correction skipped: ${intradayErr.message}`);
+      }
     } else {
       console.warn(`[ForecastEngine] Not enough load data for ${site_id}: ${loadMap.size} < 168 required`);
     }
@@ -199,7 +250,7 @@ async function runBackfill(site, event) {
       const chunkEndStr = chunkEnd.toISOString().slice(0, 10);
 
       console.log(`[Backfill] Fetching ${orient.key} chunk: ${chunkStartStr} - ${chunkEndStr}`);
-      const weather = await fetchWeatherForOrientations(location, [orient], 'archive', {
+      const { hourly: weather } = await fetchWeatherForOrientations(location, [orient], 'archive', {
         startDate: chunkStartStr,
         endDate: chunkEndStr,
         apiKey: OPEN_METEO_API_KEY,
@@ -327,6 +378,39 @@ async function runBackfill(site, event) {
     pvTotalKwh: Math.round(pvTotal),
     validationErrors: validationErrors.slice(0, 10),
   };
+}
+
+async function runSelfAlign(site) {
+  const { site_id } = site;
+  console.log(`[SelfAlign] Starting self-alignment for ${site_id}`);
+
+  let satellite = { skipped: true };
+  let reconstruction = { pointsWritten: 0 };
+  let calibration = { gti_correction: 1.0, pv_efficiency_correction: 1.0 };
+
+  try {
+    satellite = await runSatelliteFetch(site);
+  } catch (err) {
+    console.error(`[SelfAlign] Satellite fetch failed for ${site_id}: ${err.message}`);
+    satellite = { error: err.message };
+  }
+
+  try {
+    reconstruction = await runPvReconstruction(site);
+  } catch (err) {
+    console.error(`[SelfAlign] PV reconstruction failed for ${site_id}: ${err.message}`);
+    reconstruction = { error: err.message };
+  }
+
+  try {
+    calibration = await runCalibration(site);
+  } catch (err) {
+    console.error(`[SelfAlign] Calibration failed for ${site_id}: ${err.message}`);
+    calibration = { error: err.message };
+  }
+
+  console.log(`[SelfAlign] Done for ${site_id}: satellite=${satellite.pointsWritten ?? 0} pts, reconstruction=${reconstruction.pointsWritten ?? 0} pts`);
+  return { satellite, reconstruction, calibration };
 }
 
 async function getSiteConfig(siteId) {

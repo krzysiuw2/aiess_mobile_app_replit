@@ -27,8 +27,9 @@ export function useAgentDecisions(params?: AgentDecisionQuery) {
       return getAgentDecisions(siteId, params);
     },
     enabled: !!siteId,
-    staleTime: 1000 * 60 * 2,
-    refetchInterval: 1000 * 60 * 2,
+    staleTime: 1000 * 15,
+    refetchInterval: 1000 * 30,
+    refetchOnWindowFocus: true,
   });
 
   const commentMutation = useMutation({

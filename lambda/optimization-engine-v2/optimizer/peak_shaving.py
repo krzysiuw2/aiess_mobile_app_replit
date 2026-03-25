@@ -8,10 +8,16 @@ from .helpers import compute_usable_capacity, group_consecutive
 
 
 def calculate_peak_shaving(
-    load_forecast: list[float],
+    net_grid_forecast: list[float],
     historical_peaks: list[float],
     config: dict[str, Any],
 ) -> dict[str, Any]:
+    """Determine peak shaving needs based on net grid import forecast.
+
+    net_grid_forecast should be load - PV for each hour, matching what the
+    utility meter actually measures (grid_power). Historical peaks also
+    come from grid_power_mean which already reflects PV offset.
+    """
     moc = float(config["moc_zamowiona_kw"])
     margin = float(config.get("safety_margin_pct", 3.0))
     safe_limit = moc * (1.0 - margin / 100.0)
@@ -26,10 +32,10 @@ def calculate_peak_shaving(
     usable = compute_usable_capacity(cap, soc_min, soc_max, backup)
 
     peak_rows: list[dict[str, Any]] = []
-    for h in range(len(load_forecast)):
-        lf = float(load_forecast[h])
-        if lf > safe_limit:
-            overshoot = lf - safe_limit
+    for h in range(len(net_grid_forecast)):
+        ng = float(net_grid_forecast[h])
+        if ng > safe_limit:
+            overshoot = ng - safe_limit
             discharge_needed = min(overshoot, mx_d)
             peak_rows.append(
                 {
