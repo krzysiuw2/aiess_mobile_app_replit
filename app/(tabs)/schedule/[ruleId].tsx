@@ -20,18 +20,23 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { X, Save, Clock, Calendar, Bot, AlertTriangle, Pencil, Zap, Moon, Sun, Shield } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useDevices } from '@/contexts/DeviceContext';
 import { useSchedules } from '@/hooks/useSchedules';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
 import {
   formDataToOptimizedRule,
   optimizedRuleToFormData,
   validateRule,
+  unixToLocalDateStr,
+  localDateStrToUnix,
 } from '@/lib/aws-schedules';
+import { getFavoriteById } from '@/lib/rule-favorites';
 import type {
   ActionType,
   Priority,
   Strategy,
   GridOperator,
+  OptimizedScheduleRule,
   ScheduleRuleFormData,
 } from '@/types';
 
@@ -597,10 +602,19 @@ const DEFAULT_FORM: FormState = {
 
 export default function RuleBuilderScreen() {
   const { t } = useSettings();
-  const { ruleId, priority } = useLocalSearchParams<{ ruleId: string; priority?: string }>();
+  const { ruleId, priority, fromId, fromPriority, fromFavId } = useLocalSearchParams<{
+    ruleId: string;
+    priority?: string;
+    fromId?: string;
+    fromPriority?: string;
+    fromFavId?: string;
+  }>();
+  const { selectedDevice } = useDevices();
   const { rules, rawSchedules, safety, createRule, updateRule } = useSchedules();
   const { siteConfig, siteConfigComplete } = useSiteConfig();
   const isNew = ruleId === 'new';
+  const isDuplicateFromRule = isNew && !!fromId;
+  const isFromFavorite = isNew && !!fromFavId;
 
   const p9SiteLimit = rawSchedules?.sch?.p_9?.find(r => r.a.t === 'sl');
   const siteHth = p9SiteLimit?.a.hth ?? 9999;
@@ -625,6 +639,7 @@ export default function RuleBuilderScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [originalPriority, setOriginalPriority] = useState<Priority | undefined>(undefined);
   const [activeTemplate, setActiveTemplate] = useState<string | null>(null);
+  const [duplicateBanner, setDuplicateBanner] = useState<string | null>(null);
 
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
@@ -696,7 +711,46 @@ export default function RuleBuilderScreen() {
     }
   }, [form.scheduleMode, form.oneTimeDate]);
 
-  // Load existing rule
+  const buildFormStateFromRule = useCallback((
+    rule: OptimizedScheduleRule,
+    p: Priority,
+    options: { keepId: boolean; keepActive: boolean; keepSource: boolean },
+  ): FormState => {
+    const fd = optimizedRuleToFormData(rule, p);
+    const hasWeekdays = fd.weekdays && fd.weekdays.length > 0 && fd.weekdays.length < 7;
+    const mode: 'one-time' | 'recurring' = hasWeekdays ? 'recurring' : 'one-time';
+
+    return {
+      id: options.keepId ? fd.id : '',
+      idManualOverride: options.keepId,
+      priority: fd.priority,
+      active: options.keepActive ? fd.active : true,
+      source: options.keepSource ? rule.s : undefined,
+      actionType: fd.actionType,
+      power: fd.power?.toString() || '50',
+      targetSoc: fd.targetSoc?.toString() || '80',
+      maxPower: fd.maxPower?.toString() || '50',
+      maxGrid: fd.maxGridPower?.toString() || '100',
+      minGrid: fd.minGridPower?.toString() || '0',
+      strategy: fd.strategy || 'eq',
+      scheduleMode: mode,
+      oneTimeDate: mode === 'one-time' ? (unixToLocalDateStr(fd.validFrom) || todayISO()) : todayISO(),
+      startTime: fd.timeStart || '',
+      endTime: fd.timeEnd || '',
+      selectedDays: fd.weekdays || [0, 1, 2, 3, 4, 5, 6],
+      hasSocCondition: fd.socMin !== undefined || fd.socMax !== undefined,
+      socMin: fd.socMin?.toString() || '',
+      socMax: fd.socMax?.toString() || '',
+      hasGridCondition: fd.gridPowerOperator !== undefined,
+      gridOperator: fd.gridPowerOperator || 'gt',
+      gridValue: fd.gridPowerValue?.toString() || '',
+      gridValueMax: fd.gridPowerValueMax?.toString() || '',
+      validFromDate: unixToLocalDateStr(fd.validFrom),
+      validUntilDate: unixToLocalDateStr(fd.validUntil),
+    };
+  }, []);
+
+  // Load existing rule (edit mode)
   useEffect(() => {
     if (!isNew && ruleId && rules.length > 0) {
       const p = parseInt(priority || '0') as Priority;
@@ -704,47 +758,45 @@ export default function RuleBuilderScreen() {
       if (!existing) return;
 
       setOriginalPriority(existing.priority);
-
-      const fd = optimizedRuleToFormData(existing, existing.priority);
-
-      const tsToDate = (ts: number | undefined): string => {
-        if (!ts) return '';
-        return new Date(ts * 1000).toISOString().split('T')[0];
-      };
-
-      const hasWeekdays = fd.weekdays && fd.weekdays.length > 0 && fd.weekdays.length < 7;
-      const mode: 'one-time' | 'recurring' = hasWeekdays ? 'recurring' : 'one-time';
-
-      setForm({
-        id: fd.id,
-        idManualOverride: true,
-        priority: fd.priority,
-        active: fd.active,
-        source: existing.s,
-        actionType: fd.actionType,
-        power: fd.power?.toString() || '50',
-        targetSoc: fd.targetSoc?.toString() || '80',
-        maxPower: fd.maxPower?.toString() || '50',
-        maxGrid: fd.maxGridPower?.toString() || '100',
-        minGrid: fd.minGridPower?.toString() || '0',
-        strategy: fd.strategy || 'eq',
-        scheduleMode: mode,
-        oneTimeDate: mode === 'one-time' ? (tsToDate(fd.validFrom) || todayISO()) : todayISO(),
-        startTime: fd.timeStart || '',
-        endTime: fd.timeEnd || '',
-        selectedDays: fd.weekdays || [0, 1, 2, 3, 4, 5, 6],
-        hasSocCondition: fd.socMin !== undefined || fd.socMax !== undefined,
-        socMin: fd.socMin?.toString() || '',
-        socMax: fd.socMax?.toString() || '',
-        hasGridCondition: fd.gridPowerOperator !== undefined,
-        gridOperator: fd.gridPowerOperator || 'gt',
-        gridValue: fd.gridPowerValue?.toString() || '',
-        gridValueMax: fd.gridPowerValueMax?.toString() || '',
-        validFromDate: tsToDate(fd.validFrom),
-        validUntilDate: tsToDate(fd.validUntil),
-      });
+      setForm(buildFormStateFromRule(existing, existing.priority, {
+        keepId: true,
+        keepActive: true,
+        keepSource: true,
+      }));
     }
-  }, [isNew, ruleId, priority, rules]);
+  }, [isNew, ruleId, priority, rules, buildFormStateFromRule]);
+
+  // Duplicate from existing rule (new + fromId)
+  useEffect(() => {
+    if (!isDuplicateFromRule || !fromId || rules.length === 0) return;
+    const p = parseInt(fromPriority || '0') as Priority;
+    const source = rules.find(r => r.id === fromId && r.priority === p);
+    if (!source) return;
+    setForm(buildFormStateFromRule(source, source.priority, {
+      keepId: false,
+      keepActive: true,
+      keepSource: false,
+    }));
+    setDuplicateBanner(ed.duplicatingFrom.replace('{sourceId}', fromId));
+  }, [isDuplicateFromRule, fromId, fromPriority, rules, buildFormStateFromRule, ed.duplicatingFrom]);
+
+  // Duplicate from favorite snapshot (new + fromFavId)
+  useEffect(() => {
+    if (!isFromFavorite || !fromFavId || !selectedDevice) return;
+    let cancelled = false;
+    (async () => {
+      const fav = await getFavoriteById(selectedDevice.device_id, fromFavId);
+      if (cancelled || !fav) return;
+      setForm(buildFormStateFromRule(fav.rule, fav.priority, {
+        keepId: false,
+        keepActive: true,
+        keepSource: false,
+      }));
+      const labelText = fav.label || fav.rule.id;
+      setDuplicateBanner(ed.duplicatingFromFavorite.replace('{label}', labelText));
+    })();
+    return () => { cancelled = true; };
+  }, [isFromFavorite, fromFavId, selectedDevice, buildFormStateFromRule, ed.duplicatingFromFavorite]);
 
   const update = (patch: Partial<FormState>) => setForm(prev => ({ ...prev, ...patch }));
 
@@ -817,18 +869,18 @@ export default function RuleBuilderScreen() {
     }
 
     if (form.scheduleMode === 'one-time' && form.oneTimeDate) {
-      const d = new Date(form.oneTimeDate + 'T00:00:00');
-      if (!isNaN(d.getTime())) fd.validFrom = Math.floor(d.getTime() / 1000);
-      const dEnd = new Date(form.oneTimeDate + 'T23:59:59');
-      if (!isNaN(dEnd.getTime())) fd.validUntil = Math.floor(dEnd.getTime() / 1000);
+      const start = localDateStrToUnix(form.oneTimeDate, false);
+      if (start !== undefined) fd.validFrom = start;
+      const end = localDateStrToUnix(form.oneTimeDate, true);
+      if (end !== undefined) fd.validUntil = end;
     } else {
       if (form.validFromDate) {
-        const d = new Date(form.validFromDate + 'T00:00:00');
-        if (!isNaN(d.getTime())) fd.validFrom = Math.floor(d.getTime() / 1000);
+        const start = localDateStrToUnix(form.validFromDate, false);
+        if (start !== undefined) fd.validFrom = start;
       }
       if (form.validUntilDate) {
-        const d = new Date(form.validUntilDate + 'T23:59:59');
-        if (!isNaN(d.getTime())) fd.validUntil = Math.floor(d.getTime() / 1000);
+        const end = localDateStrToUnix(form.validUntilDate, true);
+        if (end !== undefined) fd.validUntil = end;
       }
     }
 
@@ -857,22 +909,40 @@ export default function RuleBuilderScreen() {
       return;
     }
 
-    try {
-      setIsSaving(true);
-      if (isNew) {
-        await createRule(rule, fd.priority);
-      } else {
-        const priorityChanged = originalPriority !== undefined && originalPriority !== fd.priority;
-        await updateRule(rule, fd.priority, priorityChanged ? originalPriority : undefined);
+    const proceedSave = async () => {
+      try {
+        setIsSaving(true);
+        if (isNew) {
+          await createRule(rule, fd.priority);
+        } else {
+          const priorityChanged = originalPriority !== undefined && originalPriority !== fd.priority;
+          await updateRule(rule, fd.priority, priorityChanged ? originalPriority : undefined);
+        }
+        Alert.alert(t.common.success, isNew ? ed.ruleCreated : ed.ruleUpdated, [
+          { text: t.common.ok, onPress: () => router.back() },
+        ]);
+      } catch {
+        Alert.alert(t.common.error, ed.failedToSaveRule);
+      } finally {
+        setIsSaving(false);
       }
-      Alert.alert(t.common.success, isNew ? ed.ruleCreated : ed.ruleUpdated, [
-        { text: t.common.ok, onPress: () => router.back() },
-      ]);
-    } catch {
-      Alert.alert(t.common.error, ed.failedToSaveRule);
-    } finally {
-      setIsSaving(false);
+    };
+
+    // Safety: backend (EventBridge) will auto-delete rules whose vu is in the past.
+    // Warn the user before silently triggering that cleanup.
+    if (fd.validUntil !== undefined && fd.validUntil * 1000 < Date.now()) {
+      Alert.alert(
+        ed.expiryInPastWarning,
+        ed.expiryInPastConfirm,
+        [
+          { text: t.common.cancel, style: 'cancel' },
+          { text: ed.saveAnyway, style: 'destructive', onPress: proceedSave },
+        ],
+      );
+      return;
     }
+
+    await proceedSave();
   };
 
   const handleDiscard = () => {
@@ -1061,6 +1131,14 @@ export default function RuleBuilderScreen() {
           <View style={styles.sourceBanner}>
             <Bot size={16} color="#8b5cf6" />
             <Text style={styles.sourceBannerText}>{ed.aiGeneratedRule}</Text>
+          </View>
+        )}
+
+        {/* Duplicate-from banner */}
+        {duplicateBanner && (
+          <View style={styles.duplicateBanner}>
+            <Pencil size={14} color={Colors.primary} />
+            <Text style={styles.duplicateBannerText}>{duplicateBanner}</Text>
           </View>
         )}
 
@@ -1688,6 +1766,17 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sourceBannerText: { fontSize: 13, fontWeight: '600', color: '#8b5cf6' },
+  duplicateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.primaryLight,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginBottom: 16,
+  },
+  duplicateBannerText: { fontSize: 13, fontWeight: '600', color: Colors.primary, flex: 1 },
 
   section: { marginBottom: 24 },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 12 },

@@ -36,11 +36,13 @@ interface Message {
   confirmation?: ChatResponse['confirmation'];
   confirmationHandled?: boolean;
   charts?: ChartData[];
+  isError?: boolean;
+  retryText?: string;
 }
 
 interface StoredChat {
   sessionId: string;
-  messages: Array<Omit<Message, 'timestamp'> & { timestamp: string }>;
+  messages: Array<Omit<Message, 'timestamp' | 'retryText'> & { timestamp: string }>;
 }
 
 const CHAT_STORAGE_PREFIX = '@aiess_chat_';
@@ -231,6 +233,13 @@ export default function AIScreen() {
 
   const showQuickActions = messages.length <= 1 && !isLoading;
 
+  const classifyError = useCallback((err: any): string => {
+    const msg = err?.message || '';
+    if (msg.includes('timed out')) return t.ai.errorTimeout;
+    if (msg.includes('ResourceNotFoundException') || msg.includes('session')) return t.ai.errorSessionExpired;
+    return t.ai.errorSending;
+  }, [t]);
+
   const sendText = useCallback(async (text: string) => {
     if (!text.trim() || isLoading || !selectedDevice) return;
     addMessage({ text, isUser: true });
@@ -243,12 +252,17 @@ export default function AIScreen() {
       } else {
         addMessage({ text: res.text, isUser: false, charts: res.charts });
       }
-    } catch (err) {
-      addMessage({ text: t.ai.errorSending, isUser: false });
+    } catch (err: any) {
+      const errorMsg = classifyError(err);
+      const isSessionExpired = errorMsg === t.ai.errorSessionExpired;
+      if (isSessionExpired) {
+        sessionIdRef.current = `session-${Date.now()}`;
+      }
+      addMessage({ text: errorMsg, isUser: false, isError: true, retryText: isSessionExpired ? undefined : text });
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, selectedDevice, addMessage, t, language]);
+  }, [isLoading, selectedDevice, addMessage, t, language, classifyError]);
 
   const handleSend = useCallback(async () => {
     if (!inputText.trim()) return;
@@ -274,8 +288,12 @@ export default function AIScreen() {
         selectedDevice?.device_id,
       );
       addMessage({ text: res.text || (accepted ? 'Action confirmed.' : 'Action rejected.'), isUser: false });
-    } catch (err) {
-      addMessage({ text: t.ai.errorSending, isUser: false });
+    } catch (err: any) {
+      const errorMsg = classifyError(err);
+      if (errorMsg === t.ai.errorSessionExpired) {
+        sessionIdRef.current = `session-${Date.now()}`;
+      }
+      addMessage({ text: errorMsg, isUser: false, isError: true });
     } finally {
       setIsLoading(false);
     }
@@ -355,6 +373,10 @@ export default function AIScreen() {
     return Object.entries(params).filter(([k]) => k !== 'site_id');
   }, []);
 
+  const handleRetry = useCallback((retryText: string) => {
+    sendText(retryText);
+  }, [sendText]);
+
   const renderMessage = ({ item }: { item: Message }) => {
     const isConfirmation = item.confirmation && !item.confirmationHandled;
 
@@ -363,7 +385,7 @@ export default function AIScreen() {
         {!item.isUser && (
           <View style={styles.avatarAi}><Bot size={16} color={Colors.primary} /></View>
         )}
-        <View style={[styles.bubble, item.isUser ? styles.bubbleUser : styles.bubbleAi]}>
+        <View style={[styles.bubble, item.isUser ? styles.bubbleUser : styles.bubbleAi, item.isError && styles.bubbleError]}>
           {item.text ? (
             item.isUser ? (
               <Text style={[styles.messageText, styles.messageTextUser]}>{item.text}</Text>
@@ -371,6 +393,13 @@ export default function AIScreen() {
               <Markdown style={mdStyles}>{item.text}</Markdown>
             )
           ) : null}
+
+          {item.isError && item.retryText && (
+            <TouchableOpacity style={styles.retryButton} onPress={() => handleRetry(item.retryText!)}>
+              <RotateCcw size={13} color={Colors.error} />
+              <Text style={styles.retryButtonText}>{t.ai.retryMessage}</Text>
+            </TouchableOpacity>
+          )}
 
           {item.charts && item.charts.length > 0 && item.charts.map((chart, i) => (
             <ChatChart key={i} data={chart} />
@@ -538,6 +567,7 @@ const styles = StyleSheet.create({
   bubble: { maxWidth: '78%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
   bubbleUser: { backgroundColor: Colors.primary, borderBottomRightRadius: 4 },
   bubbleAi: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderBottomLeftRadius: 4 },
+  bubbleError: { borderColor: Colors.error + '40', backgroundColor: 'rgba(244,67,54,0.04)' },
   messageText: { fontSize: 15, lineHeight: 21, color: Colors.text },
   messageTextUser: { color: '#fff' },
   confirmCard: { marginTop: 8, backgroundColor: Colors.background, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: Colors.warning },
@@ -548,6 +578,8 @@ const styles = StyleSheet.create({
   confirmAccept: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.success, borderRadius: 8, paddingVertical: 10 },
   confirmReject: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: 'rgba(244,67,54,0.08)', borderRadius: 8, paddingVertical: 10, borderWidth: 1, borderColor: Colors.error },
   confirmBtnText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  retryButton: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8, alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: 'rgba(244,67,54,0.08)', borderWidth: 1, borderColor: Colors.error + '30' },
+  retryButtonText: { fontSize: 12, fontWeight: '600', color: Colors.error },
   thinkingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 24, paddingVertical: 8 },
   thinkingText: { fontSize: 13, color: Colors.textSecondary },
   quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },

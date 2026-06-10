@@ -223,6 +223,31 @@ export function parseTime(timeStr: string): number {
   return hours * 100 + minutes;
 }
 
+// ─── Timezone-stable date helpers ───────────────────────────────
+// IMPORTANT: vf/vu must round-trip in the user's LOCAL timezone.
+// Using UTC (toISOString) caused dates to drift back by 1 day on each
+// edit-save cycle for users in any non-UTC timezone, eventually pushing
+// vu into the past and triggering EventBridge auto-deletion.
+
+export function unixToLocalDateStr(ts: number | undefined): string {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function localDateStrToUnix(dateStr: string, endOfDay = false): number | undefined {
+  if (!dateStr) return undefined;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return undefined;
+  const date = endOfDay
+    ? new Date(y, m - 1, d, 23, 59, 59)
+    : new Date(y, m - 1, d, 0, 0, 0);
+  return Math.floor(date.getTime() / 1000);
+}
+
 export function getActionTypeLabel(type: ActionType): string {
   const labels: Record<ActionType, string> = {
     ch: 'Charge',
@@ -316,6 +341,135 @@ export function weekdayShorthandToArray(d: string | number[] | undefined): numbe
 
   const lower = d.toLowerCase();
   return shorthandMap[lower] || [0, 1, 2, 3, 4, 5, 6];
+}
+
+// ─── Rule detail lines (for list cards) ─────────────────────────
+
+export type RuleDetailIcon =
+  | 'clock'
+  | 'calendar'
+  | 'calendar-check'
+  | 'zap'
+  | 'battery'
+  | 'gauge'
+  | 'cpu'
+  | 'target';
+
+export interface RuleDetailLine {
+  iconKey: RuleDetailIcon;
+  text: string;
+}
+
+export interface RuleDetailLabels {
+  always: string;
+  everyday: string;
+  permanent: string;
+  from: string;
+  until: string;
+  gridLabel: string;
+  socLabel: string;
+  strategyLabel: string;
+  pidLabel: string;
+  maxGridLabel: string;
+  minGridLabel: string;
+  maxPowerLabel: string;
+  targetLabel: string;
+  strategies: Record<Strategy, string>;
+}
+
+export function getRuleDetailLines(
+  rule: OptimizedScheduleRule,
+  labels: RuleDetailLabels,
+): RuleDetailLine[] {
+  const lines: RuleDetailLine[] = [];
+
+  // Time window
+  const timeText =
+    rule.c?.ts !== undefined && rule.c?.te !== undefined
+      ? `${formatTime(rule.c.ts)} - ${formatTime(rule.c.te)}`
+      : labels.always;
+  lines.push({ iconKey: 'clock', text: timeText });
+
+  // Weekdays
+  lines.push({
+    iconKey: 'calendar',
+    text: rule.d ? getDaysLabel(rule.d) : labels.everyday,
+  });
+
+  // Validity window
+  const validityText = formatValidity(rule.vf, rule.vu, labels);
+  if (validityText !== labels.permanent) {
+    lines.push({ iconKey: 'calendar-check', text: validityText });
+  }
+
+  // Grid power condition
+  if (rule.c?.gpo && rule.c?.gpv !== undefined) {
+    let gridText = '';
+    if (rule.c.gpo === 'bt' && rule.c.gpx !== undefined) {
+      gridText = `${labels.gridLabel} ${rule.c.gpv} ~ ${rule.c.gpx} kW`;
+    } else {
+      const opSym =
+        rule.c.gpo === 'gt' ? '>' :
+        rule.c.gpo === 'lt' ? '<' :
+        rule.c.gpo === 'gte' ? '>=' :
+        rule.c.gpo === 'lte' ? '<=' :
+        rule.c.gpo === 'eq' ? '=' : rule.c.gpo;
+      gridText = `${labels.gridLabel} ${opSym} ${rule.c.gpv} kW`;
+    }
+    lines.push({ iconKey: 'zap', text: gridText });
+  }
+
+  // SoC range
+  if (rule.c?.sm !== undefined || rule.c?.sx !== undefined) {
+    const lo = rule.c?.sm !== undefined ? `${rule.c.sm}%` : '0%';
+    const hi = rule.c?.sx !== undefined ? `${rule.c.sx}%` : '100%';
+    lines.push({ iconKey: 'battery', text: `${labels.socLabel} ${lo} - ${hi}` });
+  }
+
+  // Target SoC for ct/dt
+  if ((rule.a.t === 'ct' || rule.a.t === 'dt') && rule.a.soc !== undefined) {
+    lines.push({ iconKey: 'target', text: `${labels.targetLabel} ${rule.a.soc}%` });
+  }
+
+  // Max power for ct/dt
+  if ((rule.a.t === 'ct' || rule.a.t === 'dt') && rule.a.maxp !== undefined) {
+    lines.push({ iconKey: 'gauge', text: `${labels.maxPowerLabel} ${rule.a.maxp} kW` });
+  }
+
+  // Max grid (ct) / Min grid (dt)
+  if (rule.a.t === 'ct' && rule.a.maxg !== undefined) {
+    lines.push({ iconKey: 'zap', text: `${labels.maxGridLabel} ${rule.a.maxg} kW` });
+  }
+  if (rule.a.t === 'dt' && rule.a.ming !== undefined) {
+    lines.push({ iconKey: 'zap', text: `${labels.minGridLabel} ${rule.a.ming} kW` });
+  }
+
+  // Strategy
+  if ((rule.a.t === 'ct' || rule.a.t === 'dt') && rule.a.str) {
+    const stratLabel = labels.strategies[rule.a.str] || rule.a.str;
+    lines.push({ iconKey: 'cpu', text: `${labels.strategyLabel}: ${stratLabel}` });
+  }
+
+  // PID
+  if (rule.a.pid) {
+    lines.push({ iconKey: 'cpu', text: labels.pidLabel });
+  }
+
+  return lines;
+}
+
+function formatValidity(
+  vf: number | undefined,
+  vu: number | undefined,
+  labels: { permanent: string; from: string; until: string },
+): string {
+  const fromStr = vf ? unixToLocalDateStr(vf) : '';
+  const untilStr = vu ? unixToLocalDateStr(vu) : '';
+  if (!fromStr && !untilStr) return labels.permanent;
+  if (fromStr && untilStr && fromStr === untilStr) return fromStr;
+  if (fromStr && !untilStr) return `${labels.from} ${fromStr}`;
+  if (!fromStr && untilStr) return `${labels.until} ${untilStr}`;
+  return `${fromStr} - ${untilStr}`;
 }
 
 export function getRuleSummary(rule: OptimizedScheduleRule): string {

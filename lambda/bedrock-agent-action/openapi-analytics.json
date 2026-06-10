@@ -29,13 +29,13 @@
     },
     "/get_tge_prices": {
       "get": {
-        "description": "Retrieves TGE (Polish energy exchange) electricity prices. When hours is 0 or not provided, returns only the latest spot price in PLN/MWh and PLN/kWh. When hours is provided and greater than 0, returns both the current price and hourly price history for that period.",
+        "description": "Retrieves TGE (Polish energy exchange) electricity prices. When hours is 0 or omitted, returns only the latest spot price. When hours > 0, returns a chart plus two structured digests `today` and `tomorrow`, each with: date, weekday, hourly[{hh_mm, price_pln_mwh, source}], min/max/avg, cheapest_hour, most_expensive_hour, cheapest_window, most_expensive_window. ALWAYS read these digests to know which prices belong to which day. NEVER infer the day from hh_mm alone — both today and tomorrow contain the same hours. The `source` field is `real` (settled auction price) or `predicted` (model forecast for hours not yet auctioned).",
         "operationId": "get_tge_prices",
         "parameters": [
           { "name": "site_id", "in": "query", "required": true, "description": "The device or site identifier.", "schema": { "type": "string" } },
-          { "name": "hours", "in": "query", "required": false, "description": "Number of hours of price history to include. Omit or 0 for latest price only.", "schema": { "type": "integer" } }
+          { "name": "hours", "in": "query", "required": false, "description": "Hours of price history to include each direction. Defaults to 0 (latest only). Use 24 to see today + tomorrow.", "schema": { "type": "integer" } }
         ],
-        "responses": { "200": { "description": "TGE electricity price data.", "content": { "application/json": { "schema": { "type": "object", "properties": { "price_pln_mwh": { "type": "number", "description": "Current price in PLN per MWh." }, "price_pln_kwh": { "type": "number", "description": "Current price in PLN per kWh." } } } } } } }
+        "responses": { "200": { "description": "TGE electricity price data with today/tomorrow digests.", "content": { "application/json": { "schema": { "type": "object", "properties": { "current_price": { "type": "object" }, "today": { "type": "object", "description": "Digest for today: date, weekday, hourly, min/max/avg, cheapest_window, most_expensive_window." }, "tomorrow": { "type": "object", "description": "Digest for tomorrow with the same structure as today. May have fewer hours if the day-ahead auction has not published all hours yet." } } } } } } }
       }
     },
     "/get_rule_history": {
@@ -66,13 +66,13 @@
     },
     "/get_energy_forecast": {
       "get": {
-        "description": "Retrieves PV production and factory load forecasts for the next hours. Returns a summary with peak PV, total PV kWh, average and peak load, plus a chart with hourly PV and load forecast curves. Use this when the user asks about future energy production, PV forecast, tomorrow's production, or expected load.",
+        "description": "Retrieves PV production and load forecasts. Use this whenever the user asks about future energy production, PV forecast, jutro/tomorrow's production, expected load, or any forecast question. Returns a chart plus two structured digests `today` and `tomorrow`, each with: date, weekday, hourly[{hh_mm, pv_kw, load_kw}], pv_peak_kw, pv_peak_hour, pv_total_kwh, sunrise_kwh_hour, sunset_kwh_hour, load_peak_kw, load_peak_hour, net_surplus_kwh, net_deficit_kwh, avg_temp_c, avg_cloud_pct. ALWAYS narrate forecast values together with their date (e.g. 'jutro 21.05'). NEVER claim forecasting is unavailable — if you got a non-error response, the data is here. Forecast accuracy is ~10-15% (physics-based PV model + statistical load profile).",
         "operationId": "get_energy_forecast",
         "parameters": [
           { "name": "site_id", "in": "query", "required": true, "description": "The device or site identifier.", "schema": { "type": "string" } },
-          { "name": "hours", "in": "query", "required": false, "description": "Number of hours to forecast. Defaults to 48.", "schema": { "type": "integer" } }
+          { "name": "hours", "in": "query", "required": false, "description": "Forecast horizon in hours. Defaults to 48. Use 48 for 'today + tomorrow' queries.", "schema": { "type": "integer" } }
         ],
-        "responses": { "200": { "description": "Forecast data with PV and load predictions.", "content": { "application/json": { "schema": { "type": "object", "properties": { "summary": { "type": "object", "description": "Forecast summary with pv_peak_kw, pv_total_kwh, load_avg_kw, load_peak_kw." }, "chart_type": { "type": "string" }, "title": { "type": "string" } } } } } } }
+        "responses": { "200": { "description": "Forecast data with today/tomorrow digests.", "content": { "application/json": { "schema": { "type": "object", "properties": { "summary": { "type": "object", "description": "Overall summary across the horizon." }, "today": { "type": "object", "description": "Per-day digest for today." }, "tomorrow": { "type": "object", "description": "Per-day digest for tomorrow." } } } } } } }
       }
     }
   }

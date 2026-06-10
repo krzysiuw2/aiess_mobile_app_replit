@@ -20,7 +20,7 @@ export const handler = async (event) => {
 
   try {
     const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-    const { message, session_id, site_id, current_datetime, return_control_results, language } = body;
+    const { message, session_id, site_id, current_datetime, return_control_results, invocation_id, language } = body;
 
     const now = current_datetime || new Date().toISOString();
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -49,6 +49,7 @@ export const handler = async (event) => {
 
     if (return_control_results) {
       params.sessionState = {
+        invocationId: invocation_id,
         returnControlInvocationResults: return_control_results,
         sessionAttributes: sessionAttrs,
         promptSessionAttributes: promptAttrs,

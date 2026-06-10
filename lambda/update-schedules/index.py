@@ -92,6 +92,46 @@ def _time_str_to_hhmm(val) -> Optional[int]:
     return None
 
 
+def _to_unix_timestamp(val) -> Optional[int]:
+    """
+    Coerce vf/vu/ua values into epoch seconds.
+
+    Accepts:
+        - int / float (epoch seconds, possibly milliseconds if > 1e12)
+        - numeric strings ("1746387600")
+        - ISO 8601 date strings ("2026-05-05")
+        - ISO 8601 datetime strings ("2026-05-05T07:00:00Z" / "...+02:00")
+
+    Returns None for empty / unparseable input. Raises ValueError on
+    clearly malformed strings so callers can surface a helpful error.
+    """
+    from datetime import datetime, timezone
+
+    if val is None or val == '' or val == 0:
+        return None
+    if isinstance(val, bool):
+        raise ValueError(f"timestamp must be number or ISO string, got bool: {val}")
+    if isinstance(val, (int, float)):
+        ts = int(val)
+        return ts // 1000 if ts > 10**12 else ts
+    if isinstance(val, str):
+        s = val.strip()
+        if not s:
+            return None
+        if s.lstrip('-').isdigit():
+            ts = int(s)
+            return ts // 1000 if ts > 10**12 else ts
+        iso = s.replace('Z', '+00:00')
+        try:
+            dt = datetime.fromisoformat(iso)
+        except ValueError as e:
+            raise ValueError(f"unrecognized timestamp format: {val!r}") from e
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    raise ValueError(f"unsupported timestamp type {type(val).__name__}: {val!r}")
+
+
 def normalize_rule(rule: Dict[str, Any]) -> Dict[str, Any]:
     """
     Accept a rule in ANY format (verbose, compact, AI-generated, mixed) and
@@ -198,18 +238,21 @@ def normalize_rule(rule: Dict[str, Any]) -> Dict[str, Any]:
 
     # ── valid_from ──
     vf = rule.get('vf') if 'vf' in rule else rule.get('valid_from')
-    if vf is not None and vf != 0:
-        out['vf'] = int(vf)
+    vf_ts = _to_unix_timestamp(vf)
+    if vf_ts is not None and vf_ts != 0:
+        out['vf'] = vf_ts
 
     # ── valid_until ──
     vu = rule.get('vu') if 'vu' in rule else rule.get('valid_until')
-    if vu is not None and vu != 0:
-        out['vu'] = int(vu)
+    vu_ts = _to_unix_timestamp(vu)
+    if vu_ts is not None and vu_ts != 0:
+        out['vu'] = vu_ts
 
     # ── uploaded_at ──
     ua = rule.get('ua') if 'ua' in rule else rule.get('uploaded_at')
-    if ua is not None and ua != 0:
-        out['ua'] = int(ua)
+    ua_ts = _to_unix_timestamp(ua)
+    if ua_ts is not None and ua_ts != 0:
+        out['ua'] = ua_ts
 
     return out
 

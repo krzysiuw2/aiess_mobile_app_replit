@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Switch,
   Modal,
   Pressable,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -27,66 +28,112 @@ import {
   ChevronRight,
   List,
   CalendarDays,
+  Copy,
+  Star,
+  Zap,
+  BatteryMedium,
+  Gauge,
+  Cpu,
+  Target,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useSchedules } from '@/hooks/useSchedules';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
+import { useFavorites } from '@/hooks/useFavorites';
 import {
-  getActionTypeLabel,
-  formatTime,
-  getDaysLabel,
   getRuleSummary,
+  getRuleDetailLines,
+  type RuleDetailLine,
+  type RuleDetailLabels,
+  type RuleDetailIcon,
 } from '@/lib/aws-schedules';
 import { getMonday, formatWeekRange, formatDayLabel } from '@/lib/schedule-calendar';
 import ScheduleWeekGrid from '@/components/schedule/ScheduleWeekGrid';
 import ScheduleDayGrid from '@/components/schedule/ScheduleDayGrid';
-import type { ScheduleRuleWithPriority } from '@/types';
+import type { ScheduleRuleWithPriority, Strategy } from '@/types';
+import type { RuleFavorite } from '@/lib/rule-favorites';
 
 // ─── Helpers ────────────────────────────────────────────────────
 
-const formatDate = (timestamp: number | undefined): string => {
-  if (timestamp === undefined || timestamp === null || timestamp === 0) return '';
-  const ms = timestamp > 1e12 ? timestamp : timestamp * 1000;
-  const date = new Date(ms);
-  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+const DETAIL_ICON_MAP: Record<RuleDetailIcon, React.ComponentType<{ size?: number; color?: string }>> = {
+  clock: Clock,
+  calendar: Calendar,
+  'calendar-check': CalendarCheck,
+  zap: Zap,
+  battery: BatteryMedium,
+  gauge: Gauge,
+  cpu: Cpu,
+  target: Target,
 };
 
-const getValidityLabel = (
-  vf: number | undefined,
-  vu: number | undefined,
-  t: { schedules: { permanent: string; from: string; until: string } }
-): string => {
-  const from = formatDate(vf);
-  const until = formatDate(vu);
-  if (!from && !until) return t.schedules.permanent;
-  if (from && until && from === until) return from;
-  if (from && !until) return `${t.schedules.from} ${from}`;
-  if (!from && until) return `${t.schedules.until} ${until}`;
-  return `${from} - ${until}`;
-};
+const MAX_COLLAPSED_LINES = 4;
+
+function buildDetailLabels(t: ReturnType<typeof useSettings>['t']): RuleDetailLabels {
+  const ed = t.schedules.editor;
+  return {
+    always: t.schedules.always,
+    everyday: t.schedules.everyday,
+    permanent: t.schedules.permanent,
+    from: t.schedules.from,
+    until: t.schedules.until,
+    gridLabel: t.schedules.gridLabel,
+    socLabel: t.schedules.socLabel,
+    strategyLabel: t.schedules.strategyLabel,
+    pidLabel: t.schedules.pidLabel,
+    maxGridLabel: t.schedules.maxGridLabel,
+    minGridLabel: t.schedules.minGridLabel,
+    maxPowerLabel: t.schedules.maxPowerLabel,
+    targetLabel: t.schedules.targetLabel,
+    strategies: {
+      eq: ed.equalSpread,
+      agg: ed.aggressive,
+      con: ed.conservative,
+    } as Record<Strategy, string>,
+  };
+}
+
+function DetailLines({ lines, expanded }: { lines: RuleDetailLine[]; expanded: boolean }) {
+  const visible = expanded ? lines : lines.slice(0, MAX_COLLAPSED_LINES);
+  return (
+    <View style={styles.cardContent}>
+      {visible.map((line, idx) => {
+        const Icon = DETAIL_ICON_MAP[line.iconKey] || Clock;
+        return (
+          <View key={`${line.iconKey}-${idx}`} style={styles.infoRow}>
+            <Icon size={14} color={Colors.textSecondary} />
+            <Text style={styles.infoValue}>{line.text}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
 
 // ─── Rule Card (List View) ──────────────────────────────────────
 
 interface RuleCardProps {
   rule: ScheduleRuleWithPriority;
+  detailLabels: RuleDetailLabels;
+  isFavorited: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onToggle: () => void;
+  onDuplicate: () => void;
+  onToggleFavorite: () => void;
 }
 
-function RuleCard({ rule, onEdit, onDelete, onToggle }: RuleCardProps) {
+function RuleCard({ rule, detailLabels, isFavorited, onEdit, onDelete, onToggle, onDuplicate, onToggleFavorite }: RuleCardProps) {
   const { t } = useSettings();
   const isActive = rule.act !== false;
   const isAI = rule.s === 'ai';
-  const daysLabel = rule.d ? getDaysLabel(rule.d) : t.schedules.everyday;
-  const timeRange =
-    rule.c?.ts !== undefined && rule.c?.te !== undefined
-      ? `${formatTime(rule.c.ts)} - ${formatTime(rule.c.te)}`
-      : t.schedules.always;
-  const validityLabel = getValidityLabel(rule.vf, rule.vu, t);
   const summary = getRuleSummary(rule);
+  const detailLines = useMemo(() => getRuleDetailLines(rule, detailLabels), [rule, detailLabels]);
+  const [expanded, setExpanded] = useState(false);
+  const hasMore = detailLines.length > MAX_COLLAPSED_LINES;
 
   return (
     <View style={[styles.ruleCard, !isActive && styles.ruleCardInactive]}>
@@ -101,35 +148,49 @@ function RuleCard({ rule, onEdit, onDelete, onToggle }: RuleCardProps) {
             </View>
           )}
         </View>
-        <Switch
-          value={isActive}
-          onValueChange={onToggle}
-          trackColor={{ false: Colors.border, true: Colors.primaryLight }}
-          thumbColor={isActive ? Colors.primary : Colors.textSecondary}
-          style={styles.toggleSwitch}
-        />
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            onPress={onToggleFavorite}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+            accessibilityLabel={isFavorited ? t.schedules.removeFromFavorites : t.schedules.addToFavorites}
+          >
+            <Star
+              size={18}
+              color={isFavorited ? '#f59e0b' : Colors.textSecondary}
+              fill={isFavorited ? '#f59e0b' : 'transparent'}
+            />
+          </TouchableOpacity>
+          <Switch
+            value={isActive}
+            onValueChange={onToggle}
+            trackColor={{ false: Colors.border, true: Colors.primaryLight }}
+            thumbColor={isActive ? Colors.primary : Colors.textSecondary}
+            style={styles.toggleSwitch}
+          />
+        </View>
       </View>
       <Text style={styles.summaryText}>{summary}</Text>
-      <View style={styles.cardContent}>
-        <View style={styles.infoRow}>
-          <Clock size={14} color={Colors.textSecondary} />
-          <Text style={styles.infoValue}>{timeRange}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Calendar size={14} color={Colors.textSecondary} />
-          <Text style={styles.infoValue}>{daysLabel}</Text>
-        </View>
-        {validityLabel !== t.schedules.permanent && (
-          <View style={styles.infoRow}>
-            <CalendarCheck size={14} color={Colors.textSecondary} />
-            <Text style={styles.infoValue}>{validityLabel}</Text>
-          </View>
-        )}
-      </View>
+      <DetailLines lines={detailLines} expanded={expanded} />
+      {hasMore && (
+        <TouchableOpacity style={styles.expandToggle} onPress={() => setExpanded(v => !v)}>
+          {expanded
+            ? <ChevronUp size={14} color={Colors.primary} />
+            : <ChevronDown size={14} color={Colors.primary} />}
+          <Text style={styles.expandToggleText}>
+            {expanded
+              ? t.schedules.showLessDetails
+              : `${t.schedules.showMoreDetails} (+${detailLines.length - MAX_COLLAPSED_LINES})`}
+          </Text>
+        </TouchableOpacity>
+      )}
       <View style={styles.cardActions}>
         <TouchableOpacity style={styles.actionButton} onPress={onEdit}>
           <Pencil size={16} color={Colors.primary} />
           <Text style={styles.actionButtonText}>{t.common.edit}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionButton, styles.duplicateButton]} onPress={onDuplicate}>
+          <Copy size={16} color={Colors.primary} />
+          <Text style={styles.actionButtonText}>{t.schedules.duplicate}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.actionButton, styles.deleteButton]} onPress={onDelete}>
           <Trash2 size={16} color={Colors.error} />
@@ -140,25 +201,137 @@ function RuleCard({ rule, onEdit, onDelete, onToggle }: RuleCardProps) {
   );
 }
 
+// ─── Favorite Card ──────────────────────────────────────────────
+
+interface FavoriteCardProps {
+  favorite: RuleFavorite;
+  detailLabels: RuleDetailLabels;
+  onUse: () => void;
+  onRename: () => void;
+  onRemove: () => void;
+}
+
+function FavoriteCard({ favorite, detailLabels, onUse, onRename, onRemove }: FavoriteCardProps) {
+  const { t } = useSettings();
+  const summary = getRuleSummary(favorite.rule);
+  const detailLines = useMemo(
+    () => getRuleDetailLines(favorite.rule, detailLabels),
+    [favorite.rule, detailLabels],
+  );
+  const [expanded, setExpanded] = useState(false);
+  const hasMore = detailLines.length > MAX_COLLAPSED_LINES;
+  const displayLabel = favorite.label || favorite.rule.id;
+
+  return (
+    <View style={styles.ruleCard}>
+      <View style={styles.cardHeader}>
+        <View style={styles.headerLeft}>
+          <Star size={16} color="#f59e0b" fill="#f59e0b" />
+          <Text style={styles.ruleId} numberOfLines={1}>{displayLabel}</Text>
+          <Text style={styles.priorityBadge}>P{favorite.priority}</Text>
+        </View>
+      </View>
+      {favorite.label && favorite.label !== favorite.rule.id && (
+        <Text style={styles.favoriteSourceId} numberOfLines={1}>{favorite.rule.id}</Text>
+      )}
+      <Text style={styles.summaryText}>{summary}</Text>
+      <DetailLines lines={detailLines} expanded={expanded} />
+      {hasMore && (
+        <TouchableOpacity style={styles.expandToggle} onPress={() => setExpanded(v => !v)}>
+          {expanded
+            ? <ChevronUp size={14} color={Colors.primary} />
+            : <ChevronDown size={14} color={Colors.primary} />}
+          <Text style={styles.expandToggleText}>
+            {expanded
+              ? t.schedules.showLessDetails
+              : `${t.schedules.showMoreDetails} (+${detailLines.length - MAX_COLLAPSED_LINES})`}
+          </Text>
+        </TouchableOpacity>
+      )}
+      <View style={styles.cardActions}>
+        <TouchableOpacity style={[styles.actionButton, { flex: 1 }]} onPress={onUse}>
+          <Plus size={16} color={Colors.primary} />
+          <Text style={styles.actionButtonText}>{t.schedules.useAsNewRule}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.iconActionButton} onPress={onRename}>
+          <Pencil size={16} color={Colors.primary} />
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.iconActionButton, styles.deleteButton]} onPress={onRemove}>
+          <Trash2 size={16} color={Colors.error} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+// ─── Rename Favorite Modal ──────────────────────────────────────
+
+interface RenameModalProps {
+  favorite: RuleFavorite | null;
+  onClose: () => void;
+  onSave: (label: string) => void;
+}
+
+function RenameModal({ favorite, onClose, onSave }: RenameModalProps) {
+  const { t } = useSettings();
+  const [value, setValue] = useState(favorite?.label || favorite?.rule.id || '');
+
+  if (!favorite) return null;
+
+  return (
+    <Modal transparent animationType="fade" visible onRequestClose={onClose}>
+      <Pressable style={styles.popupOverlay} onPress={onClose}>
+        <Pressable style={styles.popupCard} onPress={() => {}}>
+          <Text style={styles.renameTitle}>{t.schedules.renameFavorite}</Text>
+          <TextInput
+            style={styles.renameInput}
+            value={value}
+            onChangeText={setValue}
+            placeholder={t.schedules.favoriteLabelPlaceholder}
+            placeholderTextColor={Colors.textSecondary}
+            autoFocus
+            maxLength={64}
+          />
+          <View style={styles.popupActions}>
+            <TouchableOpacity
+              style={[styles.popupBtn, styles.popupDeleteBtn]}
+              onPress={onClose}
+            >
+              <Text style={styles.popupDeleteText}>{t.common.cancel}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.popupBtn, styles.popupEditBtn]}
+              onPress={() => onSave(value.trim())}
+            >
+              <Text style={styles.popupEditText}>{t.common.save}</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 // ─── Rule Popup (Calendar View) ─────────────────────────────────
 
 interface RulePopupProps {
   rule: ScheduleRuleWithPriority | null;
+  detailLabels: RuleDetailLabels;
   onClose: () => void;
   onEdit: (rule: ScheduleRuleWithPriority) => void;
   onDelete: (rule: ScheduleRuleWithPriority) => void;
+  onDuplicate: (rule: ScheduleRuleWithPriority) => void;
 }
 
-function RulePopup({ rule, onClose, onEdit, onDelete }: RulePopupProps) {
+function RulePopup({ rule, detailLabels, onClose, onEdit, onDelete, onDuplicate }: RulePopupProps) {
   const { t } = useSettings();
+  const detailLines = useMemo(
+    () => (rule ? getRuleDetailLines(rule, detailLabels) : []),
+    [rule, detailLabels],
+  );
   if (!rule) return null;
 
   const summary = getRuleSummary(rule);
-  const daysLabel = rule.d ? getDaysLabel(rule.d) : t.schedules.everyday;
-  const timeRange =
-    rule.c?.ts !== undefined && rule.c?.te !== undefined
-      ? `${formatTime(rule.c.ts)} - ${formatTime(rule.c.te)}`
-      : t.schedules.always;
 
   return (
     <Modal transparent animationType="fade" visible onRequestClose={onClose}>
@@ -174,7 +347,7 @@ function RulePopup({ rule, onClose, onEdit, onDelete }: RulePopupProps) {
             )}
           </View>
           <Text style={styles.popupSummary}>{summary}</Text>
-          <Text style={styles.popupDetail}>{timeRange}  ·  {daysLabel}</Text>
+          <DetailLines lines={detailLines} expanded />
           <View style={styles.popupActions}>
             <TouchableOpacity
               style={[styles.popupBtn, styles.popupEditBtn]}
@@ -182,6 +355,13 @@ function RulePopup({ rule, onClose, onEdit, onDelete }: RulePopupProps) {
             >
               <Pencil size={14} color={Colors.primary} />
               <Text style={styles.popupEditText}>{t.common.edit}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.popupBtn, styles.popupEditBtn]}
+              onPress={() => { onClose(); onDuplicate(rule); }}
+            >
+              <Copy size={14} color={Colors.primary} />
+              <Text style={styles.popupEditText}>{t.schedules.duplicate}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.popupBtn, styles.popupDeleteBtn]}
@@ -204,14 +384,25 @@ export default function ScheduleListScreen() {
   const { selectedDevice } = useDevices();
   const { rules, rawSchedules, isLoading, error, refetch, deleteRule, toggleRule } = useSchedules();
   const { siteConfigComplete } = useSiteConfig();
+  const {
+    favorites,
+    refetch: refetchFavorites,
+    addFavorite,
+    removeFavorite,
+    renameFavorite,
+    findFavorite,
+    isFavorited,
+  } = useFavorites();
 
-  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'favorites'>('list');
   const [calendarMode, setCalendarMode] = useState<'week' | 'day'>('week');
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => new Date());
   const [popupRule, setPopupRule] = useState<ScheduleRuleWithPriority | null>(null);
+  const [renameTarget, setRenameTarget] = useState<RuleFavorite | null>(null);
 
   const scheduleRules = rules.filter(rule => rule.priority !== 9);
+  const detailLabels = useMemo(() => buildDetailLabels(t), [t]);
 
   const p9SiteLimit = rawSchedules?.sch?.p_9?.find(r => r.a.t === 'sl');
   const configReady = siteConfigComplete && p9SiteLimit !== undefined;
@@ -219,9 +410,10 @@ export default function ScheduleListScreen() {
   useFocusEffect(
     useCallback(() => {
       refetch();
+      refetchFavorites();
       setWeekStart(getMonday(new Date()));
       setSelectedDay(new Date());
-    }, [refetch])
+    }, [refetch, refetchFavorites])
   );
 
   const handleEditRule = (rule: ScheduleRuleWithPriority) => {
@@ -229,6 +421,81 @@ export default function ScheduleListScreen() {
       pathname: '/(tabs)/schedule/[ruleId]',
       params: { ruleId: rule.id, priority: rule.priority.toString() },
     });
+  };
+
+  const handleDuplicateRule = (rule: ScheduleRuleWithPriority) => {
+    if (!configReady) {
+      Alert.alert(t.settings.siteConfigIncompleteTitle, t.settings.siteConfigIncomplete);
+      return;
+    }
+    router.push({
+      pathname: '/(tabs)/schedule/[ruleId]',
+      params: {
+        ruleId: 'new',
+        fromId: rule.id,
+        fromPriority: rule.priority.toString(),
+      },
+    });
+  };
+
+  const handleUseFavorite = (favorite: RuleFavorite) => {
+    if (!configReady) {
+      Alert.alert(t.settings.siteConfigIncompleteTitle, t.settings.siteConfigIncomplete);
+      return;
+    }
+    router.push({
+      pathname: '/(tabs)/schedule/[ruleId]',
+      params: { ruleId: 'new', fromFavId: favorite.favId },
+    });
+  };
+
+  const handleToggleFavorite = async (rule: ScheduleRuleWithPriority) => {
+    const existing = findFavorite(rule.id, rule.priority);
+    try {
+      if (existing) {
+        await removeFavorite(existing.favId);
+      } else {
+        const { priority, ...ruleSnapshot } = rule;
+        await addFavorite(ruleSnapshot, rule.priority, rule.id);
+      }
+    } catch {
+      Alert.alert(t.common.error, t.common.error);
+    }
+  };
+
+  const handleRenameFavorite = (favorite: RuleFavorite) => {
+    setRenameTarget(favorite);
+  };
+
+  const handleConfirmRename = async (label: string) => {
+    if (!renameTarget) return;
+    try {
+      await renameFavorite(renameTarget.favId, label || renameTarget.rule.id);
+    } catch {
+      // ignore
+    }
+    setRenameTarget(null);
+  };
+
+  const handleRemoveFavorite = (favorite: RuleFavorite) => {
+    Alert.alert(
+      t.schedules.removeFavorite,
+      t.schedules.confirmRemoveFavorite,
+      [
+        { text: t.common.cancel, style: 'cancel' },
+        {
+          text: t.common.delete,
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await removeFavorite(favorite.favId);
+            } catch {
+              // ignore
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleDeleteRule = (rule: ScheduleRuleWithPriority) => {
@@ -312,7 +579,7 @@ export default function ScheduleListScreen() {
         </View>
       </View>
 
-      {/* View mode toggle: List / Calendar */}
+      {/* View mode toggle: List / Calendar / Favorites */}
       <View style={styles.segmentedRow}>
         <View style={styles.segmentedControl}>
           <TouchableOpacity
@@ -331,6 +598,20 @@ export default function ScheduleListScreen() {
             <CalendarDays size={14} color={viewMode === 'calendar' ? '#fff' : Colors.textSecondary} />
             <Text style={[styles.segmentText, viewMode === 'calendar' && styles.segmentTextActive]}>
               {t.schedules.calendarView}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segmentBtn, viewMode === 'favorites' && styles.segmentBtnActive]}
+            onPress={() => setViewMode('favorites')}
+          >
+            <Star
+              size={14}
+              color={viewMode === 'favorites' ? '#fff' : Colors.textSecondary}
+              fill={viewMode === 'favorites' ? '#fff' : 'transparent'}
+            />
+            <Text style={[styles.segmentText, viewMode === 'favorites' && styles.segmentTextActive]}>
+              {t.schedules.favoritesView}
+              {favorites.length > 0 ? ` (${favorites.length})` : ''}
             </Text>
           </TouchableOpacity>
         </View>
@@ -412,9 +693,39 @@ export default function ScheduleListScreen() {
               <RuleCard
                 key={`${rule.priority}-${rule.id}`}
                 rule={rule}
+                detailLabels={detailLabels}
+                isFavorited={isFavorited(rule.id, rule.priority)}
                 onEdit={() => handleEditRule(rule)}
                 onDelete={() => handleDeleteRule(rule)}
                 onToggle={() => handleToggleRule(rule)}
+                onDuplicate={() => handleDuplicateRule(rule)}
+                onToggleFavorite={() => handleToggleFavorite(rule)}
+              />
+            ))}
+          </ScrollView>
+        )
+      ) : viewMode === 'favorites' ? (
+        favorites.length === 0 ? (
+          <View style={styles.centered}>
+            <Star size={36} color={Colors.textSecondary} />
+            <Text style={[styles.emptyTitle, { marginTop: 12 }]}>{t.schedules.noFavorites}</Text>
+            <Text style={styles.emptySubtitle}>{t.schedules.noFavoritesHint}</Text>
+          </View>
+        ) : (
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetchFavorites} />}
+          >
+            {favorites.map((favorite) => (
+              <FavoriteCard
+                key={favorite.favId}
+                favorite={favorite}
+                detailLabels={detailLabels}
+                onUse={() => handleUseFavorite(favorite)}
+                onRename={() => handleRenameFavorite(favorite)}
+                onRemove={() => handleRemoveFavorite(favorite)}
               />
             ))}
           </ScrollView>
@@ -437,11 +748,20 @@ export default function ScheduleListScreen() {
       {popupRule && (
         <RulePopup
           rule={popupRule}
+          detailLabels={detailLabels}
           onClose={() => setPopupRule(null)}
           onEdit={handleEditRule}
           onDelete={handleDeleteRule}
+          onDuplicate={handleDuplicateRule}
         />
       )}
+
+      {/* Rename favorite modal */}
+      <RenameModal
+        favorite={renameTarget}
+        onClose={() => setRenameTarget(null)}
+        onSave={handleConfirmRename}
+      />
 
       {/* FAB */}
       <TouchableOpacity style={styles.fab} onPress={handleAddRule}>
@@ -538,6 +858,7 @@ const styles = StyleSheet.create({
   ruleCardInactive: { opacity: 0.55 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   ruleId: { fontSize: 15, fontWeight: '700', color: Colors.text, flexShrink: 1 },
   priorityBadge: { fontSize: 11, fontWeight: '600', color: Colors.primary, backgroundColor: Colors.primaryLight, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 4 },
   aiBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(139, 92, 246, 0.1)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 4 },
@@ -546,12 +867,29 @@ const styles = StyleSheet.create({
   summaryText: { fontSize: 13, fontWeight: '500', color: Colors.text, marginBottom: 10 },
   cardContent: { gap: 5, marginBottom: 12 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  infoValue: { fontSize: 12, color: Colors.textSecondary },
-  cardActions: { flexDirection: 'row', gap: 12, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12 },
-  actionButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 7, paddingHorizontal: 14, backgroundColor: Colors.primaryLight, borderRadius: 8 },
+  infoValue: { fontSize: 12, color: Colors.textSecondary, flexShrink: 1 },
+  expandToggle: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 10, marginTop: -4 },
+  expandToggleText: { fontSize: 12, fontWeight: '600', color: Colors.primary },
+  cardActions: { flexDirection: 'row', gap: 8, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12, flexWrap: 'wrap' },
+  actionButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 7, paddingHorizontal: 12, backgroundColor: Colors.primaryLight, borderRadius: 8 },
   actionButtonText: { fontSize: 13, fontWeight: '600', color: Colors.primary },
+  duplicateButton: { backgroundColor: Colors.primaryLight },
+  iconActionButton: { paddingVertical: 7, paddingHorizontal: 10, backgroundColor: Colors.primaryLight, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   deleteButton: { backgroundColor: 'rgba(239, 68, 68, 0.1)' },
   deleteButtonText: { color: Colors.error },
+  favoriteSourceId: { fontSize: 11, color: Colors.textSecondary, marginTop: -4, marginBottom: 8 },
+  renameTitle: { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 12 },
+  renameInput: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: Colors.text,
+    backgroundColor: Colors.background,
+    marginBottom: 16,
+  },
 
   // Rule popup
   popupOverlay: {

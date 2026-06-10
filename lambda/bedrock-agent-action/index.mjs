@@ -21,6 +21,21 @@ const INFLUX_URL = process.env.INFLUX_URL || '';
 const INFLUX_TOKEN = process.env.INFLUX_TOKEN || '';
 const INFLUX_ORG = process.env.INFLUX_ORG || '';
 
+async function parseUpstream(res) {
+  let body;
+  try { body = await res.json(); }
+  catch { body = { raw: await res.text().catch(() => '') }; }
+  if (res.ok) return body;
+  const upstreamError = (body && (body.error || body.message)) || `HTTP ${res.status}`;
+  return {
+    success: false,
+    http_status: res.status,
+    error: upstreamError,
+    upstream: body,
+    hint: 'The write was rejected by the schedules API. Read the error string carefully — it usually pinpoints the bad field. If the error mentions a timestamp / vf / vu, regenerate the rule with vf and vu as integer epoch seconds (e.g. Math.floor(Date.UTC(2026,4,5)/1000)) and try again. Never tell the user that scheduling is disabled — explain the actual problem in plain language.',
+  };
+}
+
 async function fluxQuery(query) {
   const res = await fetch(`${INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}`, {
     method: 'POST',
@@ -32,20 +47,69 @@ async function fluxQuery(query) {
 }
 
 function parseCsv(csv) {
-  const lines = csv.trim().split('\n').filter(l => l && !l.startsWith('#'));
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(',');
-  return lines.slice(1).map(line => {
-    const vals = line.split(',');
-    const obj = {};
-    headers.forEach((h, i) => { obj[h.trim()] = vals[i]?.trim(); });
-    return obj;
-  });
+  if (!csv) return [];
+  const blocks = csv.split(/\r?\n\s*\r?\n/);
+  const rows = [];
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/).filter(l => l && !l.startsWith('#'));
+    if (lines.length < 2) continue;
+    const headers = lines[0].split(',').map(h => h.trim());
+    for (const line of lines.slice(1)) {
+      const vals = line.split(',');
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = vals[i]?.trim(); });
+      rows.push(obj);
+    }
+  }
+  return rows;
 }
 
 function utcToWarsaw(isoStr) {
   const d = new Date(isoStr);
   return d.toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function warsawDateParts(isoStr) {
+  const d = new Date(isoStr);
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Warsaw', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short',
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(d).map(p => [p.type, p.value]));
+  return {
+    iso_local: `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`,
+    date: `${parts.day}.${parts.month}.${parts.year}`,
+    weekday: parts.weekday,
+    hh_mm: `${parts.hour}:${parts.minute}`,
+    yyyymmdd: `${parts.year}-${parts.month}-${parts.day}`,
+  };
+}
+
+function findRunWindow(points, threshold, below) {
+  if (!points || points.length === 0) return null;
+  let bestStart = -1, bestEnd = -1, bestLen = 0;
+  let curStart = -1, curLen = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i].price_pln_mwh;
+    const match = below ? p <= threshold : p >= threshold;
+    if (match) {
+      if (curStart === -1) curStart = i;
+      curLen++;
+      if (curLen > bestLen) { bestLen = curLen; bestStart = curStart; bestEnd = i; }
+    } else {
+      curStart = -1; curLen = 0;
+    }
+  }
+  if (bestStart === -1) return null;
+  return { start_hh_mm: points[bestStart].hh_mm, end_hh_mm: points[bestEnd].hh_mm, hours: bestLen };
+}
+
+function warsawTodayTomorrowKeys(nowIso = new Date().toISOString()) {
+  const today = warsawDateParts(nowIso).yyyymmdd;
+  const d = new Date(nowIso);
+  d.setUTCDate(d.getUTCDate() + 1);
+  const tomorrow = warsawDateParts(d.toISOString()).yyyymmdd;
+  return { today, tomorrow };
 }
 
 const handlers = {
@@ -72,7 +136,7 @@ const handlers = {
       headers: { 'x-api-key': SCHEDULES_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ site_id, sch: { [key]: filtered } }),
     });
-    return res.json();
+    return parseUpstream(res);
   },
 
   async delete_schedule_rule({ site_id, priority, rule_id }) {
@@ -85,7 +149,7 @@ const handlers = {
       headers: { 'x-api-key': SCHEDULES_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ site_id, sch: { [key]: filtered } }),
     });
-    return res.json();
+    return parseUpstream(res);
   },
 
   async set_system_mode({ site_id, mode }) {
@@ -107,7 +171,7 @@ const handlers = {
       headers: { 'x-api-key': SCHEDULES_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ site_id, sch: {}, safety: { soc_min, soc_max } }),
     });
-    return res.json();
+    return parseUpstream(res);
   },
 
   async update_site_config({ site_id, config_json }) {
@@ -165,49 +229,144 @@ const handlers = {
   },
 
   async get_tge_price({ site_id }) {
-    const q = `from(bucket: "tge_energy_prices") |> range(start: -2h) |> filter(fn: (r) => r._measurement == "energy_prices" and r._field == "price") |> last()`;
+    const q = `from(bucket: "tge_energy_prices")
+      |> range(start: -3h, stop: now())
+      |> filter(fn: (r) => r._measurement == "energy_prices" and r._field == "price" and r.source == "real")
+      |> keep(columns: ["_time","_value","source"])
+      |> sort(columns: ["_time"])
+      |> last()`;
     const csv = await fluxQuery(q);
     const rows = parseCsv(csv);
     if (rows.length === 0) return { error: 'No TGE price data' };
     const r = rows[rows.length - 1];
     const pln_mwh = parseFloat(r._value) || 0;
-    const localTime = utcToWarsaw(r._time);
-    return { price_pln_mwh: pln_mwh, price_pln_kwh: pln_mwh / 1000, timestamp: r._time, local_time: localTime };
+    const parts = warsawDateParts(r._time);
+    return {
+      price_pln_mwh: Math.round(pln_mwh * 100) / 100,
+      price_pln_kwh: Math.round(pln_mwh / 10) / 100,
+      timestamp_utc: r._time,
+      local_date: parts.date,
+      local_weekday: parts.weekday,
+      local_time: parts.hh_mm,
+      source: r.source || 'real',
+    };
   },
 
-  async get_tge_price_history({ hours = 24 }) {
+  async get_tge_price_history({ hours = 24, current_datetime }) {
     const h = parseInt(hours) || 24;
-    const q = `from(bucket: "tge_energy_prices") |> range(start: -${h}h, stop: ${h}h) |> filter(fn: (r) => r._measurement == "energy_prices" and r._field == "price") |> sort(columns: ["_time"])`;
+    const anchorIso = current_datetime || new Date().toISOString();
+
+    const q = `from(bucket: "tge_energy_prices")
+      |> range(start: -${h}h, stop: ${h}h)
+      |> filter(fn: (r) => r._measurement == "energy_prices" and r._field == "price")
+      |> keep(columns: ["_time","_value","source","forecast_made_at"])
+      |> sort(columns: ["_time","source"])`;
     const csv = await fluxQuery(q);
-    const rows = parseCsv(csv);
-    const labels = rows.map(r => utcToWarsaw(r._time));
-    const data = rows.map(r => parseFloat(r._value) || 0);
-    const now = new Date();
-    const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
-    const todayStr = now.toLocaleDateString('pl-PL', { timeZone: 'Europe/Warsaw' });
-    const tomorrowStr = tomorrow.toLocaleDateString('pl-PL', { timeZone: 'Europe/Warsaw' });
-    const hasFuture = rows.some(r => new Date(r._time) > now);
-    const title = hasFuture
-      ? `Ceny energii TGE — ${todayStr} + ${tomorrowStr} (PLN/MWh)`
-      : `Ceny energii TGE — ${todayStr} (PLN/MWh)`;
+    const allRows = parseCsv(csv);
+
+    const byTime = new Map();
+    for (const r of allRows) {
+      if (!r._time) continue;
+      const key = r._time;
+      const existing = byTime.get(key);
+      const candidate = {
+        time: r._time,
+        value: parseFloat(r._value) || 0,
+        source: r.source || 'unknown',
+        forecast_made_at: r.forecast_made_at || null,
+      };
+      if (!existing) { byTime.set(key, candidate); continue; }
+      if (candidate.source === 'real' && existing.source !== 'real') {
+        byTime.set(key, candidate);
+        continue;
+      }
+      if (existing.source === 'real') continue;
+      const candMade = candidate.forecast_made_at ? Date.parse(candidate.forecast_made_at) : Date.now();
+      const exMade = existing.forecast_made_at ? Date.parse(existing.forecast_made_at) : Date.now();
+      if (candMade >= exMade) byTime.set(key, candidate);
+    }
+
+    const merged = [...byTime.values()].sort((a, b) => a.time.localeCompare(b.time));
+
+    const { today, tomorrow } = warsawTodayTomorrowKeys(anchorIso);
+
+    const points = merged.map(r => {
+      const parts = warsawDateParts(r.time);
+      return {
+        utc: r.time,
+        local: parts.iso_local,
+        date: parts.date,
+        weekday: parts.weekday,
+        hh_mm: parts.hh_mm,
+        day_bucket: parts.yyyymmdd === today ? 'today' : parts.yyyymmdd === tomorrow ? 'tomorrow' : (parts.yyyymmdd < today ? 'past' : 'future'),
+        price_pln_mwh: Math.round(r.value * 100) / 100,
+        source: r.source,
+      };
+    });
+
+    function summarize(bucketName) {
+      const pts = points.filter(p => p.day_bucket === bucketName);
+      if (pts.length === 0) return null;
+      const prices = pts.map(p => p.price_pln_mwh);
+      const dateStr = pts[0].date;
+      const weekday = pts[0].weekday;
+      const minP = Math.min(...prices);
+      const maxP = Math.max(...prices);
+      const avgP = Math.round(prices.reduce((s, x) => s + x, 0) / prices.length * 100) / 100;
+      const minIdx = prices.indexOf(minP);
+      const maxIdx = prices.indexOf(maxP);
+      const sorted = [...prices].sort((a, b) => a - b);
+      const p33 = sorted[Math.floor(sorted.length * 0.33)];
+      const p67 = sorted[Math.floor(sorted.length * 0.67)];
+      const cheapestWindow = findRunWindow(pts, p33, true);
+      const expensiveWindow = findRunWindow(pts, p67, false);
+      return {
+        date: dateStr,
+        weekday,
+        hour_count: pts.length,
+        sources: [...new Set(pts.map(p => p.source))],
+        min_pln_mwh: minP,
+        max_pln_mwh: maxP,
+        avg_pln_mwh: avgP,
+        cheapest_hour: pts[minIdx].hh_mm,
+        cheapest_price_pln_mwh: minP,
+        most_expensive_hour: pts[maxIdx].hh_mm,
+        most_expensive_price_pln_mwh: maxP,
+        cheapest_window: cheapestWindow,
+        most_expensive_window: expensiveWindow,
+        hourly: pts.map(p => ({ hh_mm: p.hh_mm, price_pln_mwh: p.price_pln_mwh, source: p.source })),
+      };
+    }
+
+    const todaySummary = summarize('today');
+    const tomorrowSummary = summarize('tomorrow');
+
+    const titleParts = [];
+    if (todaySummary) titleParts.push(`${todaySummary.date}`);
+    if (tomorrowSummary) titleParts.push(`${tomorrowSummary.date}`);
+    const title = `Ceny energii TGE — ${titleParts.join(' + ')} (PLN/MWh)`;
+
     return {
       _chart: true,
       chart_type: 'bar',
       title,
-      labels,
-      datasets: [{ label: 'Cena TGE', data, color: '#f59e0b' }],
-      point_count: rows.length,
+      labels: points.map(p => p.utc),
+      datasets: [{ label: 'Cena TGE', data: points.map(p => p.price_pln_mwh), color: '#f59e0b' }],
+      point_count: points.length,
       hours: h,
-      note: 'Chart is rendered by the app. Do NOT generate a text-based chart or table of all values.',
+      anchor_utc: anchorIso,
+      today: todaySummary,
+      tomorrow: tomorrowSummary,
+      note: 'Use today.* and tomorrow.* digests for narration. The labels array contains ISO UTC timestamps (the app formats them for the chart). Always identify each price with its date (e.g. "20.05") to avoid mixing today and tomorrow.',
     };
   },
 
-  async get_tge_prices({ site_id, hours }) {
-    if (!hours || hours === 0) {
+  async get_tge_prices({ site_id, hours, current_datetime }) {
+    if (!hours || parseInt(hours) === 0) {
       return handlers.get_tge_price({ site_id });
     }
     const current = await handlers.get_tge_price({ site_id });
-    const chart = await handlers.get_tge_price_history({ hours: parseInt(hours) || 24 });
+    const chart = await handlers.get_tge_price_history({ hours: parseInt(hours) || 24, current_datetime });
     return { current_price: current, ...chart };
   },
 
@@ -259,44 +418,112 @@ const handlers = {
     return result;
   },
 
-  async get_energy_forecast({ site_id, hours = 48 }) {
+  async get_energy_forecast({ site_id, hours = 48, current_datetime }) {
     const h = parseInt(hours) || 48;
-    const q = `from(bucket: "aiess_v1_1h") |> range(start: -1h, stop: ${h}h) |> filter(fn: (r) => r._measurement == "energy_simulation" and r.site_id == "${site_id}" and r.source == "forecast") |> filter(fn: (r) => r._field == "pv_forecast" or r._field == "load_forecast" or r._field == "weather_temp" or r._field == "weather_cloud_cover" or r._field == "weather_code") |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value") |> sort(columns: ["_time"]) |> limit(n: 200)`;
+    const anchorIso = current_datetime || new Date().toISOString();
+    const q = `from(bucket: "aiess_v1_1h")
+      |> range(start: -1h, stop: ${h}h)
+      |> filter(fn: (r) => r._measurement == "energy_simulation" and r.site_id == "${site_id}" and r.source == "forecast")
+      |> filter(fn: (r) => r._field == "pv_forecast" or r._field == "load_forecast" or r._field == "weather_temp" or r._field == "weather_cloud_cover" or r._field == "weather_code")
+      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+      |> sort(columns: ["_time"])
+      |> limit(n: 200)`;
     const csv = await fluxQuery(q);
     const rows = parseCsv(csv);
 
     if (rows.length === 0) return { error: 'No forecast data available. The forecast engine may not have run yet.' };
 
+    const { today, tomorrow } = warsawTodayTomorrowKeys(anchorIso);
+
+    const points = rows.map(r => {
+      const parts = warsawDateParts(r._time);
+      return {
+        utc: r._time,
+        local: parts.iso_local,
+        date: parts.date,
+        weekday: parts.weekday,
+        hh_mm: parts.hh_mm,
+        yyyymmdd: parts.yyyymmdd,
+        day_bucket: parts.yyyymmdd === today ? 'today' : parts.yyyymmdd === tomorrow ? 'tomorrow' : (parts.yyyymmdd < today ? 'past' : 'future'),
+        pv_kw: Math.round((parseFloat(r.pv_forecast) || 0) * 10) / 10,
+        load_kw: Math.round((parseFloat(r.load_forecast) || 0) * 10) / 10,
+        temp_c: r.weather_temp != null ? Math.round(parseFloat(r.weather_temp) * 10) / 10 : null,
+        cloud_pct: r.weather_cloud_cover != null ? Math.round(parseFloat(r.weather_cloud_cover)) : null,
+      };
+    });
+
+    function dayDigest(bucketName) {
+      const pts = points.filter(p => p.day_bucket === bucketName);
+      if (pts.length === 0) return null;
+      const pv = pts.map(p => p.pv_kw);
+      const load = pts.map(p => p.load_kw);
+      const sun = pts.filter(p => p.pv_kw > 0.5);
+      const sunStart = sun.length ? sun[0].hh_mm : null;
+      const sunEnd = sun.length ? sun[sun.length - 1].hh_mm : null;
+      const pvPeak = Math.max(...pv);
+      const pvPeakIdx = pv.indexOf(pvPeak);
+      const loadPeak = Math.max(...load);
+      const loadPeakIdx = load.indexOf(loadPeak);
+      const pvTotal = Math.round(pv.reduce((s, x) => s + x, 0));
+      const loadTotal = Math.round(load.reduce((s, x) => s + x, 0));
+      const surplus = Math.max(0, pvTotal - loadTotal);
+      const deficit = Math.max(0, loadTotal - pvTotal);
+      const avgTemp = pts.some(p => p.temp_c != null)
+        ? Math.round(pts.filter(p => p.temp_c != null).reduce((s, p) => s + p.temp_c, 0) / pts.filter(p => p.temp_c != null).length * 10) / 10
+        : null;
+      const avgCloud = pts.some(p => p.cloud_pct != null)
+        ? Math.round(pts.filter(p => p.cloud_pct != null).reduce((s, p) => s + p.cloud_pct, 0) / pts.filter(p => p.cloud_pct != null).length)
+        : null;
+      return {
+        date: pts[0].date,
+        weekday: pts[0].weekday,
+        hour_count: pts.length,
+        pv_peak_kw: Math.round(pvPeak * 10) / 10,
+        pv_peak_hour: pts[pvPeakIdx].hh_mm,
+        pv_total_kwh: pvTotal,
+        sunrise_kwh_hour: sunStart,
+        sunset_kwh_hour: sunEnd,
+        load_avg_kw: Math.round(load.reduce((s, x) => s + x, 0) / load.length * 10) / 10,
+        load_peak_kw: Math.round(loadPeak * 10) / 10,
+        load_peak_hour: pts[loadPeakIdx].hh_mm,
+        load_total_kwh: loadTotal,
+        net_surplus_kwh: surplus,
+        net_deficit_kwh: deficit,
+        avg_temp_c: avgTemp,
+        avg_cloud_pct: avgCloud,
+        hourly: pts.map(p => ({ hh_mm: p.hh_mm, pv_kw: p.pv_kw, load_kw: p.load_kw })),
+      };
+    }
+
+    const todayDigest = dayDigest('today');
+    const tomorrowDigest = dayDigest('tomorrow');
+
     const summary = {
       period_hours: h,
-      point_count: rows.length,
-      pv_peak_kw: 0,
-      pv_total_kwh: 0,
-      load_avg_kw: 0,
-      load_peak_kw: 0,
+      point_count: points.length,
+      pv_peak_kw: Math.round(Math.max(...points.map(p => p.pv_kw)) * 10) / 10,
+      pv_total_kwh: Math.round(points.reduce((s, p) => s + p.pv_kw, 0)),
+      load_avg_kw: Math.round(points.reduce((s, p) => s + p.load_kw, 0) / points.length * 10) / 10,
+      load_peak_kw: Math.round(Math.max(...points.map(p => p.load_kw)) * 10) / 10,
     };
 
-    let pvSum = 0, loadSum = 0;
-    for (const r of rows) {
-      const pv = parseFloat(r.pv_forecast) || 0;
-      const load = parseFloat(r.load_forecast) || 0;
-      if (pv > summary.pv_peak_kw) summary.pv_peak_kw = pv;
-      if (load > summary.load_peak_kw) summary.load_peak_kw = load;
-      pvSum += pv;
-      loadSum += load;
-    }
-    summary.pv_total_kwh = Math.round(pvSum);
-    summary.load_avg_kw = rows.length > 0 ? Math.round(loadSum / rows.length * 10) / 10 : 0;
-    summary.pv_peak_kw = Math.round(summary.pv_peak_kw * 10) / 10;
-    summary.load_peak_kw = Math.round(summary.load_peak_kw * 10) / 10;
-
-    const labels = rows.map(r => utcToWarsaw(r._time));
     const datasets = [
-      { label: 'PV Forecast (kW)', data: rows.map(r => parseFloat(r.pv_forecast) || 0), color: '#f59e0b' },
-      { label: 'Load Forecast (kW)', data: rows.map(r => parseFloat(r.load_forecast) || 0), color: '#8b5cf6' },
+      { label: 'PV Forecast (kW)', data: points.map(p => p.pv_kw), color: '#f59e0b' },
+      { label: 'Load Forecast (kW)', data: points.map(p => p.load_kw), color: '#8b5cf6' },
     ];
 
-    return { _chart: true, chart_type: 'line', title: `Prognoza energii — ${h}h`, labels, datasets, summary, note: 'Chart is rendered by the app. Do NOT generate a text-based chart.' };
+    return {
+      _chart: true,
+      chart_type: 'line',
+      title: `Prognoza energii — ${h}h`,
+      labels: points.map(p => p.utc),
+      datasets,
+      summary,
+      anchor_utc: anchorIso,
+      today: todayDigest,
+      tomorrow: tomorrowDigest,
+      note: 'Use today.* and tomorrow.* digests for narration. Identify each value with its date (e.g. "jutro 21.05") to avoid mixing days. Labels are ISO UTC timestamps the app formats for the chart.',
+    };
   },
 
   async run_battery_simulation({ site_id, strategy, hours = 48 }) {

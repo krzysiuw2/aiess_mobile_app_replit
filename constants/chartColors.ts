@@ -35,6 +35,16 @@ export const CHART_COLORS = {
   tooltipBg: '#ffffff',     // White background
   tooltipBorder: '#e5e7eb', // Light border
   shadow: 'rgba(0,0,0,0.1)',
+
+  // Grafana-style line panel (light theme) - see design-previews/charts/c1-grafana.html
+  grafana: {
+    gridLine: 'rgba(20,30,50,0.07)',  // dense horizontal rules
+    zeroLine: 'rgba(20,30,50,0.30)',  // emphasized 0 kW baseline
+    axisText: '#8a93a2',              // axis tick labels
+    crosshair: '#5b6573',             // vertical scrub line
+    tooltipBg: '#ffffff',
+    tooltipBorder: '#e5e7eb',
+  },
   
   // Donut chart segments
   donut: {

@@ -18,7 +18,7 @@ const STATE_TABLE = process.env.AGENT_STATE_TABLE || 'aiess_agent_state';
 const DECISIONS_TABLE = process.env.AGENT_DECISIONS_TABLE || 'aiess_agent_decisions';
 const OPT_FUNCTION = process.env.OPTIMIZATION_V2_FUNCTION || 'aiess-optimization-engine-v2';
 
-const BEDROCK_MODEL = 'anthropic.claude-3-haiku-20240307-v1:0';
+const BEDROCK_MODEL = 'eu.anthropic.claude-haiku-4-5-20251001-v1:0';
 const TTL_30_DAYS = 30 * 24 * 60 * 60;
 
 const PV_THRESHOLD = 0.20;
@@ -209,6 +209,70 @@ async function invokeOptimizationEngine(siteId, siteConfig) {
 
 // ─── Schedules API ──────────────────────────────────────────────
 
+// Defensive normalizer: the update-schedules Lambda validator requires
+// rule.c.ts and rule.c.te to be HHMM integers in [0..2359]. The AI prompt
+// asks for HHMM, but older variants (and occasional model drift) can return
+// seconds-since-midnight (0..86399), HH:MM strings, or ISO timestamps for
+// vu. Normalize every AI rule before POSTing so a single bad value doesn't
+// take down the whole batch.
+function normalizeAiRule(rule, defaultVuSeconds) {
+  if (!rule || typeof rule !== 'object') return rule;
+  const out = { ...rule, a: { ...(rule.a || {}) }, c: { ...(rule.c || {}) } };
+
+  const coerceHhmm = (v) => {
+    if (v === undefined || v === null || v === '') return undefined;
+    if (typeof v === 'string') {
+      const stripped = v.replace(':', '').trim();
+      const n = Number(stripped);
+      if (!Number.isFinite(n)) return undefined;
+      return coerceHhmm(n);
+    }
+    if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
+    let n = Math.round(v);
+    if (n < 0) n = 0;
+    // seconds-since-midnight (0..86399) → HHMM
+    if (n > 2359) {
+      const totalMin = Math.floor(n / 60);
+      const hh = Math.min(23, Math.floor(totalMin / 60));
+      const mm = Math.min(59, totalMin % 60);
+      n = hh * 100 + mm;
+    }
+    if (n > 2359) n = 2359;
+    return n;
+  };
+
+  if (out.c.ts !== undefined) {
+    const ts = coerceHhmm(out.c.ts);
+    if (ts === undefined) delete out.c.ts; else out.c.ts = ts;
+  }
+  if (out.c.te !== undefined) {
+    const te = coerceHhmm(out.c.te);
+    if (te === undefined) delete out.c.te; else out.c.te = te;
+  }
+
+  // AI rules must have vu (Unix epoch seconds). Fallback to default if missing.
+  const vu = out.vu;
+  if (vu === undefined || vu === null || vu === '' || vu === 0) {
+    out.vu = defaultVuSeconds;
+  } else if (typeof vu === 'number') {
+    out.vu = vu > 1e12 ? Math.floor(vu / 1000) : Math.floor(vu);
+  } else if (typeof vu === 'string') {
+    const trimmed = vu.trim();
+    if (/^-?\d+$/.test(trimmed)) {
+      const n = Number(trimmed);
+      out.vu = n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
+    } else {
+      const parsed = Date.parse(trimmed);
+      out.vu = Number.isFinite(parsed) ? Math.floor(parsed / 1000) : defaultVuSeconds;
+    }
+  }
+
+  // Ensure source tag — required for AI-attributed rules.
+  if (!out.s) out.s = 'ai';
+
+  return out;
+}
+
 async function fetchSchedule(siteId) {
   const res = await fetch(`${SCHEDULES_API}/schedules/${siteId}`, {
     headers: { 'x-api-key': SCHEDULES_API_KEY },
@@ -218,10 +282,13 @@ async function fetchSchedule(siteId) {
 }
 
 async function saveScheduleP6(siteId, rules) {
+  // NOTE: update-schedules Lambda reads body.sch (not body.priorities).
+  // Earlier versions sent { priorities: { p_6: rules } } which was silently
+  // dropped, causing the Lambda to return 400 "No updates provided".
   const res = await fetch(`${SCHEDULES_API}/schedules/${siteId}`, {
     method: 'POST',
     headers: { 'x-api-key': SCHEDULES_API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ priorities: { p_6: rules } }),
+    body: JSON.stringify({ site_id: siteId, sch: { p_6: rules } }),
   });
   if (!res.ok) throw new Error(`Schedules API POST ${res.status}: ${await res.text()}`);
   return res.json();
@@ -402,10 +469,12 @@ Respond ONLY with a JSON object:
       "s": "ai",
       "act": true,
       "a": { "t": "ch|dis|sb", "pw": <number_kw> },
-      "c": { "ts": <start_seconds_since_midnight>, "te": <end_seconds_since_midnight>, "sm": <soc_min>, "sx": <soc_max> }
+      "c": { "ts": <HHMM_int_0_to_2359>, "te": <HHMM_int_0_to_2359>, "sm": <soc_min>, "sx": <soc_max> }
     }
   ]
 }
+TIME FORMAT: ts and te are HHMM integers in the range 0..2359 (e.g. 18:00 = 1800, 06:30 = 630). Do NOT use seconds-since-midnight or HH:MM strings — the backend rejects anything outside 0..2359.
+VALIDITY: ALL AI rules MUST include "vu" (valid_until) as a Unix epoch timestamp in seconds (e.g. ${Math.floor(Date.now() / 1000) + 6 * 3600} for 6 hours from now). Without vu the rule is rejected. Use a vu in the next 1-12 hours.
 Rules are applied at P6 priority. Keep it minimal — only the adjustments needed for the next few hours.`;
 
   try {
@@ -431,17 +500,21 @@ Rules are applied at P6 priority. Keep it minimal — only the adjustments neede
 
     const plan = JSON.parse(jsonMatch[0]);
 
-    if (plan.rules?.length > 0) {
+    // Default vu = 6 hours from now if the model omits it (AI rules MUST have vu).
+    const defaultVu = Math.floor(Date.now() / 1000) + 6 * 3600;
+    const normalizedRules = (plan.rules || []).map(r => normalizeAiRule(r, defaultVu));
+
+    if (normalizedRules.length > 0) {
       const schedule = await fetchSchedule(siteId);
       const existingP6 = (schedule.sch?.p_6 || []).filter(r => !r.id?.startsWith('intraday_adj_'));
-      const merged = [...existingP6, ...plan.rules];
+      const merged = [...existingP6, ...normalizedRules];
       await saveScheduleP6(siteId, merged);
     }
 
     return {
       action: 'llm_replanned',
       reasoning: plan.reasoning || 'Bedrock re-planning applied',
-      rules_created: plan.rules || [],
+      rules_created: normalizedRules,
       rules_modified: [],
       bedrock_used: true,
     };

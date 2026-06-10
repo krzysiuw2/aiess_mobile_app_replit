@@ -21,21 +21,23 @@ All resources are in **eu-central-1** under account **896709973986**.
 |---|---|
 | Alias Name | `live` |
 | Alias ID | `ITHHACXCBB` |
-| Routes to | Agent Version 2 |
+| Routes to | Agent Version 5 |
 
 ### Action Groups
 
 | Name | ID | API Count | Schema File |
 |---|---|---|---|
 | `aiess-management` | `Q8TOG1MU1U` | 6 | `lambda/bedrock-agent-action/openapi-management.json` |
-| `aiess-analytics` | `BCJGWIMQVW` | 5 | `lambda/bedrock-agent-action/openapi-analytics.json` |
+| `aiess-analytics` | `BCJGWIMQVW` | 6 | `lambda/bedrock-agent-action/openapi-analytics.json` |
+
+Analytics action group exposes: `get_battery_status`, `get_energy_summary`, `get_tge_prices`, `get_rule_history`, `get_chart_data`, `get_energy_forecast`. The `get_tge_prices` and `get_energy_forecast` tools both return structured `today` and `tomorrow` digests so the agent can never mix up days.
 
 ## Lambda Functions
 
 | Function | Purpose | Runtime | Memory |
 |---|---|---|---|
-| `aiess-bedrock-action` | Action group handler (all tools) | Node.js 20.x | 256 MB |
-| `aiess-bedrock-chat` | Chat proxy (mobile app ↔ Bedrock) | Node.js 20.x | 256 MB |
+| `aiess-bedrock-action` | Action group handler (all tools) | Node.js 20.x | 512 MB |
+| `aiess-bedrock-chat` | Chat proxy (mobile app ↔ Bedrock) | Node.js 20.x | 512 MB |
 
 ## IAM Roles
 
@@ -81,10 +83,10 @@ Uses the Lambda's default execution role with:
 
 ## Service Quotas
 
-| Quota | Current | Requested |
-|---|---|---|
-| APIs per Agent | 11 | 20 (pending) |
-| Action Groups per Agent | 15 | — |
+| Quota | Current |
+|---|---|
+| APIs per Agent | 20 |
+| Action Groups per Agent | 20 |
 
 ## Model Access
 
