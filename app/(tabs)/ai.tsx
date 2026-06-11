@@ -74,6 +74,7 @@ export default function AIScreen() {
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [awaitingFirstChunk, setAwaitingFirstChunk] = useState(false);
   const sessionIdRef = useRef(`session-${Date.now()}`);
   const flatListRef = useRef<FlatList>(null);
   const [isListening, setIsListening] = useState(false);
@@ -189,13 +190,33 @@ export default function AIScreen() {
     link: { color: Colors.primary },
   }), []);
 
-  const addMessage = useCallback((msg: Omit<Message, 'id' | 'timestamp'>) => {
+  const appendMessage = useCallback((msg: Omit<Message, 'id' | 'timestamp'>) => {
+    const id = Date.now().toString() + Math.random();
     setMessages(prev => {
-      const next = [...prev, { ...msg, id: Date.now().toString() + Math.random(), timestamp: new Date() }];
+      const next = [...prev, { ...msg, id, timestamp: new Date() }];
       saveChat(deviceId, next, sessionIdRef.current);
       return next;
     });
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    return id;
+  }, [deviceId, saveChat]);
+
+  const updateMessage = useCallback((id: string, patch: Partial<Message>) => {
+    setMessages(prev => {
+      const next = prev.map(m => m.id === id ? { ...m, ...patch } : m);
+      saveChat(deviceId, next, sessionIdRef.current);
+      return next;
+    });
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+  }, [deviceId, saveChat]);
+
+  const appendToMessage = useCallback((id: string, text: string) => {
+    setMessages(prev => {
+      const next = prev.map(m => m.id === id ? { ...m, text: m.text + text } : m);
+      saveChat(deviceId, next, sessionIdRef.current);
+      return next;
+    });
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   }, [deviceId, saveChat]);
 
   const resetChat = useCallback(() => {
@@ -242,27 +263,45 @@ export default function AIScreen() {
 
   const sendText = useCallback(async (text: string) => {
     if (!text.trim() || isLoading || !selectedDevice) return;
-    addMessage({ text, isUser: true });
+    appendMessage({ text, isUser: true });
     setIsLoading(true);
+    setAwaitingFirstChunk(true);
+
+    const assistantId = appendMessage({ text: '', isUser: false });
+
     try {
       const langHint = language === 'en' ? '[Respond in English]\n\n' : '[Odpowiadaj po polsku]\n\n';
-      const res = await sendChatMessage(langHint + text, sessionIdRef.current, selectedDevice.device_id, language);
-      if (res.confirmation) {
-        addMessage({ text: res.text || '', isUser: false, confirmation: res.confirmation, charts: res.charts });
-      } else {
-        addMessage({ text: res.text, isUser: false, charts: res.charts });
-      }
+      const res = await sendChatMessage(
+        langHint + text,
+        sessionIdRef.current,
+        selectedDevice.device_id,
+        language,
+        {
+          onChunk: (chunkText) => {
+            setAwaitingFirstChunk(false);
+            appendToMessage(assistantId, chunkText);
+          },
+        },
+      );
+
+      updateMessage(assistantId, {
+        text: res.text || '',
+        confirmation: res.confirmation,
+        charts: res.charts,
+      });
     } catch (err: any) {
+      setMessages(prev => prev.filter(m => m.id !== assistantId));
       const errorMsg = classifyError(err);
       const isSessionExpired = errorMsg === t.ai.errorSessionExpired;
       if (isSessionExpired) {
         sessionIdRef.current = `session-${Date.now()}`;
       }
-      addMessage({ text: errorMsg, isUser: false, isError: true, retryText: isSessionExpired ? undefined : text });
+      appendMessage({ text: errorMsg, isUser: false, isError: true, retryText: isSessionExpired ? undefined : text });
     } finally {
       setIsLoading(false);
+      setAwaitingFirstChunk(false);
     }
-  }, [isLoading, selectedDevice, addMessage, t, language, classifyError]);
+  }, [isLoading, selectedDevice, appendMessage, updateMessage, appendToMessage, t, language, classifyError]);
 
   const handleSend = useCallback(async () => {
     if (!inputText.trim()) return;
@@ -276,6 +315,9 @@ export default function AIScreen() {
 
     setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, confirmationHandled: true } : m));
     setIsLoading(true);
+    setAwaitingFirstChunk(true);
+
+    const assistantId = appendMessage({ text: '', isUser: false });
 
     try {
       const res = await sendConfirmationResult(
@@ -286,18 +328,29 @@ export default function AIScreen() {
         msg.confirmation.action_group,
         msg.confirmation.http_method,
         selectedDevice?.device_id,
+        {
+          onChunk: (chunkText) => {
+            setAwaitingFirstChunk(false);
+            appendToMessage(assistantId, chunkText);
+          },
+        },
       );
-      addMessage({ text: res.text || (accepted ? 'Action confirmed.' : 'Action rejected.'), isUser: false });
+      updateMessage(assistantId, {
+        text: res.text || (accepted ? 'Action confirmed.' : 'Action rejected.'),
+        charts: res.charts,
+      });
     } catch (err: any) {
+      setMessages(prev => prev.filter(m => m.id !== assistantId));
       const errorMsg = classifyError(err);
       if (errorMsg === t.ai.errorSessionExpired) {
         sessionIdRef.current = `session-${Date.now()}`;
       }
-      addMessage({ text: errorMsg, isUser: false, isError: true });
+      appendMessage({ text: errorMsg, isUser: false, isError: true });
     } finally {
       setIsLoading(false);
+      setAwaitingFirstChunk(false);
     }
-  }, [addMessage, t, selectedDevice]);
+  }, [appendMessage, appendToMessage, updateMessage, t, selectedDevice, classifyError]);
 
   const getConfirmLabel = (toolName: string) => {
     const labels = CONFIRM_LABELS[toolName];
@@ -488,7 +541,7 @@ export default function AIScreen() {
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
 
-        {isLoading && (
+        {awaitingFirstChunk && (
           <View style={styles.thinkingRow}>
             <ActivityIndicator size="small" color={Colors.primary} />
             <Text style={styles.thinkingText}>{t.ai.thinking}</Text>
