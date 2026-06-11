@@ -1,7 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
-const AWS_CHAT_STREAM_URL = Deno.env.get("AWS_CHAT_STREAM_URL") ?? "";
+// Function URL is public (AuthType NONE); x-api-key is the secret (shared AWS_API_KEY).
+const AWS_CHAT_STREAM_URL =
+  Deno.env.get("AWS_CHAT_STREAM_URL") ??
+  "https://jaz4zf3grbvwpfywnx32moip6a0yukei.lambda-url.eu-central-1.on.aws/";
 const AWS_API_KEY = Deno.env.get("AWS_API_KEY") ?? "";
 
 const RATE_LIMIT = 20;
