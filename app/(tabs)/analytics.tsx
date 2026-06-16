@@ -21,10 +21,8 @@ import {
   calculateEnergyStats, 
   calculateFactoryLoad,
   fetchSimulationData,
-  fetchTgePrices,
   ChartDataPoint, 
   EnergyStats,
-  TgePricePoint,
   TimeRange 
 } from '@/lib/influxdb';
 import { SimulationDataPoint } from '@/types';
@@ -44,14 +42,14 @@ import { EnergyBarsChart } from '@/components/analytics/EnergyBarsChart';
 import { SocBandChart } from '@/components/analytics/SocBandChart';
 import { LoadCompositionChart } from '@/components/analytics/LoadCompositionChart';
 import { CyclesBarChart } from '@/components/analytics/CyclesBarChart';
-import TgePriceChart from '@/components/analytics/TgePriceChart';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
 import { BatteryDataView } from '@/components/analytics/BatteryDataView';
 import { ForecastView } from '@/components/analytics/ForecastView';
 import { FinancialView } from '@/components/analytics/FinancialView';
+import { MarketDataView } from '@/components/analytics/MarketDataView';
 import { AiLogicView } from '@/components/ai-agent/AiLogicView';
 
-type AnalyticsTab = 'usage' | 'forecasts' | 'financial' | 'battery' | 'ai_logic';
+type AnalyticsTab = 'usage' | 'forecasts' | 'market_data' | 'financial' | 'battery' | 'ai_logic';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -160,8 +158,11 @@ export default function AnalyticsScreen() {
   const { t, language } = useSettings();
   const { selectedDevice } = useDevices();
   const { siteConfig } = useSiteConfig();
-  const tariffType = siteConfig?.tariff?.type;
-  const showTgePrices = tariffType === 'dynamic' || tariffType === 'time_of_use';
+  // The Market Data (TGE RDN) sub-tab is only relevant to sites that price on
+  // the day-ahead market, so flat / calendar tariff users don't see it.
+  const fin = siteConfig?.financial;
+  const showMarketData =
+    fin?.energy_price_model === 'tge_rdn' || fin?.export_price_model === 'tge_rdn';
   const locale = language === 'pl' ? 'pl-PL' : 'en-US';
 
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('usage');
@@ -172,7 +173,6 @@ export default function AnalyticsScreen() {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [simData, setSimData] = useState<SimulationDataPoint[]>([]);
   const [forecastSimData, setForecastSimData] = useState<SimulationDataPoint[]>([]);
-  const [tgePrices, setTgePrices] = useState<TgePricePoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [forecastLoading, setForecastLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -221,20 +221,6 @@ export default function AnalyticsScreen() {
             console.warn('[Analytics] Simulation fetch failed:', e);
             setSimData([]);
           });
-
-        if (showTgePrices) {
-          fetchTgePrices(simStart, simEnd)
-            .then(prices => {
-              console.log(`[Analytics] TGE prices: ${prices.length} pts`);
-              setTgePrices(prices);
-            })
-            .catch((e) => {
-              console.warn('[Analytics] TGE price fetch failed:', e);
-              setTgePrices([]);
-            });
-        } else {
-          setTgePrices([]);
-        }
       } catch (err) {
         console.error('[Analytics] Error:', err);
         setError(t.common.failedToLoad);
@@ -244,7 +230,14 @@ export default function AnalyticsScreen() {
     }
 
     loadData();
-  }, [timeRange, selectedDate, selectedDevice?.device_id, showTgePrices, t.common.noDeviceSelected, t.common.failedToLoad]);
+  }, [timeRange, selectedDate, selectedDevice?.device_id, t.common.noDeviceSelected, t.common.failedToLoad]);
+
+  // If the active site no longer prices on TGE RDN, leave the Market Data tab.
+  useEffect(() => {
+    if (activeTab === 'market_data' && !showMarketData) {
+      setActiveTab('usage');
+    }
+  }, [activeTab, showMarketData]);
 
   // Fetch wider simulation window for Forecasts tab (yesterday → +8 days)
   useEffect(() => {
@@ -369,6 +362,9 @@ export default function AnalyticsScreen() {
           {([
             { key: 'usage' as AnalyticsTab, icon: BarChart2, label: bt.usageData },
             { key: 'forecasts' as AnalyticsTab, icon: CloudSun, label: t.analytics.forecastTab.forecasts },
+            ...(showMarketData
+              ? [{ key: 'market_data' as AnalyticsTab, icon: TrendingUp, label: t.marketData.title }]
+              : []),
             { key: 'financial' as AnalyticsTab, icon: DollarSign, label: ft.financial },
             { key: 'battery' as AnalyticsTab, icon: Activity, label: bt.batteryData },
             { key: 'ai_logic' as AnalyticsTab, icon: BrainCircuit, label: t.aiAgent.logicTab },
@@ -489,18 +485,6 @@ export default function AnalyticsScreen() {
               />
             )}
 
-            {/* Section 1b: TGE Energy Prices (dynamic/ToU tariff only) */}
-            {showTgePrices && (
-              <>
-                <SectionHeader title={t.analytics.tgePrices} icon="TrendingUp" />
-                <TgePriceChart
-                  data={tgePrices}
-                  timeRange={timeRange}
-                  loading={loading}
-                />
-              </>
-            )}
-
             {/* Section 2: Energy Source Breakdown */}
             <SectionHeader title={t.analytics.energySourceBreakdown} icon="BarChart2" />
             <EnergyDonutChart breakdown={energyBreakdown} />
@@ -574,6 +558,12 @@ export default function AnalyticsScreen() {
             simData={forecastSimData}
             deviceId={selectedDevice?.device_id}
             loading={forecastLoading}
+            t={t}
+            language={language}
+          />
+        ) : activeTab === 'market_data' ? (
+          <MarketDataView
+            isActive={activeTab === 'market_data'}
             t={t}
             language={language}
           />

@@ -748,22 +748,30 @@ export async function fetchBatteryDetail(siteId: string): Promise<BatteryDetailD
 
 // TGE Price types
 export interface TgePricePoint {
+  // Stored "Warsaw-as-Z" timestamp: its UTC fields equal the Warsaw wall clock
+  // (see lib/tge-time.ts and aiess-architecture contracts/tge-prices.md).
   time: Date;
   price: number; // PLN/MWh
 }
 
-/**
- * Fetch TGE RDN energy prices for a time range.
- * Uses the tge_energy_prices bucket. Includes future prices when available.
- */
-export async function fetchTgePrices(
+// TGE rows use the Warsaw-as-Z convention; pad the query window by +/-3h so DST
+// edges and the offset between stored and true UTC never clip a delivery day.
+const TGE_PAD_MS = 3 * 60 * 60 * 1000;
+
+async function fetchTgePricesFromMeasurement(
+  measurement: 'energy_prices' | 'energy_prices_15m',
   startDate: Date,
   endDate: Date,
 ): Promise<TgePricePoint[]> {
+  const start = new Date(startDate.getTime() - TGE_PAD_MS).toISOString();
+  const stop = new Date(endDate.getTime() + TGE_PAD_MS).toISOString();
+
+  // Filter on source == "real": the energy_prices measurement also holds
+  // source=predicted forecast rows that must never be mixed into the actuals.
   const query = `
     from(bucket: "tge_energy_prices")
-      |> range(start: ${startDate.toISOString()}, stop: ${endDate.toISOString()})
-      |> filter(fn: (r) => r._measurement == "energy_prices" and r._field == "price")
+      |> range(start: ${start}, stop: ${stop})
+      |> filter(fn: (r) => r._measurement == "${measurement}" and r._field == "price" and r.source == "real")
       |> sort(columns: ["_time"])
   `;
 
@@ -783,7 +791,30 @@ export async function fetchTgePrices(
       .filter((p): p is TgePricePoint => p !== null)
       .sort((a, b) => a.time.getTime() - b.time.getTime());
   } catch (error) {
-    console.error('[TGE] Error fetching TGE prices:', error);
+    console.error(`[TGE] Error fetching ${measurement}:`, error);
     return [];
   }
+}
+
+/**
+ * Fetch hourly TGE RDN energy prices (energy_prices, source=real) for a range.
+ * 24 points/delivery day. Includes future prices when published.
+ */
+export async function fetchTgePrices(
+  startDate: Date,
+  endDate: Date,
+): Promise<TgePricePoint[]> {
+  return fetchTgePricesFromMeasurement('energy_prices', startDate, endDate);
+}
+
+/**
+ * Fetch canonical 15-minute TGE RDN energy prices (energy_prices_15m,
+ * source=real) for a range. 96 points/delivery day since the 2026-06 cutover.
+ * Pre-cutover days have no 15-min rows; callers fall back to the hourly series.
+ */
+export async function fetchTgePrices15m(
+  startDate: Date,
+  endDate: Date,
+): Promise<TgePricePoint[]> {
+  return fetchTgePricesFromMeasurement('energy_prices_15m', startDate, endDate);
 }
