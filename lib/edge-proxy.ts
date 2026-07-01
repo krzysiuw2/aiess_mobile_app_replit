@@ -54,3 +54,40 @@ export async function callAwsProxy(
     clearTimeout(timeout);
   }
 }
+
+/**
+ * Transport for the DDB config-plane API (`/devices/*` routes, AWS_IAM auth).
+ * Goes through the `aws-config-proxy` Supabase edge function, which SigV4-signs
+ * the forwarded request (the app never holds AWS credentials). Same
+ * `{path, method, body, headers}` envelope as `callAwsProxy`, plus optional
+ * extra headers (e.g. `If-Match`) that the proxy forwards to API Gateway.
+ *
+ * NOTE: only usable when the `use_ddb_config_plane` feature flag is on AND
+ * the aws-config-proxy function is deployed.
+ */
+export async function callAwsConfigProxy(
+  path: string,
+  method: string = 'GET',
+  body?: unknown,
+  extraHeaders?: Record<string, string>,
+): Promise<Response> {
+  const headers = await getAuthHeaders();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AWS_PROXY_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/aws-config-proxy`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ path, method, body, headers: extraHeaders }),
+      signal: controller.signal,
+    });
+    return res;
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new Error(`Request to ${path} timed out after ${AWS_PROXY_TIMEOUT_MS / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}

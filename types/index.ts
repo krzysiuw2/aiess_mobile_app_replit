@@ -148,6 +148,65 @@ export interface ScheduleRuleFormData {
   validUntil?: number;
 }
 
+// ─── DDB Config Plane (per-section) Types ───────────────────────
+// See contract: config-plane API (`GET/PUT /devices/{id}/sections/{section_id}`).
+// Used only behind the `use_ddb_config_plane` feature flag.
+
+export type ConfigSectionId = 'shared.schedules' | 'shared.site_limits' | 'shared.identity';
+
+/** All p_1..p_11 buckets. The app only ever writes p_4..p_9. */
+export type SchedulePriorityKey =
+  | 'p_1' | 'p_2' | 'p_3' | 'p_4' | 'p_5' | 'p_6'
+  | 'p_7' | 'p_8' | 'p_9' | 'p_10' | 'p_11';
+
+export interface SharedSchedulesPayload {
+  v: string;
+  sch: Partial<Record<SchedulePriorityKey, OptimizedScheduleRule[]>>;
+}
+
+export interface SharedSiteLimitsPayload {
+  soc_min_percent: number;
+  soc_max_percent: number;
+  import_kw_max?: number;
+  export_kw_max?: number;
+}
+
+/** Note: `system_mode` uses underscores, unlike the legacy API's hyphenated mode. */
+export type ConfigSystemMode = 'automatic' | 'semi_automatic' | 'manual';
+
+export interface SharedIdentityPayload {
+  thing_name?: string;
+  serial_id?: string;
+  hw_revision?: string;
+  ems_vendor?: string;
+  fw_version?: string;
+  system_mode?: ConfigSystemMode;
+}
+
+export interface ConfigSectionEnvelope<T = unknown> {
+  payload: T;
+  version: number;
+  etag: string;
+  updated_by?: string;
+  updated_at?: string | number;
+}
+
+export interface DeviceManifestSection {
+  section_id: string;
+  version: number;
+  etag: string;
+}
+
+export interface DeviceManifest {
+  device_id: string;
+  sections: DeviceManifestSection[];
+}
+
+export interface PutSectionResponse {
+  version: number;
+  etag: string;
+}
+
 // ─── App-level Types ────────────────────────────────────────────
 
 export interface ChatMessage {

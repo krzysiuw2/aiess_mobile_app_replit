@@ -10,8 +10,12 @@ import type {
   SchedulesResponse,
   SaveSchedulesResponse,
   ScheduleRuleFormData,
+  ConfigSectionId,
+  ConfigSectionEnvelope,
+  DeviceManifest,
+  PutSectionResponse,
 } from '@/types';
-import { callAwsProxy } from '@/lib/edge-proxy';
+import { callAwsProxy, callAwsConfigProxy } from '@/lib/edge-proxy';
 
 // ─── API Methods ────────────────────────────────────────────────
 
@@ -45,6 +49,87 @@ export async function saveSchedules(
     throw new Error(`Failed to save schedules: ${response.status}`);
   }
 
+  return response.json();
+}
+
+// ─── DDB Config-Plane API (per-section; behind use_ddb_config_plane) ──
+
+/** Another writer updated the section between our GET and PUT (HTTP 412). */
+export class ConfigConflictError extends Error {
+  constructor(public sectionId: string) {
+    super(`Section ${sectionId} was modified concurrently (412)`);
+    this.name = 'ConfigConflictError';
+  }
+}
+
+/** Server-side JSON Schema validation failure (HTTP 400 with details[]). */
+export class ConfigValidationError extends Error {
+  constructor(public sectionId: string, public details: string[]) {
+    super(`Section ${sectionId} failed validation: ${details.join('; ')}`);
+    this.name = 'ConfigValidationError';
+  }
+}
+
+export async function getManifest(siteId: string): Promise<DeviceManifest> {
+  const response = await callAwsConfigProxy(`/devices/${siteId}/manifest`);
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[ConfigPlane] Manifest error:', response.status, errorText);
+    throw new Error(`Failed to fetch manifest: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getSection<T>(
+  siteId: string,
+  sectionId: ConfigSectionId,
+): Promise<ConfigSectionEnvelope<T>> {
+  const response = await callAwsConfigProxy(`/devices/${siteId}/sections/${sectionId}`);
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[ConfigPlane] Section GET error:', response.status, errorText);
+    throw new Error(`Failed to fetch section ${sectionId}: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * Replaces the WHOLE section payload (not a merge). Callers must
+ * fetch → modify → put, passing the etag from the fetch as `ifMatchEtag`
+ * so concurrent writes surface as ConfigConflictError.
+ */
+export async function putSection<T>(
+  siteId: string,
+  sectionId: ConfigSectionId,
+  payload: T,
+  ifMatchEtag?: string,
+): Promise<PutSectionResponse> {
+  const headers = ifMatchEtag ? { 'If-Match': ifMatchEtag } : undefined;
+  const response = await callAwsConfigProxy(
+    `/devices/${siteId}/sections/${sectionId}`,
+    'PUT',
+    { payload },
+    headers,
+  );
+
+  if (response.status === 412) {
+    throw new ConfigConflictError(sectionId);
+  }
+  if (response.status === 400) {
+    let details: string[] = [];
+    try {
+      const body = await response.json();
+      details = Array.isArray(body?.details) ? body.details : [JSON.stringify(body)];
+    } catch {
+      details = ['Bad request'];
+    }
+    throw new ConfigValidationError(sectionId, details);
+  }
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[ConfigPlane] Section PUT error:', response.status, errorText);
+    throw new Error(`Failed to write section ${sectionId}: ${response.status}`);
+  }
   return response.json();
 }
 
