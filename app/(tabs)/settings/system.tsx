@@ -19,6 +19,7 @@ import { useSiteConfig } from '@/hooks/useSiteConfig';
 import { useSchedules } from '@/hooks/useSchedules';
 import { useQueryClient } from '@tanstack/react-query';
 import { triggerAgentRun } from '@/lib/aws-agent';
+import DeviceConfigPanel from '@/components/settings/DeviceConfigPanel';
 import type { SystemMode, SiteConfigAutomation } from '@/types';
 
 const INTRADAY_OPTIONS = [15, 30, 60];
@@ -358,6 +359,9 @@ export default function SystemSettingsScreen() {
             </View>
           </View>
         )}
+
+        {/* Device config-plane info (renders only when use_ddb_config_plane is on) */}
+        <DeviceConfigPanel />
       </ScrollView>
     </SafeAreaView>
   );
