@@ -55,7 +55,7 @@ export default function DeviceConfigPanel() {
         },
         {
           label: t.settings.deviceConfigSections,
-          value: String(query.data.manifest.sections?.length ?? 0),
+          value: String(Object.keys(query.data.manifest.sections ?? {}).length),
         },
       ]
     : [];

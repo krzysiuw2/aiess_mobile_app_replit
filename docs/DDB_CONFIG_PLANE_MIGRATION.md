@@ -27,7 +27,7 @@ DDB-authoritative behind the legacy-shape compat shim (see architecture repo:
 | `getManifest` / `getSection` / `putSection` (+ `ConfigConflictError` on 412, `ConfigValidationError` on 400) | `lib/aws-schedules.ts` |
 | Flag-gated read model + fetch→modify→PUT `If-Match` mutations | `hooks/useSchedules.ts` |
 | Read-only device panel (fw version, EMS vendor, mode, grid band) | `components/settings/DeviceConfigPanel.tsx`, mounted in Settings → System |
-| SigV4 proxy (deliverable, **not deployed**) | `supabase/functions/aws-config-proxy/index.ts` |
+| SigV4 proxy (**deployed 2026-07-02**) | `supabase/functions/aws-config-proxy/index.ts` |
 
 ### Safety invariants (enforced in code)
 
@@ -40,18 +40,29 @@ DDB-authoritative behind the legacy-shape compat shim (see architecture repo:
 - The flag resolver defaults to `false` on any error, so failure of the flag
   fetch always lands on the legacy `/schedules` path.
 
-### Blocking prerequisite before enabling the flag
+### Prerequisites — COMPLETED 2026-07-02 (flag is now ON)
 
-The config-plane `/devices/*` routes use **AWS_IAM (SigV4)** auth. The app
-reaches them only through the new `aws-config-proxy` Supabase function, which
-must first be deployed by ops:
+The config-plane `/devices/*` routes use **AWS_IAM (SigV4)** auth. All ops
+steps were performed on 2026-07-02:
 
-1. Create an IAM principal limited to `execute-api:Invoke` on the
-   `aiess-config-plane` API.
-2. `supabase secrets set CONFIG_API_ENDPOINT=... CONFIG_AWS_ACCESS_KEY_ID=...
-   CONFIG_AWS_SECRET_ACCESS_KEY=...`
-3. `supabase functions deploy aws-config-proxy`
-4. Only then: `update app_feature_flags set enabled = true where key = 'use_ddb_config_plane';`
+1. IAM user `aiess-config-proxy` created with inline policy
+   `aiess-config-plane-invoke` (`scripts/iam-config-proxy-policy.json`):
+   `execute-api:Invoke` on GET `/devices/*` + PUT `/devices/*/sections/*`
+   of API `0z2j77lbgd` only (the ops-only `POST /devices` bootstrap route is
+   excluded and additionally blocked by the proxy's path allow-list).
+   The policy also carries `lambda:InvokeFunction` on
+   `aiess-config-get`/`-put`/`-list-sections`: the API's integrations use
+   **caller credentials** (`credentials: arn:aws:iam::*:user/*`), so the
+   invoking IAM user itself needs Lambda invoke rights — without this the
+   gateway returns 500 "Invalid permissions on Lambda function".
+2. Supabase secrets set on project `fcfuuwmzwxltxsgmcqck`:
+   `CONFIG_API_ENDPOINT=https://0z2j77lbgd.execute-api.eu-central-1.amazonaws.com/prod`,
+   `CONFIG_AWS_ACCESS_KEY_ID`, `CONFIG_AWS_SECRET_ACCESS_KEY`,
+   `CONFIG_AWS_REGION=eu-central-1`.
+3. `aws-config-proxy` deployed; verified end-to-end (manifest GET, section
+   GET/PUT with `If-Match`, 412 passthrough, bootstrap blocked) — see
+   `scripts/ddb-proxy-smoke.mjs`.
+4. `use_ddb_config_plane` flipped to `true`.
 
 Rollback = flip the flag back to `false` (no app-store release needed). A
 backend rollback of a site to `shadow` is invisible to the app on either path.

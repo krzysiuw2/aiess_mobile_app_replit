@@ -192,14 +192,15 @@ export interface ConfigSectionEnvelope<T = unknown> {
 }
 
 export interface DeviceManifestSection {
-  section_id: string;
   version: number;
   etag: string;
 }
 
+/** Shape verified live: `GET /devices/{id}/manifest` (schema `manifest.v1`). */
 export interface DeviceManifest {
-  device_id: string;
-  sections: DeviceManifestSection[];
+  schema: string;
+  manifest_etag: string;
+  sections: Record<string, DeviceManifestSection>;
 }
 
 export interface PutSectionResponse {
