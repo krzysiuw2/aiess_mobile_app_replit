@@ -7,6 +7,7 @@ import type {
   OptimizedConditions,
   OptimizedScheduleRule,
   ScheduleRuleWithPriority,
+  ReadOnlyScheduleRule,
   SchedulesResponse,
   SaveSchedulesResponse,
   ScheduleRuleFormData,
@@ -145,6 +146,23 @@ export function flattenRules(sch: SchedulesResponse['sch']): ScheduleRuleWithPri
   }
 
   return allRules.sort((a, b) => {
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+/**
+ * P1-P3 (edge-local) and P10-P11 (SCADA/safety) rules for display.
+ * These bands are read-only: the schedules API rejects writes to them,
+ * so the UI must never offer edit/delete/toggle on these.
+ */
+export function flattenReadOnlyRules(sch: SchedulesResponse['sch']): ReadOnlyScheduleRule[] {
+  const out: ReadOnlyScheduleRule[] = [];
+  for (const p of [1, 2, 3, 10, 11]) {
+    const key = `p_${p}` as keyof typeof sch;
+    (sch[key] || []).forEach(rule => out.push({ ...rule, priority: p }));
+  }
+  return out.sort((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority;
     return a.id.localeCompare(b.id);
   });
@@ -347,12 +365,17 @@ export function getActionTypeLabel(type: ActionType): string {
 
 export function getPriorityLabel(priority: number): string {
   const labels: Record<number, string> = {
+    1: 'P1 - Local',
+    2: 'P2 - Local',
+    3: 'P3 - Local',
     4: 'P4 - Reserved',
     5: 'P5 - Baseline',
     6: 'P6 - Low',
     7: 'P7 - Normal',
     8: 'P8 - High',
     9: 'P9 - Site Limit',
+    10: 'P10 - SCADA',
+    11: 'P11 - Safety',
   };
   return labels[priority] || `P${priority}`;
 }

@@ -205,7 +205,27 @@ async function t1_goldenGet() {
     }
   }
   check('all rules parse for the editor', badRules.length === 0, badRules.join('; '));
+
+  // Read-only bands (P1-P3 local, P10-P11 SCADA) must be present in the GET
+  // when the site has them, so the app can render them read-only.
+  const roCount = [1, 2, 3, 10, 11].reduce((n, p) => n + (j?.sch?.[`p_${p}`] ?? []).length, 0);
+  const expectedRo = (j?.metadata?.local_rules ?? 0) + (j?.metadata?.scada_safety_rules ?? 0);
+  check('read-only bands visible in GET (matches metadata)', roCount === expectedRo,
+    `visible=${roCount}, metadata local+scada=${expectedRo}`);
   return j;
+}
+
+async function t10_modeRoundTrip() {
+  test('10. Mode round-trip (automatic <-> semi-automatic)');
+  const origMode = initial.mode;
+  const target = origMode === 'semi-automatic' ? 'automatic' : 'semi-automatic';
+  const r = await apiPost({ mode: target });
+  check('mode POST accepted', r.status === 200, `status ${r.status}: ${r.text.slice(0, 150)}`);
+  const g = (await apiGet()).json;
+  check(`mode reads back as ${target}`, g?.mode === target, `mode=${g?.mode}`);
+  const rr = await apiPost({ mode: origMode });
+  const g2 = (await apiGet()).json;
+  check(`mode restored to ${origMode}`, rr.status === 200 && g2?.mode === origMode, `mode=${g2?.mode}`);
 }
 
 async function t2_roundTrips() {
@@ -396,6 +416,7 @@ async function main() {
     await t7_tzStability();
     await t8_errorParity();
     await t9_siteConfig();
+    await t10_modeRoundTrip();
     await t6_aiExpiry(); // last: it blocks for up to ~15 min
   } finally {
     await restoreState();
@@ -427,7 +448,7 @@ async function main() {
     ? 'All checks passed: the app requires **zero changes** for the DDB-backed legacy API.'
     : 'Failures above are **backend bugs to report** (parity contract), not app issues to patch.');
 
-  const outPath = join(dirname(fileURLToPath(import.meta.url)), 'ddb-regression-report.md');
+  const outPath = join(dirname(fileURLToPath(import.meta.url)), `ddb-regression-report-${SITE}.md`);
   writeFileSync(outPath, lines.join('\n') + '\n');
   console.log(`\nReport written to ${outPath}`);
   console.log(allPass ? '\nRESULT: ALL PASS' : '\nRESULT: FAILURES PRESENT');

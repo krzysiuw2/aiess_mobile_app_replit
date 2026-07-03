@@ -79,5 +79,5 @@ Bedrock Agent  (EUNJYANOZX / alias ITHHACXCBB)
 | Source | What it stores | Access pattern |
 |---|---|---|
 | DynamoDB (`site_config`) | Site configuration (battery, PV, grid, tariff, location) | Direct SDK calls |
-| IoT Named Shadow (`schedule`) | Schedule rules (P4–P9), system mode, safety limits | Via Schedules API (HTTP) |
+| DynamoDB (`aiess_device_config`) | Schedule rules, system mode, safety limits (config plane; replaced the IoT shadow 2026-07) | Via Schedules API (HTTP) |
 | InfluxDB Cloud v3 | Real-time telemetry, aggregated data, TGE prices, rule history | Flux queries over HTTP |

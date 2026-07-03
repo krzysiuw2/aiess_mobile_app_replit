@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
  * Smoke test for the deployed aws-config-proxy edge function — emulates the
- * app's flag-on useSchedules cycle against domagala_1:
+ * app's flag-on useSchedules cycle against a site:
  *   1. GET shared.schedules + shared.site_limits (read model)
  *   2. PUT shared.schedules with identical payload + If-Match (no-op write)
  *   3. Stale If-Match PUT → expect 412
  * Uses the Supabase anon key as bearer (platform JWT check only; the proxy
  * does not require a user session for this test).
  *
- * Usage: node scripts/ddb-proxy-smoke.mjs
+ * Usage: node scripts/ddb-proxy-smoke.mjs [--site domagala_1]
  */
 import { readFileSync } from 'node:fs';
 
@@ -17,7 +17,8 @@ const anon = env.match(/EXPO_PUBLIC_SUPABASE_ANON_KEY=(\S+)/)?.[1];
 const url = env.match(/EXPO_PUBLIC_SUPABASE_URL=(\S+)/)?.[1];
 if (!anon || !url) throw new Error('Supabase env not found in .env');
 
-const SITE = 'domagala_1';
+const args = process.argv.slice(2);
+const SITE = args.includes('--site') ? args[args.indexOf('--site') + 1] : 'domagala_1';
 
 async function proxy(body) {
   const res = await fetch(`${url}/functions/v1/aws-config-proxy`, {

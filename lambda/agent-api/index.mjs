@@ -160,7 +160,9 @@ async function getDecision(siteId, decisionSK) {
   return Items?.[0] || null;
 }
 
-async function deploySchToShadow(siteId, sch) {
+// POSTs to the Schedules API; config truth is DynamoDB aiess_device_config
+// (see aiess-architecture: aiess_config_plane).
+async function deploySchedules(siteId, sch) {
   const SCHEDULES_API = process.env.SCHEDULES_API || '';
   const SCHEDULES_API_KEY = process.env.SCHEDULES_API_KEY || '';
   if (!SCHEDULES_API) throw new Error('SCHEDULES_API not configured');
@@ -183,7 +185,7 @@ async function approveDecision(siteId, decisionSK) {
   const ruleCount = ['p_6', 'p_7', 'p_8'].reduce((n, k) => n + (sch[k]?.length || 0), 0);
 
   if (ruleCount > 0) {
-    await deploySchToShadow(siteId, sch);
+    await deploySchedules(siteId, sch);
   }
 
   await docClient.send(new UpdateCommand({

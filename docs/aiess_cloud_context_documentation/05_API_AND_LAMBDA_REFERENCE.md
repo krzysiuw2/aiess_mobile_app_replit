@@ -343,12 +343,14 @@ Network access to Schedules API and InfluxDB via HTTPS.
 
 ### 2.6 Schedules Lambdas (External — Not in Repo)
 
-Two Lambda functions handle IoT Shadow operations for schedules:
+Two Lambda functions handle schedule config for the app. Since the config-plane
+migration (fleet-complete 2026-07-03) they are compat shims backed by DynamoDB
+`aiess_device_config` — the IoT shadow is no longer authoritative:
 
 | Function | Route | Operation |
 |----------|-------|-----------|
-| `aiess-get-schedules` | `GET /schedules/{site_id}` | `GetThingShadow` (named shadow: `schedule`) |
-| `aiess-update-schedules` | `POST /schedules/{site_id}` | `UpdateThingShadow` (merges into desired state) |
+| `aiess-get-schedules` | `GET /schedules/{site_id}` | Read `shared.schedules` / `shared.site_limits` / `shared.identity` from DynamoDB |
+| `aiess-update-schedules` | `POST /schedules/{site_id}` | Per-priority replace (P4–P9 only) written to DynamoDB |
 
 ---
 

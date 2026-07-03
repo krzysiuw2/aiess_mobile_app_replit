@@ -7,6 +7,7 @@ import {
   getSchedules,
   saveSchedules,
   flattenRules,
+  flattenReadOnlyRules,
   getSection,
   putSection,
   ConfigConflictError,
@@ -14,6 +15,7 @@ import {
 import type {
   OptimizedScheduleRule,
   ScheduleRuleWithPriority,
+  ReadOnlyScheduleRule,
   SchedulesResponse,
   Priority,
   SharedSchedulesPayload,
@@ -23,6 +25,8 @@ import type {
 
 interface UseSchedulesReturn {
   rules: ScheduleRuleWithPriority[];
+  /** P1-P3 / P10-P11 rules — display only, never editable. */
+  readOnlyRules: ReadOnlyScheduleRule[];
   rawSchedules: SchedulesResponse | null;
   safety: { soc_min: number; soc_max: number };
   isLoading: boolean;
@@ -54,7 +58,9 @@ function cloudBand(sch: SharedSchedulesPayload['sch']): CloudSch {
 }
 
 /** Assemble a legacy-shape SchedulesResponse from DDB sections so all
- *  downstream UI (flattenRules, rule cards, editor) stays unchanged. */
+ *  downstream UI (flattenRules, rule cards, editor) stays unchanged.
+ *  Read-only bands (P1-P3, P10-P11) are included for display parity with
+ *  the legacy GET; mutations still only ever touch P4-P9. */
 function assembleResponse(
   siteId: string,
   schedules: SharedSchedulesPayload,
@@ -66,6 +72,12 @@ function assembleResponse(
   const cloud = count(CLOUD_KEYS);
   const scada = count(['p_10', 'p_11']);
 
+  const sch: CloudSch = cloudBand(schedules.sch);
+  for (const key of PROTECTED_KEYS) {
+    const rules = schedules.sch[key];
+    if (rules && rules.length > 0) sch[key as keyof CloudSch] = rules;
+  }
+
   return {
     site_id: siteId,
     v: schedules.v,
@@ -73,7 +85,7 @@ function assembleResponse(
       soc_min: limits.soc_min_percent,
       soc_max: limits.soc_max_percent,
     },
-    sch: cloudBand(schedules.sch),
+    sch,
     metadata: {
       total_rules: local + cloud + scada,
       local_rules: local,
@@ -130,6 +142,10 @@ export function useSchedules(): UseSchedulesReturn {
   }, [fetchSchedules]);
 
   const rules = useMemo(() => rawSchedules ? flattenRules(rawSchedules.sch) : [], [rawSchedules]);
+  const readOnlyRules = useMemo(
+    () => rawSchedules ? flattenReadOnlyRules(rawSchedules.sch) : [],
+    [rawSchedules],
+  );
   const safety = useMemo(() => ({
     soc_min: rawSchedules?.safety?.soc_min ?? 5,
     soc_max: rawSchedules?.safety?.soc_max ?? 100,
@@ -289,6 +305,7 @@ export function useSchedules(): UseSchedulesReturn {
 
   return {
     rules,
+    readOnlyRules,
     rawSchedules,
     safety,
     isLoading,

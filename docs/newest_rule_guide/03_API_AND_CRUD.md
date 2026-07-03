@@ -75,7 +75,7 @@ await saveSchedules(siteId, { p_7: p7 });
 await saveSchedules(siteId, { p_7: [newRule] });
 ```
 
-Priorities NOT included in the POST body are left untouched by the shadow merge.
+Priorities NOT included in the POST body are left untouched by the server-side merge (per-priority replace semantics, now backed by DynamoDB).
 
 ---
 

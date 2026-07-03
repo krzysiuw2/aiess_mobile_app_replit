@@ -37,6 +37,7 @@ import {
   Target,
   ChevronDown,
   ChevronUp,
+  Lock,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -54,7 +55,7 @@ import {
 import { getMonday, formatWeekRange, formatDayLabel } from '@/lib/schedule-calendar';
 import ScheduleWeekGrid from '@/components/schedule/ScheduleWeekGrid';
 import ScheduleDayGrid from '@/components/schedule/ScheduleDayGrid';
-import type { ScheduleRuleWithPriority, Strategy } from '@/types';
+import type { ScheduleRuleWithPriority, ReadOnlyScheduleRule, Strategy } from '@/types';
 import type { RuleFavorite } from '@/lib/rule-favorites';
 
 // ─── Helpers ────────────────────────────────────────────────────
@@ -197,6 +198,46 @@ function RuleCard({ rule, detailLabels, isFavorited, onEdit, onDelete, onToggle,
           <Text style={[styles.actionButtonText, styles.deleteButtonText]}>{t.common.delete}</Text>
         </TouchableOpacity>
       </View>
+    </View>
+  );
+}
+
+// ─── Read-Only Rule Card (P1-P3 local / P10-P11 SCADA) ─────────
+
+function ReadOnlyRuleCard({ rule, detailLabels }: { rule: ReadOnlyScheduleRule; detailLabels: RuleDetailLabels }) {
+  const { t } = useSettings();
+  const isActive = rule.act !== false;
+  const summary = getRuleSummary(rule);
+  const detailLines = useMemo(() => getRuleDetailLines(rule, detailLabels), [rule, detailLabels]);
+  const [expanded, setExpanded] = useState(false);
+  const hasMore = detailLines.length > MAX_COLLAPSED_LINES;
+
+  return (
+    <View style={[styles.ruleCard, styles.readOnlyCard, !isActive && styles.ruleCardInactive]}>
+      <View style={styles.cardHeader}>
+        <View style={styles.headerLeft}>
+          <Text style={styles.ruleId} numberOfLines={1}>{rule.id}</Text>
+          <Text style={styles.priorityBadge}>P{rule.priority}</Text>
+          <View style={styles.readOnlyBadge}>
+            <Lock size={11} color={Colors.textSecondary} />
+            <Text style={styles.readOnlyBadgeText}>{t.schedules.readOnlyBadge}</Text>
+          </View>
+        </View>
+      </View>
+      <Text style={styles.summaryText}>{summary}</Text>
+      <DetailLines lines={detailLines} expanded={expanded} />
+      {hasMore && (
+        <TouchableOpacity style={styles.expandToggle} onPress={() => setExpanded(v => !v)}>
+          {expanded
+            ? <ChevronUp size={14} color={Colors.primary} />
+            : <ChevronDown size={14} color={Colors.primary} />}
+          <Text style={styles.expandToggleText}>
+            {expanded
+              ? t.schedules.showLessDetails
+              : `${t.schedules.showMoreDetails} (+${detailLines.length - MAX_COLLAPSED_LINES})`}
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -382,7 +423,7 @@ function RulePopup({ rule, detailLabels, onClose, onEdit, onDelete, onDuplicate 
 export default function ScheduleListScreen() {
   const { t } = useSettings();
   const { selectedDevice } = useDevices();
-  const { rules, rawSchedules, isLoading, error, refetch, deleteRule, toggleRule } = useSchedules();
+  const { rules, readOnlyRules, rawSchedules, isLoading, error, refetch, deleteRule, toggleRule } = useSchedules();
   const { siteConfigComplete } = useSiteConfig();
   const {
     favorites,
@@ -677,7 +718,7 @@ export default function ScheduleListScreen() {
           </TouchableOpacity>
         </View>
       ) : viewMode === 'list' ? (
-        scheduleRules.length === 0 ? (
+        scheduleRules.length === 0 && readOnlyRules.length === 0 ? (
           <View style={styles.centered}>
             <Text style={styles.emptyTitle}>{t.schedules.noRules}</Text>
             <Text style={styles.emptySubtitle}>{t.schedules.createFirstRule}</Text>
@@ -702,6 +743,22 @@ export default function ScheduleListScreen() {
                 onToggleFavorite={() => handleToggleFavorite(rule)}
               />
             ))}
+            {readOnlyRules.length > 0 && (
+              <>
+                <View style={styles.readOnlySectionHeader}>
+                  <Lock size={13} color={Colors.textSecondary} />
+                  <Text style={styles.readOnlySectionTitle}>{t.schedules.readOnlySection}</Text>
+                </View>
+                <Text style={styles.readOnlySectionHint}>{t.schedules.readOnlyHint}</Text>
+                {readOnlyRules.map((rule) => (
+                  <ReadOnlyRuleCard
+                    key={`ro-${rule.priority}-${rule.id}`}
+                    rule={rule}
+                    detailLabels={detailLabels}
+                  />
+                ))}
+              </>
+            )}
           </ScrollView>
         )
       ) : viewMode === 'favorites' ? (
@@ -856,6 +913,12 @@ const styles = StyleSheet.create({
   // Rule card
   ruleCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: Colors.border },
   ruleCardInactive: { opacity: 0.55 },
+  readOnlyCard: { borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background },
+  readOnlyBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(100, 116, 139, 0.12)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 4 },
+  readOnlyBadgeText: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary },
+  readOnlySectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, marginBottom: 2 },
+  readOnlySectionTitle: { fontSize: 14, fontWeight: '700', color: Colors.textSecondary },
+  readOnlySectionHint: { fontSize: 12, color: Colors.textSecondary, marginBottom: 10 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },

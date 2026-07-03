@@ -6,10 +6,14 @@
 
 ---
 
+> **Config-plane update (2026-07-03):** rules now live in DynamoDB
+> `aiess_device_config` (whole fleet); the IoT shadow is no longer authoritative.
+> The REST API below is unchanged and routes to DynamoDB.
+
 ## TL;DR
 
-1. Rules live in an **AWS IoT Named Shadow** (`schedule`), accessed via a REST API
-2. The wire format uses **abbreviated keys** to fit within the 8KB shadow limit
+1. Rules live in **DynamoDB `aiess_device_config`**, accessed via the same REST API
+2. The wire format uses **abbreviated keys** (compact format retained from the 8KB-shadow era)
 3. Rules are organized by **priority** (P4–P9), higher number = higher priority
 4. There are **6 action types**: `ch`, `dis`, `sb`, `sl`, `ct`, `dt`
 5. **POST replaces all rules** in a priority — always GET-before-POST

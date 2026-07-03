@@ -87,6 +87,12 @@ export interface ScheduleRuleWithPriority extends OptimizedScheduleRule {
   priority: Priority;
 }
 
+/** P1-P3 (edge-local) and P10-P11 (SCADA/safety) rules — display only,
+ *  the server rejects writes to these bands. */
+export interface ReadOnlyScheduleRule extends OptimizedScheduleRule {
+  priority: number;
+}
+
 export interface SchedulesResponse {
   site_id: string;
   v: string;
@@ -95,12 +101,20 @@ export interface SchedulesResponse {
     soc_max?: number;
   };
   sch: {
+    /** Local band (edge-only) — read-only in the app. */
+    p_1?: OptimizedScheduleRule[];
+    p_2?: OptimizedScheduleRule[];
+    p_3?: OptimizedScheduleRule[];
+    /** Cloud-writable band P4-P9. */
     p_4?: OptimizedScheduleRule[];
     p_5?: OptimizedScheduleRule[];
     p_6?: OptimizedScheduleRule[];
     p_7?: OptimizedScheduleRule[];
     p_8?: OptimizedScheduleRule[];
     p_9?: OptimizedScheduleRule[];
+    /** SCADA/safety band — read-only everywhere. */
+    p_10?: OptimizedScheduleRule[];
+    p_11?: OptimizedScheduleRule[];
   };
   metadata: {
     total_rules: number;
@@ -114,6 +128,9 @@ export interface SchedulesResponse {
 export interface SaveSchedulesResponse {
   message: string;
   site_id: string;
+  /** Legacy wire field name. Since the DynamoDB config-plane migration this
+   *  carries the DDB item version (small monotonic int), NOT an IoT shadow
+   *  version. Kept for response-shape compatibility; do not use. */
   shadow_version: number;
   updated_priorities: string[];
   total_rules: number;

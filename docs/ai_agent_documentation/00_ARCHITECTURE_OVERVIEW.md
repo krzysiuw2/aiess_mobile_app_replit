@@ -2,7 +2,12 @@
 
 ## System Summary
 
-AIESS Energy Core is an AI-powered conversational agent for managing a Battery Energy Storage System (BESS). It uses Claude Sonnet 4.6 with tool-use to read/write schedule rules via AWS IoT Device Shadow, query real-time and historical energy telemetry from InfluxDB Cloud, and render interactive charts inline in a mobile-style chat UI.
+> **Config-plane update (2026-07-03):** schedule config truth is now DynamoDB
+> `aiess_device_config` for the whole fleet; the IoT named shadow `schedule` is a
+> warm-mirror rollback target only. The `/schedules` HTTP API is unchanged and
+> routes to DynamoDB. Shadow references below are historical.
+
+AIESS Energy Core is an AI-powered conversational agent for managing a Battery Energy Storage System (BESS). It uses Claude Sonnet 4.6 with tool-use to read/write schedule rules via the Schedules API (DynamoDB-backed), query real-time and historical energy telemetry from InfluxDB Cloud, and render interactive charts inline in a mobile-style chat UI.
 
 The agent operates in Polish and is designed for a single site (`domagala_1`), with hot-reloadable site-specific configuration.
 

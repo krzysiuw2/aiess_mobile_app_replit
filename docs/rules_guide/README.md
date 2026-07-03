@@ -1,6 +1,12 @@
 # BESS Schedule Rules - Complete Guide
 
-> Comprehensive reference for managing Battery Energy Storage System (BESS) schedule rules via AWS IoT Shadow.
+> **Config-plane update (2026-07-03):** schedule config truth now lives in DynamoDB
+> `aiess_device_config` for the whole fleet. The IoT named shadow `schedule` is no
+> longer authoritative (warm-mirror rollback target only). The HTTP API described
+> here is unchanged — `GET/POST /schedules/{site_id}` now routes to DynamoDB.
+> Shadow-internals sections below are historical.
+
+> Comprehensive reference for managing Battery Energy Storage System (BESS) schedule rules.
 > Designed as Cursor AI context for mobile app development.
 
 **Schema Version**: v1.4.3 | **Last Updated**: February 2026

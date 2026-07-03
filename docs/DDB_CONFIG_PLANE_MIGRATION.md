@@ -1,17 +1,38 @@
 # DDB Config-Plane Migration — App Deliverables & Test Plan
 
-Status as of 2026-07-01. Backend context: the AIESS config plane moved from
-AWS IoT Device Shadow to DynamoDB `aiess_device_config`; `domagala_1` is
-DDB-authoritative behind the legacy-shape compat shim (see architecture repo:
-`contracts/api-gateway-endpoints.md`).
+Status as of 2026-07-03. Backend context: the AIESS config plane moved from
+AWS IoT Device Shadow to DynamoDB `aiess_device_config`. **The whole fleet is
+now DDB-authoritative**: `domagala_1` since 2026-07-01, `olmar_1` since
+2026-07-03 (post device upgrade to 2.4.0). The IoT named shadow `schedule`
+survives only as a cloud-side warm-mirror rollback target; the app never
+reads or writes it. (See architecture repo:
+`contracts/api-gateway-endpoints.md`.)
+
+## Fleet standard (2026-07-03)
+
+- The app has **zero per-site conditionals** in config/schedules code; any
+  `{site_id}` is treated uniformly. Future sites are DDB-backed from day one.
+- Read-only bands: P1–P3 (edge-local) and P10–P11 (SCADA/safety) rules are
+  rendered in the schedule list under "System rules (read-only)" with no
+  edit/delete/toggle affordances (`flattenReadOnlyRules`,
+  `ReadOnlyRuleCard`). The server rejects writes to these bands with 400;
+  the client guard (`useSchedules`) refuses them before any request.
+- Regression: `scripts/ddb-regression.mjs` run against **both** sites on
+  2026-07-03 (reports `scripts/ddb-regression-report-{site}.md`), now
+  including a mode round-trip test (t10) and a read-only-band visibility
+  check. Legacy shadow-era Lambda copies (`lambda/get-schedules`,
+  `lambda/update-schedules`) were deleted from this repo — the deployed
+  compat shims live in the backend repo.
 
 ## Phase 1 — regression against the compat shim (DONE, all pass)
 
 - Harness: `scripts/ddb-regression.mjs` (Node, no deps; API key read from the
   `aiess-update-schedules` Lambda env via AWS CLI).
 - Result: **all 9 checklist items pass with zero app changes** — see
-  `scripts/ddb-regression-report.md`. AI-rule auto-expiry confirmed working
-  on the DDB path (~5.5 min after `vu`). No backend bugs found.
+  `scripts/ddb-regression-report-{site}.md` (per-site reports since
+  2026-07-03; the initial domagala_1 run is `scripts/ddb-regression-report.md`).
+  AI-rule auto-expiry confirmed working on the DDB path (~5.5 min after `vu`).
+  No backend bugs found.
 - Re-run any time: `node scripts/ddb-regression.mjs [--site <id>] [--skip-expiry]`.
   The harness restores all state it touches (rules, safety, P9 site limit).
 

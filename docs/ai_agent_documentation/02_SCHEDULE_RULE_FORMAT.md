@@ -1,6 +1,6 @@
 # AIESS Energy Core — Schedule Rule Format (v1.4.4)
 
-This document describes the complete v1.4.4 optimized rule format used by the AIESS battery energy storage system. Rules are stored in the AWS IoT Device Shadow (named shadow: `schedule`) and control battery charging/discharging behavior.
+This document describes the complete v1.4.4 optimized rule format used by the AIESS battery energy storage system. Rules are stored in DynamoDB `aiess_device_config` (section `shared.schedules`; config-plane migration completed 2026-07-03 — the IoT named shadow is no longer authoritative) and control battery charging/discharging behavior. The rule format itself is unchanged.
 
 ---
 

@@ -13,8 +13,8 @@ You are implementing a **new mathematical optimization engine** for the AIESS Ba
 1. A **Python Lambda** runs deterministic math to produce 3 complete strategy packages (aggressive/balanced/conservative), each containing validated schedule rules
 2. The **LLM (Bedrock)** is a **mandatory validation and selection layer** that picks strategy A/B/C and optionally adjusts 1-2 parameters. It no longer generates rule JSON.
 3. Each strategy package includes a **forecast energy flow** (hour-by-hour SoC, grid, battery, PV projections) for client-facing charts
-4. The **Schedules API** validates rules against schema before writing to IoT Shadow
-5. The **edge device** receives rules via IoT Shadow and executes them at 1 Hz
+4. The **Schedules API** validates rules against schema before writing to the config store (DynamoDB `aiess_device_config` since the 2026-07 config-plane migration; formerly IoT Shadow)
+5. The **edge device** receives rules from the config plane and executes them at 1 Hz
 
 ### What Changed (Big Picture)
 
