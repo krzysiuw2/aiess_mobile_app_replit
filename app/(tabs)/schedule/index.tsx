@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Plus,
   Pencil,
@@ -31,6 +32,9 @@ import {
   Copy,
   Star,
   Zap,
+  Settings2,
+  SlidersHorizontal,
+  History,
   BatteryMedium,
   Gauge,
   Cpu,
@@ -55,6 +59,8 @@ import {
 import { getMonday, formatWeekRange, formatDayLabel } from '@/lib/schedule-calendar';
 import ScheduleWeekGrid from '@/components/schedule/ScheduleWeekGrid';
 import ScheduleDayGrid from '@/components/schedule/ScheduleDayGrid';
+import BehaviorSettings from '@/components/schedule/BehaviorSettings';
+import ScheduleHistorySheet from '@/components/schedule/ScheduleHistorySheet';
 import type { ScheduleRuleWithPriority, ReadOnlyScheduleRule, Strategy } from '@/types';
 import type { RuleFavorite } from '@/lib/rule-favorites';
 
@@ -134,12 +140,15 @@ interface RuleCardProps {
   onToggle: () => void;
   onDuplicate: () => void;
   onToggleFavorite: () => void;
+  /** Deep link back to the Simple-mode toggle for materialized set_* rules. */
+  onSettingsBadgePress?: () => void;
 }
 
-function RuleCard({ rule, detailLabels, isFavorited, onEdit, onDelete, onToggle, onDuplicate, onToggleFavorite }: RuleCardProps) {
+function RuleCard({ rule, detailLabels, isFavorited, onEdit, onDelete, onToggle, onDuplicate, onToggleFavorite, onSettingsBadgePress }: RuleCardProps) {
   const { t } = useSettings();
   const isActive = rule.act !== false;
   const isAI = rule.s === 'ai';
+  const isFromSettings = rule.id.toLowerCase().startsWith('set_');
   const summary = getRuleSummary(rule);
   const detailLines = useMemo(() => getRuleDetailLines(rule, detailLabels), [rule, detailLabels]);
   const [expanded, setExpanded] = useState(false);
@@ -156,6 +165,12 @@ function RuleCard({ rule, detailLabels, isFavorited, onEdit, onDelete, onToggle,
               <Bot size={12} color="#8b5cf6" />
               <Text style={styles.aiBadgeText}>AI</Text>
             </View>
+          )}
+          {isFromSettings && (
+            <TouchableOpacity style={styles.settingsBadge} onPress={onSettingsBadgePress}>
+              <SlidersHorizontal size={11} color={Colors.primary} />
+              <Text style={styles.settingsBadgeText}>{t.schedules.fromSettingsBadge}</Text>
+            </TouchableOpacity>
           )}
         </View>
         <View style={styles.headerRight}>
@@ -429,6 +444,8 @@ function RulePopup({ rule, detailLabels, onClose, onEdit, onDelete, onDuplicate 
 
 // ─── Main Screen ────────────────────────────────────────────────
 
+const SURFACE_MODE_KEY = '@aiess/schedule_surface_mode';
+
 export default function ScheduleListScreen() {
   const { t } = useSettings();
   const { selectedDevice } = useDevices();
@@ -450,6 +467,23 @@ export default function ScheduleListScreen() {
   const [selectedDay, setSelectedDay] = useState(() => new Date());
   const [popupRule, setPopupRule] = useState<ScheduleRuleWithPriority | null>(null);
   const [renameTarget, setRenameTarget] = useState<RuleFavorite | null>(null);
+
+  // Simple/Pro is a per-user LOCAL presentation preference (guide doc 06) —
+  // not per-site and not a security boundary. Default: Simple.
+  const [surfaceMode, setSurfaceMode] = useState<'simple' | 'pro'>('simple');
+  const [surfaceModeLoaded, setSurfaceModeLoaded] = useState(false);
+  const [historyVisible, setHistoryVisible] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(SURFACE_MODE_KEY)
+      .then((v) => { if (v === 'pro' || v === 'simple') setSurfaceMode(v); })
+      .finally(() => setSurfaceModeLoaded(true));
+  }, []);
+
+  const switchSurfaceMode = (mode: 'simple' | 'pro') => {
+    setSurfaceMode(mode);
+    AsyncStorage.setItem(SURFACE_MODE_KEY, mode).catch(() => {});
+  };
 
   const scheduleRules = rules.filter(rule => rule.priority !== 9);
   const detailLabels = useMemo(() => buildDetailLabels(t), [t]);
@@ -622,13 +656,54 @@ export default function ScheduleListScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>{t.schedules.title}</Text>
-          <Text style={styles.headerSubtitle}>
-            {selectedDevice.name} - {scheduleRules.length} {t.schedules.rules}
+          <Text style={styles.headerTitle}>
+            {surfaceMode === 'simple' ? t.schedules.simple.title : t.schedules.title}
           </Text>
+          <Text style={styles.headerSubtitle}>
+            {surfaceMode === 'simple'
+              ? selectedDevice.name
+              : `${selectedDevice.name} - ${scheduleRules.length} ${t.schedules.rules}`}
+          </Text>
+        </View>
+        <View style={styles.headerRightRow}>
+          {surfaceMode === 'pro' && (
+            <TouchableOpacity
+              style={styles.historyButton}
+              onPress={() => setHistoryVisible(true)}
+              accessibilityLabel={t.schedules.history.title}
+            >
+              <History size={18} color={Colors.primary} />
+            </TouchableOpacity>
+          )}
+          <View style={styles.modeToggle}>
+            <TouchableOpacity
+              style={[styles.modeBtn, surfaceMode === 'simple' && styles.modeBtnActive]}
+              onPress={() => switchSurfaceMode('simple')}
+            >
+              <SlidersHorizontal size={13} color={surfaceMode === 'simple' ? '#fff' : Colors.textSecondary} />
+              <Text style={[styles.modeBtnText, surfaceMode === 'simple' && styles.modeBtnTextActive]}>
+                {t.schedules.simple.simpleTab}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeBtn, surfaceMode === 'pro' && styles.modeBtnActive]}
+              onPress={() => switchSurfaceMode('pro')}
+            >
+              <Settings2 size={13} color={surfaceMode === 'pro' ? '#fff' : Colors.textSecondary} />
+              <Text style={[styles.modeBtnText, surfaceMode === 'pro' && styles.modeBtnTextActive]}>
+                {t.schedules.simple.proTab}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
+      {/* Simple mode: behavior control surface */}
+      {surfaceModeLoaded && surfaceMode === 'simple' && <BehaviorSettings />}
+
+      {/* Pro mode: full rules list/calendar/favorites */}
+      {surfaceModeLoaded && surfaceMode === 'pro' && (
+      <>
       {/* View mode toggle: List / Calendar / Favorites */}
       <View style={styles.segmentedRow}>
         <View style={styles.segmentedControl}>
@@ -750,6 +825,7 @@ export default function ScheduleListScreen() {
                 onToggle={() => handleToggleRule(rule)}
                 onDuplicate={() => handleDuplicateRule(rule)}
                 onToggleFavorite={() => handleToggleFavorite(rule)}
+                onSettingsBadgePress={() => switchSurfaceMode('simple')}
               />
             ))}
             {readOnlyRules.length > 0 && (
@@ -833,6 +909,14 @@ export default function ScheduleListScreen() {
       <TouchableOpacity style={styles.fab} onPress={handleAddRule}>
         <Plus size={28} color="#fff" />
       </TouchableOpacity>
+      </>
+      )}
+
+      {/* Site-wide activity feed (history) */}
+      <ScheduleHistorySheet
+        visible={historyVisible}
+        onClose={() => setHistoryVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -841,9 +925,39 @@ export default function ScheduleListScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  header: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
+  header: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   headerTitle: { fontSize: 28, fontWeight: '700', color: Colors.text },
   headerSubtitle: { fontSize: 14, color: Colors.textSecondary, marginTop: 4 },
+  headerRightRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  historyButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modeToggle: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 3,
+  },
+  modeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 15,
+  },
+  modeBtnActive: { backgroundColor: Colors.primary },
+  modeBtnText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+  modeBtnTextActive: { color: '#fff' },
 
   // Segmented control
   segmentedRow: { paddingHorizontal: 16, marginBottom: 8 },
@@ -935,6 +1049,8 @@ const styles = StyleSheet.create({
   priorityBadge: { fontSize: 11, fontWeight: '600', color: Colors.primary, backgroundColor: Colors.primaryLight, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 4 },
   aiBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(139, 92, 246, 0.1)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 4 },
   aiBadgeText: { fontSize: 11, fontWeight: '600', color: '#8b5cf6' },
+  settingsBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: Colors.primaryLight, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 4 },
+  settingsBadgeText: { fontSize: 11, fontWeight: '600', color: Colors.primary },
   toggleSwitch: { transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] },
   summaryText: { fontSize: 13, fontWeight: '500', color: Colors.text, marginBottom: 10 },
   cardContent: { gap: 5, marginBottom: 12 },

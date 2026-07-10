@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { X, Save, Clock, Calendar, Bot, AlertTriangle, Pencil, Zap, Moon, Sun, Shield } from 'lucide-react-native';
+import { X, Save, Clock, Calendar, Bot, AlertTriangle, Pencil, Zap, Moon, Sun, Shield, History } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useDevices } from '@/contexts/DeviceContext';
@@ -34,6 +34,7 @@ import {
 } from '@/lib/aws-schedules';
 import { evaluatePolarity, type PolarityWarning } from '@/lib/rule-polarity';
 import { getFavoriteById } from '@/lib/rule-favorites';
+import ScheduleHistorySheet from '@/components/schedule/ScheduleHistorySheet';
 import type {
   ActionType,
   Priority,
@@ -696,6 +697,7 @@ export default function RuleBuilderScreen() {
   const [activeTemplate, setActiveTemplate] = useState<string | null>(null);
   const [duplicateBanner, setDuplicateBanner] = useState<string | null>(null);
 
+  const [showHistorySheet, setShowHistorySheet] = useState(false);
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
   const [showValidFromPicker, setShowValidFromPicker] = useState(false);
@@ -1259,6 +1261,15 @@ export default function RuleBuilderScreen() {
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>{isNew ? ed.newRule : ed.editRule}</Text>
         </View>
+        {!isNew && (
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={() => setShowHistorySheet(true)}
+            accessibilityLabel={t.schedules.history.ruleHistory}
+          >
+            <History size={20} color={Colors.text} />
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={[styles.headerButton, styles.saveHeaderButton]}
           onPress={handleSave}
@@ -2146,6 +2157,15 @@ export default function RuleBuilderScreen() {
       <DatePicker visible={showOneTimeDatePicker} onClose={() => setShowOneTimeDatePicker(false)} onSelect={(d) => update({ oneTimeDate: d })} initialDate={form.oneTimeDate} title={ed.pickDate} doneLabel={t.common.done} yearLabel={ed.year} monthLabel={ed.month} dayLabel={ed.day} />
       <DatePicker visible={showValidFromPicker} onClose={() => setShowValidFromPicker(false)} onSelect={(d) => update({ validFromDate: d })} initialDate={form.validFromDate} title={ed.validFrom} doneLabel={t.common.done} yearLabel={ed.year} monthLabel={ed.month} dayLabel={ed.day} />
       <DatePicker visible={showValidUntilPicker} onClose={() => setShowValidUntilPicker(false)} onSelect={(d) => update({ validUntilDate: d })} initialDate={form.validUntilDate} title={ed.validUntil} doneLabel={t.common.done} yearLabel={ed.year} monthLabel={ed.month} dayLabel={ed.day} />
+
+      {/* Per-rule history (read-only audit trail) */}
+      {!isNew && (
+        <ScheduleHistorySheet
+          visible={showHistorySheet}
+          onClose={() => setShowHistorySheet(false)}
+          ruleId={form.id}
+        />
+      )}
 
       {/* Footer */}
       <View style={styles.footer}>
