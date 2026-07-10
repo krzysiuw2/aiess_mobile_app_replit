@@ -6,6 +6,8 @@ export interface UserProfile {
   avatar_url: string | null;
 }
 
+export type DeviceRole = 'owner' | 'admin' | 'viewer' | string;
+
 export interface Device {
   id: string;
   device_id: string;
@@ -16,7 +18,20 @@ export interface Device {
   battery_capacity_kwh: number | null;
   pcs_power_kw: number | null;
   pv_power_kw: number | null;
+  /** Current user's role on this device (from device_users). UI gating only
+   *  per ADR 0009 — the Lambda checks the API key, not the user. */
+  role: DeviceRole | null;
 }
+
+// ─── Decision Telemetry (v1.1.0) ─────────────────────────────────
+// Edge decision-telemetry fields (schedules-format contract). These land in
+// InfluxDB `energy_telemetry` via the iot-to-telegraf-forwarder; treat all of
+// them as optional — the ingest mapping is rolling out separately, so queries
+// must tolerate their absence.
+
+export type ControlSource = 'plan' | 'fallback' | 'operator' | 'safety';
+export type OperatorSource = 'app' | 'scada';
+export type PlanState = 'active' | 'stale' | 'expired';
 
 export interface LiveData {
   gridPower: number;
@@ -37,16 +52,34 @@ export interface LiveData {
   pvPowerAvg5m?: number;
   factoryLoadAvg1m?: number;
   factoryLoadAvg5m?: number;
+  // Decision telemetry (all optional — see ControlSource note above).
+  controlSource?: ControlSource;
+  operatorSource?: OperatorSource;
+  overrideId?: string;
+  planState?: PlanState;
+  planId?: string;
+  planRevision?: number;
+  planAgeSec?: number;
+  cappedBy?: string;
+  pvCurtailActive?: boolean;
+  pvCurtailExportKwMax?: number;
 }
 
 // ─── Schedule Rule Types (v1.4.3 optimized format) ──────────────
 
-export type ActionType = 'ch' | 'dis' | 'sb' | 'sl' | 'ct' | 'dt';
+export type ActionType = 'ch' | 'dis' | 'sb' | 'sl' | 'ct' | 'dt' | 'bx' | 'bi' | 'sc' | 'hs';
 export type GridOperator = 'gt' | 'lt' | 'gte' | 'lte' | 'eq' | 'bt';
 export type Strategy = 'eq' | 'agg' | 'con';
 export type WeekdayShorthand = 'weekdays' | 'weekend' | 'everyday' | 'ed' | 'all' | string;
 export type Priority = 4 | 5 | 6 | 7 | 8 | 9;
 export type SystemMode = 'automatic' | 'semi-automatic' | 'manual';
+/** Recurrence tag (Phase A). `once` without `vu` gets vu stamped by the cloud (F16). */
+export type Recurrence = 'once' | 'daily' | 'weekly' | 'monthly';
+export type Firmness = 'firm' | 'soft';
+
+/** Guardrail-typed actions always execute in the Guardrails layer regardless
+ *  of the priority slot they are stored in (schedules-format contract). */
+export const GUARDRAIL_ACTION_TYPES: ReadonlySet<ActionType> = new Set(['sl', 'bx', 'bi']);
 
 export interface OptimizedAction {
   t: ActionType;
@@ -59,6 +92,28 @@ export interface OptimizedAction {
   maxg?: number;
   ming?: number;
   str?: Strategy;
+  /** bx/bi: allowed kW in the blocked direction (default 0 = hard block). */
+  lim?: number;
+  /** bx/bi: firm (default) or soft (clamp + warn when binding). */
+  fm?: Firmness;
+  /** sc: grid tracking target kW, import-positive (default 0). */
+  tg?: number;
+  /** sc: dead band kW — no correction inside ± band (default 1.0). */
+  db?: number;
+  /** sc: max charge kW cap (omitted = device max). */
+  cmax?: number;
+  /** sc: max discharge kW cap (0 = absorb-only). */
+  dmax?: number;
+  /** sc: stop discharging below this SoC. */
+  smn?: number;
+  /** sc: stop charging above this SoC. */
+  smx?: number;
+  /** hs: soc_low (required, 0-100). */
+  sl_?: number;
+  /** hs: soc_high (>= sl_, defaults to sl_). */
+  sh_?: number;
+  /** hs: hysteresis SoC (0-50, default 1). */
+  hy?: number;
 }
 
 export interface OptimizedConditions {
@@ -81,6 +136,10 @@ export interface OptimizedScheduleRule {
   d?: WeekdayShorthand | number[];
   vf?: number;
   vu?: number;
+  /** Days of month 1-31 (recurrence dimension, ANDed with `d`). */
+  md?: number[];
+  /** Recurrence tag; `once` without `vu` gets vu stamped cloud-side (F16). */
+  rc?: Recurrence;
 }
 
 export interface ScheduleRuleWithPriority extends OptimizedScheduleRule {
@@ -134,6 +193,8 @@ export interface SaveSchedulesResponse {
   shadow_version: number;
   updated_priorities: string[];
   total_rules: number;
+  /** Non-fatal validation warnings (e.g. polarity mismatches) — v1.1.0. */
+  warnings?: string[];
 }
 
 export interface ScheduleRuleFormData {
@@ -152,6 +213,21 @@ export interface ScheduleRuleFormData {
   minGridPower?: number;
   strategy?: Strategy;
 
+  // bx/bi (block export / block import)
+  limitKw?: number;
+  firmness?: Firmness;
+  // sc (self-consumption)
+  targetGridKw?: number;
+  deadBandKw?: number;
+  scMaxChargeKw?: number;
+  scMaxDischargeKw?: number;
+  scSocMin?: number;
+  scSocMax?: number;
+  // hs (hold SoC)
+  holdSocLow?: number;
+  holdSocHigh?: number;
+  hysteresis?: number;
+
   timeStart?: string;
   timeEnd?: string;
   socMin?: number;
@@ -161,8 +237,75 @@ export interface ScheduleRuleFormData {
   gridPowerValueMax?: number;
 
   weekdays?: number[];
+  monthDays?: number[];
+  recurrence?: Recurrence;
   validFrom?: number;
   validUntil?: number;
+}
+
+// ─── Operator Override (v1.1.0) ─────────────────────────────────
+// POST /override/{site_id} → aiess-set-operator-override Lambda →
+// shared.operator_override in the DDB config plane → MQTT patch → edge.
+// Single slot with TTL; precedence: Safety → SCADA → Guardrails →
+// app override → Plan → Fallback.
+
+export type OverrideAction = 'charge' | 'discharge' | 'standby' | 'auto';
+
+export interface OverrideRequest {
+  action: OverrideAction;
+  /** Magnitude kW >= 0. Ignored for standby/auto. */
+  power_kw?: number;
+  /** Required for non-auto. Integer 1..86400 (24h hard cap). */
+  ttl_sec?: number;
+  source?: 'app';
+  reason?: string;
+}
+
+export interface OverrideResponse {
+  message: string;
+  site_id: string;
+  override_id: string;
+  /** Unix seconds. */
+  issued_at: number;
+  version: number;
+  etag: string;
+}
+
+// ─── Schedule History (v1.1.0) ──────────────────────────────────
+// GET /schedules/{site_id}/history — read-only audit trail, 90-day horizon.
+
+export type ScheduleHistoryEventType = 'added' | 'changed' | 'expired' | 'deleted';
+
+export interface ScheduleHistoryEvent {
+  /** Unix seconds. */
+  t: number;
+  /** ISO timestamp. */
+  at: string;
+  version: number;
+  /** Writer attribution, e.g. "compat:aiess-update-schedules:...", "behavior-materializer:...". */
+  updated_by: string;
+  event: ScheduleHistoryEventType;
+  rule_id: string;
+  band: string;
+  rule?: OptimizedScheduleRule;
+  changed_fields?: string[];
+  previous?: OptimizedScheduleRule;
+}
+
+export interface ScheduleHistoryResponse {
+  site_id?: string;
+  events: ScheduleHistoryEvent[];
+  returned?: number;
+  horizon_days?: number;
+}
+
+export interface ScheduleHistoryQuery {
+  /** Unix seconds. */
+  since?: number;
+  /** Unix seconds. */
+  until?: number;
+  rule_id?: string;
+  limit?: number;
 }
 
 // ─── DDB Config Plane (per-section) Types ───────────────────────
@@ -359,6 +502,60 @@ export interface SiteConfigAutomation {
   use_custom_fallback_rules?: boolean;
 }
 
+// ─── Behavior Settings (Simple mode) ─────────────────────────────
+// Stored in the `behavior` sub-object of site-config; the cloud materializer
+// turns each setting into a `set_*` rule asynchronously (replace-by-id).
+// The app reads/writes the WHOLE object via GET/PUT /site-config/{site_id}
+// (PUT deep-merges) — zero mapping logic client-side.
+
+export interface BehaviorZeroExport {
+  enabled: boolean;
+  /** Allowed export kW (0 = hard zero-export). Materializes as set_zero_export (bx). */
+  limit_kw?: number;
+}
+
+export interface BehaviorPeakShave {
+  enabled: boolean;
+  /** Grid import ceiling kW (> 0). Materializes as set_peak_shave (sl). */
+  threshold_kw?: number;
+}
+
+export interface BehaviorOffpeakCharge {
+  enabled: boolean;
+  /** HH:MM local. */
+  start?: string;
+  /** HH:MM local. */
+  end?: string;
+  /** 0-100. Materializes as set_offpeak_charge (ct). */
+  target_soc?: number;
+}
+
+export interface BehaviorBackupReserve {
+  enabled: boolean;
+  /** SoC floor 0-100. Materializes as set_backup_reserve (hs). */
+  soc?: number;
+}
+
+export interface BehaviorPvSelfConsumption {
+  enabled: boolean;
+  /** When true, dmax: 0 — battery only absorbs surplus, never discharges. */
+  absorb_only?: boolean;
+}
+
+export interface BehaviorAiOptimization {
+  /** Informational in v1.1.0 — does not yet gate plan writes cloud-side. */
+  enabled: boolean;
+}
+
+export interface SiteBehavior {
+  zero_export?: BehaviorZeroExport;
+  peak_shave?: BehaviorPeakShave;
+  offpeak_charge?: BehaviorOffpeakCharge;
+  backup_reserve?: BehaviorBackupReserve;
+  pv_self_consumption?: BehaviorPvSelfConsumption;
+  ai_optimization?: BehaviorAiOptimization;
+}
+
 export interface SiteConfig {
   site_id: string;
   general?: SiteConfigGeneral;
@@ -372,6 +569,7 @@ export interface SiteConfig {
   power_limits?: SiteConfigPowerLimits;
   influxdb?: SiteConfigInfluxDb;
   automation?: SiteConfigAutomation;
+  behavior?: SiteBehavior;
   financial?: FinancialSettings;
   ai_profile?: SiteConfigAiProfile;
   updated_at?: string;

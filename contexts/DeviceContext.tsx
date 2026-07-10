@@ -77,6 +77,11 @@ export const [DeviceProvider, useDevices] = createContextHook(() => {
         battery_capacity_kwh: d.battery_capacity_kwh ? Number(d.battery_capacity_kwh) : null,
         pcs_power_kw: d.pcs_power_kw ? Number(d.pcs_power_kw) : null,
         pv_power_kw: d.pv_power_kw ? Number(d.pv_power_kw) : null,
+        // device_users is filtered to the current user by the inner join,
+        // so the first entry is this user's membership row.
+        role: Array.isArray(d.device_users) && d.device_users.length > 0
+          ? d.device_users[0].role ?? null
+          : null,
       }));
 
       return devices;
@@ -131,6 +136,13 @@ export const [DeviceProvider, useDevices] = createContextHook(() => {
 
   const selectedDevice = devicesQuery.data?.find(d => d.id === selectedDeviceId) || null;
 
+  // UI-ONLY gating per ADR 0009: the override/schedules Lambdas check the
+  // x-api-key, not the user. Server-side role enforcement is backlog.
+  // v1.1.0: only owner/admin may issue/release operator overrides; every
+  // role still sees operational state (banner, countdown).
+  const selectedRole = selectedDevice?.role ?? null;
+  const canIssueOverride = selectedRole === 'owner' || selectedRole === 'admin';
+
   return {
     devices: devicesQuery.data || [],
     isLoading: devicesQuery.isLoading,
@@ -138,13 +150,18 @@ export const [DeviceProvider, useDevices] = createContextHook(() => {
     error: devicesQuery.error,
     selectedDevice,
     selectedDeviceId,
+    selectedRole,
+    canIssueOverride,
     selectDevice,
     refreshDevices,
   };
 });
 
 // Hook for live data from InfluxDB
-export const useLiveData = (siteId: string | null) => {
+// `isActive` lets the caller pause auto-refresh when the monitor screen is not
+// focused; combined with focusManager (wired to AppState in app/_layout.tsx)
+// this stops the live query from polling InfluxDB in the background.
+export const useLiveData = (siteId: string | null, isActive: boolean = true) => {
   return useQuery({
     queryKey: ['liveData', siteId],
     queryFn: async (): Promise<LiveData> => {
@@ -172,7 +189,8 @@ export const useLiveData = (siteId: string | null) => {
       }
     },
     enabled: !!siteId,
-    refetchInterval: 5000, // 5 seconds auto-refresh
+    refetchInterval: isActive ? 10000 : false, // 10s auto-refresh, paused when screen inactive
+    refetchIntervalInBackground: false, // don't poll while app is backgrounded
     retry: 2,
     retryDelay: 1000,
   });

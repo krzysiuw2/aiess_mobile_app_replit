@@ -201,24 +201,16 @@ async function runFluxQuery(query: string): Promise<Record<string, string>[]> {
   return parseInfluxCSV(csv);
 }
 
-function extractNumericFields(rows: Record<string, string>[]): Record<string, number> {
-  const values: Record<string, number> = {};
-  for (const row of rows) {
-    const field = row['_field']?.trim();
-    const raw = row['_value']?.trim();
-    if (!field || !raw) continue;
-    const num = parseFloat(raw);
-    if (!isNaN(num)) values[field] = num;
-  }
-  return values;
-}
-
 /**
  * Fetch live data from InfluxDB for a specific site
  */
 export async function fetchLiveData(siteId: string): Promise<LiveData | null> {
 
-  const liveQuery = `
+  // Single raw query over the last 5 minutes covering every field the live
+  // monitor needs. Latest values and the 1-min / 5-min means are all derived
+  // client-side from this one result set, instead of issuing three separate
+  // (billable) Flux queries on every 5-second refresh.
+  const windowQuery = `
     from(bucket: "aiess_v1")
       |> range(start: -5m)
       |> filter(fn: (r) => r._measurement == "energy_telemetry")
@@ -230,46 +222,71 @@ export async function fetchLiveData(siteId: string): Promise<LiveData | null> {
            r._field == "soc" or
            r._field == "active_rule_id" or
            r._field == "active_rule_action" or
-           r._field == "active_rule_power"
+           r._field == "active_rule_power" or
+           r._field == "control_source" or
+           r._field == "operator_source" or
+           r._field == "override_id" or
+           r._field == "plan_state" or
+           r._field == "plan_id" or
+           r._field == "plan_revision" or
+           r._field == "plan_age_sec" or
+           r._field == "capped_by" or
+           r._field == "pv_curtail_active" or
+           r._field == "pv_curtail_export_kw_max"
       )
-      |> last()
-  `;
-
-  const meanQuery = (minutes: number) => `
-    from(bucket: "aiess_v1")
-      |> range(start: -${minutes}m)
-      |> filter(fn: (r) => r._measurement == "energy_telemetry")
-      |> filter(fn: (r) => r.site_id == "${siteId}")
-      |> filter(fn: (r) => r._field == "grid_power" or r._field == "total_pv_power" or r._field == "pcs_power")
-      |> mean()
+      |> sort(columns: ["_time"])
   `;
 
   try {
-    const [liveRows, avg1mRows, avg5mRows] = await Promise.all([
-      runFluxQuery(liveQuery),
-      runFluxQuery(meanQuery(1)).catch(() => [] as Record<string, string>[]),
-      runFluxQuery(meanQuery(5)).catch(() => [] as Record<string, string>[]),
+    // pv_estimated is hourly data, so it is cached and refreshed at most once
+    // every few minutes rather than on every live refresh.
+    const [windowRows, pvEstimated] = await Promise.all([
+      runFluxQuery(windowQuery),
+      getPvEstimatedCached(siteId),
     ]);
 
-    if (liveRows.length === 0) {
+    if (windowRows.length === 0) {
       console.warn('[InfluxDB] No data found for site:', siteId);
       return null;
     }
 
-    // Parse live data (numeric + string _field/_value pairs)
+    // Latest value per field (rows are sorted ascending by _time, so the last
+    // write wins) plus timestamped samples for the mean fields.
     const numValues: Record<string, number> = {};
     const strValues: Record<string, string> = {};
-    for (const row of liveRows) {
+    const meanFields = ['grid_power', 'total_pv_power', 'pcs_power'];
+    const points: Record<string, { t: number; v: number }[]> = {
+      grid_power: [],
+      total_pv_power: [],
+      pcs_power: [],
+    };
+
+    let maxTime = 0;
+    for (const row of windowRows) {
       const field = row['_field']?.trim();
       const raw = row['_value']?.trim();
       if (!field || !raw) continue;
       const num = parseFloat(raw);
       if (!isNaN(num)) {
         numValues[field] = num;
+        if (meanFields.includes(field)) {
+          const t = Date.parse(row['_time'] ?? '');
+          points[field].push({ t: isNaN(t) ? 0 : t, v: num });
+          if (!isNaN(t) && t > maxTime) maxTime = t;
+        }
       } else {
         strValues[field] = raw;
       }
     }
+
+    // Reference the most recent sample (not the client clock) for the 1-min
+    // window so client/server clock skew can't drop or add points.
+    const oneMinAgo = maxTime - 60_000;
+    const meanOver = (field: string, sinceMs: number): number | undefined => {
+      const pts = points[field].filter(p => p.t >= sinceMs);
+      if (pts.length === 0) return undefined;
+      return pts.reduce((sum, p) => sum + p.v, 0) / pts.length;
+    };
 
     const gridPower = numValues['grid_power'] ?? 0;
     const pvPower = numValues['total_pv_power'] ?? 0;
@@ -280,31 +297,55 @@ export async function fetchLiveData(siteId: string): Promise<LiveData | null> {
     const activeRuleAction = (strValues['active_rule_action'] || undefined) as 'ch' | 'sb' | 'dis' | undefined;
     const activeRulePower = numValues['active_rule_power'] ?? undefined;
 
-    const factoryLoad = calculateFactoryLoad(gridPower, pvPower, batteryPower);
-    const batteryStatus = getBatteryStatus(batteryPower);
+    // Decision telemetry (v1.1.0). All fields are optional — the forwarder
+    // mapping is rolling out separately, so absence is expected and must
+    // simply yield undefined (never a parse failure).
+    const controlSource = (strValues['control_source'] || undefined) as
+      import('@/types').ControlSource | undefined;
+    const operatorSource = (strValues['operator_source'] || undefined) as
+      import('@/types').OperatorSource | undefined;
+    const overrideId = strValues['override_id'] || undefined;
+    const planState = (strValues['plan_state'] || undefined) as
+      import('@/types').PlanState | undefined;
+    const planId = strValues['plan_id'] || undefined;
+    const planRevision = numValues['plan_revision'] ?? undefined;
+    const planAgeSec = numValues['plan_age_sec'] ?? undefined;
+    const cappedBy = strValues['capped_by'] || undefined;
+    // Booleans can land as true/false strings or 0/1 numbers depending on the
+    // line-protocol writer; accept both.
+    const pvCurtailRaw = strValues['pv_curtail_active'] ?? (
+      numValues['pv_curtail_active'] !== undefined
+        ? String(numValues['pv_curtail_active'])
+        : undefined
+    );
+    const pvCurtailActive = pvCurtailRaw !== undefined
+      ? pvCurtailRaw === 'true' || pvCurtailRaw === '1'
+      : undefined;
+    const pvCurtailExportKwMax = numValues['pv_curtail_export_kw_max'] ?? undefined;
 
-    // Parse 1-min and 5-min averages
-    const avg1m = extractNumericFields(avg1mRows);
-    const avg5m = extractNumericFields(avg5mRows);
+    const batteryStatus = getBatteryStatus(batteryPower);
 
     const round1 = (v: number) => Math.round(v * 10) / 10;
 
-    const gridPowerAvg1m = avg1m['grid_power'] != null ? round1(avg1m['grid_power']) : undefined;
-    const gridPowerAvg5m = avg5m['grid_power'] != null ? round1(avg5m['grid_power']) : undefined;
-    const pvPowerAvg1m = avg1m['total_pv_power'] != null ? round1(avg1m['total_pv_power']) : undefined;
-    const pvPowerAvg5m = avg5m['total_pv_power'] != null ? round1(avg5m['total_pv_power']) : undefined;
+    // 1-min and 5-min means computed client-side from the single window result.
+    const avg1mGrid = meanOver('grid_power', oneMinAgo);
+    const avg5mGrid = meanOver('grid_power', 0);
+    const avg1mPv = meanOver('total_pv_power', oneMinAgo);
+    const avg5mPv = meanOver('total_pv_power', 0);
+    const avg1mBatt = meanOver('pcs_power', oneMinAgo);
+    const avg5mBatt = meanOver('pcs_power', 0);
 
-    const factoryLoadAvg1m = avg1m['grid_power'] != null
-      ? round1(calculateFactoryLoad(avg1m['grid_power'], avg1m['total_pv_power'] ?? 0, avg1m['pcs_power'] ?? 0))
-      : undefined;
-    const factoryLoadAvg5m = avg5m['grid_power'] != null
-      ? round1(calculateFactoryLoad(avg5m['grid_power'], avg5m['total_pv_power'] ?? 0, avg5m['pcs_power'] ?? 0))
-      : undefined;
+    const gridPowerAvg1m = avg1mGrid != null ? round1(avg1mGrid) : undefined;
+    const gridPowerAvg5m = avg5mGrid != null ? round1(avg5mGrid) : undefined;
+    const pvPowerAvg1m = avg1mPv != null ? round1(avg1mPv) : undefined;
+    const pvPowerAvg5m = avg5mPv != null ? round1(avg5mPv) : undefined;
 
-    let pvEstimated = 0;
-    try {
-      pvEstimated = await fetchLatestPvEstimated(siteId);
-    } catch { /* PV estimate unavailable — not critical */ }
+    const factoryLoadAvg1m = avg1mGrid != null
+      ? round1(calculateFactoryLoad(avg1mGrid, avg1mPv ?? 0, avg1mBatt ?? 0))
+      : undefined;
+    const factoryLoadAvg5m = avg5mGrid != null
+      ? round1(calculateFactoryLoad(avg5mGrid, avg5mPv ?? 0, avg5mBatt ?? 0))
+      : undefined;
 
     const pvTotal = round1(pvPower + pvEstimated);
     const correctedFactoryLoad = calculateFactoryLoad(gridPower, pvTotal, batteryPower);
@@ -328,6 +369,16 @@ export async function fetchLiveData(siteId: string): Promise<LiveData | null> {
       pvPowerAvg5m,
       factoryLoadAvg1m,
       factoryLoadAvg5m,
+      controlSource,
+      operatorSource,
+      overrideId,
+      planState,
+      planId,
+      planRevision,
+      planAgeSec,
+      cappedBy,
+      pvCurtailActive,
+      pvCurtailExportKwMax,
     };
 
     console.log('[LiveData] Data received:', JSON.stringify(liveData));
@@ -560,6 +611,21 @@ async function fetchLatestPvEstimated(siteId: string): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+// pv_estimated comes from hourly simulation data, so there is no value in
+// re-querying it on every 5s live refresh. Cache it per site and refresh at
+// most once per TTL window to cut query-count on the hot live path.
+const PV_ESTIMATED_TTL_MS = 5 * 60 * 1000;
+const pvEstimatedCache: Record<string, { value: number; ts: number }> = {};
+
+async function getPvEstimatedCached(siteId: string): Promise<number> {
+  const now = Date.now();
+  const cached = pvEstimatedCache[siteId];
+  if (cached && now - cached.ts < PV_ESTIMATED_TTL_MS) return cached.value;
+  const value = await fetchLatestPvEstimated(siteId);
+  pvEstimatedCache[siteId] = { value, ts: now };
+  return value;
 }
 
 /**
