@@ -11,6 +11,7 @@ export const mockDevices: Device[] = [
     battery_capacity_kwh: 568,
     pcs_power_kw: 305,
     pv_power_kw: 200,
+    role: 'owner',
   },
   {
     id: '2',
@@ -22,6 +23,7 @@ export const mockDevices: Device[] = [
     battery_capacity_kwh: 289,
     pcs_power_kw: 135,
     pv_power_kw: 50,
+    role: 'viewer',
   },
 ];
 
@@ -31,6 +33,8 @@ export const mockLiveData: LiveData = {
   batterySoc: 65.4,
   batteryStatus: 'Discharging',
   pvPower: 0,
+  pvEstimated: 0,
+  pvTotal: 0,
   factoryLoad: 40,
   lastUpdate: new Date(),
 };

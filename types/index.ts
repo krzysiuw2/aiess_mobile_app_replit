@@ -1,3 +1,6 @@
+import type { FinancialSettings } from './financial';
+import type { SiteConfigAiProfile } from './ai-agent';
+
 export interface UserProfile {
   id: string;
   email: string;

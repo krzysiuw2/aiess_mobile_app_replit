@@ -29,13 +29,18 @@ import {
   validateRule,
   unixToLocalDateStr,
   localDateStrToUnix,
+  isGuardrailAction,
+  GUARDRAIL_BAND,
 } from '@/lib/aws-schedules';
+import { evaluatePolarity, type PolarityWarning } from '@/lib/rule-polarity';
 import { getFavoriteById } from '@/lib/rule-favorites';
 import type {
   ActionType,
   Priority,
   Strategy,
   GridOperator,
+  Recurrence,
+  Firmness,
   OptimizedScheduleRule,
   ScheduleRuleFormData,
 } from '@/types';
@@ -422,6 +427,9 @@ function generateRuleId(
   actionType: ActionType,
   power: string,
   targetSoc: string,
+  limitKw: string,
+  targetGridKw: string,
+  holdSocLow: string,
   scheduleMode: 'one-time' | 'recurring',
   oneTimeDate: string,
   startTime: string,
@@ -432,8 +440,11 @@ function generateRuleId(
   existingIds: string[],
 ): string {
   const prefix = prefixes[actionType] || actionType.toUpperCase();
-  const param = (actionType === 'ct' || actionType === 'dt')
-    ? (parseInt(targetSoc) || '80')
+  const param =
+    (actionType === 'ct' || actionType === 'dt') ? (parseInt(targetSoc) || '80')
+    : (actionType === 'bx' || actionType === 'bi') ? (parseInt(limitKw) || 0)
+    : actionType === 'sc' ? (parseInt(targetGridKw) || 0)
+    : actionType === 'hs' ? (parseInt(holdSocLow) || '20')
     : (parseInt(power) || '50');
 
   let timePart = '';
@@ -496,12 +507,25 @@ function buildRuleSummary(
     parts.push(`${actionLabel} ${form.power || '?'} kW`);
   } else if (form.actionType === 'ct' || form.actionType === 'dt') {
     parts.push(`${actionLabel} ${form.targetSoc || '?'}%`);
+  } else if (form.actionType === 'bx' || form.actionType === 'bi') {
+    const lim = parseFloat(form.limitKw) || 0;
+    parts.push(lim > 0 ? `${actionLabel} ≤ ${lim} kW` : actionLabel);
+  } else if (form.actionType === 'sc') {
+    parts.push(`${actionLabel} → ${form.targetGridKw || '0'} kW`);
+  } else if (form.actionType === 'hs') {
+    parts.push(`${actionLabel} ${form.holdSocLow || '?'}%${form.holdSocHigh ? `-${form.holdSocHigh}%` : ''}`);
   }
 
   if (form.scheduleMode === 'one-time') {
     const today = new Date().toISOString().split('T')[0];
     const dateLabel = form.oneTimeDate === today ? loc.todayLabel : form.oneTimeDate;
     parts.push(dateLabel);
+  } else if (form.recurrence === 'monthly') {
+    if (form.monthDays.length > 0) {
+      parts.push([...form.monthDays].sort((a, b) => a - b).join(', '));
+    }
+  } else if (form.recurrence === 'daily') {
+    parts.push(loc.everydayLabel);
   } else {
     if (form.selectedDays.length === 7) {
       parts.push(loc.everydayLabel);
@@ -565,6 +589,24 @@ interface FormState {
 
   validFromDate: string;
   validUntilDate: string;
+
+  // bx / bi (guardrails)
+  limitKw: string;
+  firmness: Firmness;
+  // sc (self-consumption)
+  targetGridKw: string;
+  deadBandKw: string;
+  scMaxChargeKw: string;
+  scMaxDischargeKw: string;
+  scSocMin: string;
+  scSocMax: string;
+  // hs (hold SoC)
+  holdSocLow: string;
+  holdSocHigh: string;
+  hysteresis: string;
+  // Recurrence
+  recurrence: Recurrence;
+  monthDays: number[];
 }
 
 const todayISO = () => new Date().toISOString().split('T')[0];
@@ -596,6 +638,19 @@ const DEFAULT_FORM: FormState = {
   gridValueMax: '',
   validFromDate: '',
   validUntilDate: '',
+  limitKw: '0',
+  firmness: 'firm',
+  targetGridKw: '0',
+  deadBandKw: '',
+  scMaxChargeKw: '',
+  scMaxDischargeKw: '',
+  scSocMin: '',
+  scSocMax: '',
+  holdSocLow: '20',
+  holdSocHigh: '80',
+  hysteresis: '',
+  recurrence: 'weekly',
+  monthDays: [],
 };
 
 // ─── Main Component ─────────────────────────────────────────────
@@ -654,7 +709,27 @@ export default function RuleBuilderScreen() {
     { type: 'dis', label: t.schedules.actionTypes.discharge, description: ed.dischargeDesc },
     { type: 'ct', label: ed.chargeToTarget, description: ed.chargeToTargetDesc },
     { type: 'dt', label: ed.dischargeToTarget, description: ed.dischargeToTargetDesc },
+    { type: 'sc', label: t.schedules.actionTypes.selfConsumption, description: ed.selfConsumptionDesc },
+    { type: 'hs', label: t.schedules.actionTypes.holdSoc, description: ed.holdSocDesc },
+    { type: 'bx', label: t.schedules.actionTypes.blockExport, description: ed.blockExportDesc },
+    { type: 'bi', label: t.schedules.actionTypes.blockImport, description: ed.blockImportDesc },
   ];
+
+  const isGuardrail = isGuardrailAction(form.actionType);
+
+  // Polarity matrix (guide doc 07 §5): grey out latching operators, surface
+  // warn-level combos inline. Mirrors the Lambda's 400/warnings behaviour.
+  const polarity = useMemo(() => evaluatePolarity(form.actionType, {
+    gridOperator: form.hasGridCondition ? form.gridOperator : undefined,
+    hasSocMin: form.hasSocCondition && form.socMin !== '',
+    hasSocMax: form.hasSocCondition && form.socMax !== '',
+  }), [form.actionType, form.hasGridCondition, form.gridOperator, form.hasSocCondition, form.socMin, form.socMax]);
+
+  const polarityWarningText: Record<PolarityWarning, string> = {
+    bangBang: ed.warnBangBang,
+    hsGridGate: ed.warnHsGrid,
+    socLatch: ed.warnSocLatch,
+  };
 
   const STRATEGIES: { value: Strategy; label: string; desc: string }[] = [
     { value: 'eq', label: ed.equalSpread, desc: ed.equalSpreadDesc },
@@ -677,6 +752,10 @@ export default function RuleBuilderScreen() {
     dis: t.schedules.actionTypes.discharge,
     ct: ed.chargeToTarget,
     dt: ed.dischargeToTarget,
+    bx: t.schedules.actionTypes.blockExport,
+    bi: t.schedules.actionTypes.blockImport,
+    sc: t.schedules.actionTypes.selfConsumption,
+    hs: t.schedules.actionTypes.holdSoc,
   }), [t]);
 
   // Auto-generate ID when form fields change
@@ -686,6 +765,9 @@ export default function RuleBuilderScreen() {
       form.actionType,
       form.power,
       form.targetSoc,
+      form.limitKw,
+      form.targetGridKw,
+      form.holdSocLow,
       form.scheduleMode,
       form.oneTimeDate,
       form.startTime,
@@ -698,7 +780,7 @@ export default function RuleBuilderScreen() {
     if (newId !== form.id) {
       setForm(prev => ({ ...prev, id: newId }));
     }
-  }, [form.actionType, form.power, form.targetSoc, form.scheduleMode, form.oneTimeDate, form.startTime, form.endTime, form.selectedDays, form.idManualOverride, isNew, existingIds]);
+  }, [form.actionType, form.power, form.targetSoc, form.limitKw, form.targetGridKw, form.holdSocLow, form.scheduleMode, form.oneTimeDate, form.startTime, form.endTime, form.selectedDays, form.idManualOverride, isNew, existingIds]);
 
   // Auto-fill validity for one-time mode
   useEffect(() => {
@@ -718,7 +800,16 @@ export default function RuleBuilderScreen() {
   ): FormState => {
     const fd = optimizedRuleToFormData(rule, p);
     const hasWeekdays = fd.weekdays && fd.weekdays.length > 0 && fd.weekdays.length < 7;
-    const mode: 'one-time' | 'recurring' = hasWeekdays ? 'recurring' : 'one-time';
+    const hasMonthDays = fd.monthDays && fd.monthDays.length > 0;
+    const mode: 'one-time' | 'recurring' =
+      fd.recurrence === 'once' ? 'one-time'
+      : (hasWeekdays || hasMonthDays || (fd.recurrence !== undefined)) ? 'recurring'
+      : 'one-time';
+    const recurrence: Recurrence =
+      fd.recurrence && fd.recurrence !== 'once' ? fd.recurrence
+      : hasMonthDays ? 'monthly'
+      : hasWeekdays ? 'weekly'
+      : 'daily';
 
     return {
       id: options.keepId ? fd.id : '',
@@ -747,6 +838,19 @@ export default function RuleBuilderScreen() {
       gridValueMax: fd.gridPowerValueMax?.toString() || '',
       validFromDate: unixToLocalDateStr(fd.validFrom),
       validUntilDate: unixToLocalDateStr(fd.validUntil),
+      limitKw: fd.limitKw?.toString() || '0',
+      firmness: fd.firmness || 'firm',
+      targetGridKw: fd.targetGridKw?.toString() || '0',
+      deadBandKw: fd.deadBandKw?.toString() || '',
+      scMaxChargeKw: fd.scMaxChargeKw?.toString() || '',
+      scMaxDischargeKw: fd.scMaxDischargeKw?.toString() || '',
+      scSocMin: fd.scSocMin?.toString() || '',
+      scSocMax: fd.scSocMax?.toString() || '',
+      holdSocLow: fd.holdSocLow?.toString() || '20',
+      holdSocHigh: fd.holdSocHigh?.toString() || '80',
+      hysteresis: fd.hysteresis?.toString() || '',
+      recurrence,
+      monthDays: fd.monthDays || [],
     };
   }, []);
 
@@ -800,6 +904,17 @@ export default function RuleBuilderScreen() {
 
   const update = (patch: Partial<FormState>) => setForm(prev => ({ ...prev, ...patch }));
 
+  // If an action-type change makes the currently selected grid operator a
+  // blocked latch, snap to the first valid one so stale state can't be saved.
+  useEffect(() => {
+    if (!form.hasGridCondition) return;
+    if (polarity.allGridGatesBlocked) return;
+    if (polarity.blockedOperators.includes(form.gridOperator)) {
+      const fallback = (['gt', 'lt', 'bt'] as GridOperator[]).find(op => !polarity.blockedOperators.includes(op));
+      if (fallback) update({ gridOperator: fallback });
+    }
+  }, [polarity, form.gridOperator, form.hasGridCondition]);
+
   const toggleDay = (index: number) => {
     update({
       selectedDays: form.selectedDays.includes(index)
@@ -821,7 +936,9 @@ export default function RuleBuilderScreen() {
   const buildFormData = (): ScheduleRuleFormData => {
     const fd: ScheduleRuleFormData = {
       id: form.id.trim().toUpperCase(),
-      priority: form.priority,
+      // Guardrail rules always live in the fixed Guardrails band — the slot
+      // picker is hidden for them and priority does not apply.
+      priority: isGuardrail ? GUARDRAIL_BAND : form.priority,
       actionType: form.actionType,
       active: form.active,
     };
@@ -844,6 +961,24 @@ export default function RuleBuilderScreen() {
         fd.minGridPower = parseFloat(form.minGrid) || undefined;
         fd.strategy = form.strategy;
         break;
+      case 'bx':
+      case 'bi':
+        fd.limitKw = parseFloat(form.limitKw) || 0;
+        fd.firmness = form.firmness;
+        break;
+      case 'sc':
+        fd.targetGridKw = parseFloat(form.targetGridKw) || 0;
+        if (form.deadBandKw) fd.deadBandKw = parseFloat(form.deadBandKw);
+        if (form.scMaxChargeKw) fd.scMaxChargeKw = parseFloat(form.scMaxChargeKw);
+        if (form.scMaxDischargeKw !== '') fd.scMaxDischargeKw = parseFloat(form.scMaxDischargeKw);
+        if (form.scSocMin) fd.scSocMin = parseFloat(form.scSocMin);
+        if (form.scSocMax) fd.scSocMax = parseFloat(form.scSocMax);
+        break;
+      case 'hs':
+        fd.holdSocLow = parseFloat(form.holdSocLow) || 0;
+        if (form.holdSocHigh) fd.holdSocHigh = parseFloat(form.holdSocHigh);
+        if (form.hysteresis) fd.hysteresis = parseFloat(form.hysteresis);
+        break;
     }
 
     if (form.startTime && form.endTime) {
@@ -856,7 +991,9 @@ export default function RuleBuilderScreen() {
       if (form.socMax) fd.socMax = parseFloat(form.socMax);
     }
 
-    if (form.hasGridCondition && form.gridValue) {
+    // Grid gates are structurally invalid on sc (the tracking loop fights
+    // them) — never emit one even if stale state lingers in the form.
+    if (form.hasGridCondition && form.gridValue && form.actionType !== 'sc') {
       fd.gridPowerOperator = form.gridOperator;
       fd.gridPowerValue = parseFloat(form.gridValue);
       if (form.gridOperator === 'bt' && form.gridValueMax) {
@@ -864,8 +1001,18 @@ export default function RuleBuilderScreen() {
       }
     }
 
-    if (form.scheduleMode === 'recurring' && form.selectedDays.length > 0 && form.selectedDays.length < 7) {
-      fd.weekdays = form.selectedDays;
+    if (form.scheduleMode === 'one-time') {
+      // rc:once — the cloud stamps vu from the window when absent (F16);
+      // we still send the explicit day window from the date picker below.
+      fd.recurrence = 'once';
+    } else {
+      fd.recurrence = form.recurrence;
+      if (form.recurrence === 'weekly' && form.selectedDays.length > 0 && form.selectedDays.length < 7) {
+        fd.weekdays = form.selectedDays;
+      }
+      if (form.recurrence === 'monthly' && form.monthDays.length > 0) {
+        fd.monthDays = [...form.monthDays].sort((a, b) => a - b);
+      }
     }
 
     if (form.scheduleMode === 'one-time' && form.oneTimeDate) {
@@ -912,17 +1059,25 @@ export default function RuleBuilderScreen() {
     const proceedSave = async () => {
       try {
         setIsSaving(true);
+        let warnings: string[] | undefined;
         if (isNew) {
-          await createRule(rule, fd.priority);
+          warnings = await createRule(rule, fd.priority);
         } else {
           const priorityChanged = originalPriority !== undefined && originalPriority !== fd.priority;
-          await updateRule(rule, fd.priority, priorityChanged ? originalPriority : undefined);
+          warnings = await updateRule(rule, fd.priority, priorityChanged ? originalPriority : undefined);
         }
-        Alert.alert(t.common.success, isNew ? ed.ruleCreated : ed.ruleUpdated, [
-          { text: t.common.ok, onPress: () => router.back() },
-        ]);
-      } catch {
-        Alert.alert(t.common.error, ed.failedToSaveRule);
+        if (warnings && warnings.length > 0) {
+          Alert.alert(ed.savedWithWarnings, warnings.join('\n'), [
+            { text: t.common.ok, onPress: () => router.back() },
+          ]);
+        } else {
+          Alert.alert(t.common.success, isNew ? ed.ruleCreated : ed.ruleUpdated, [
+            { text: t.common.ok, onPress: () => router.back() },
+          ]);
+        }
+      } catch (e) {
+        const msg = e instanceof Error && e.message ? e.message : ed.failedToSaveRule;
+        Alert.alert(t.common.error, msg);
       } finally {
         setIsSaving(false);
       }
@@ -1142,6 +1297,17 @@ export default function RuleBuilderScreen() {
           </View>
         )}
 
+        {/* Materialized-from-Settings warning (set_* rules, replace-by-id) */}
+        {!isNew && form.id.toLowerCase().startsWith('set_') && (
+          <View style={styles.autoWarningBanner}>
+            <AlertTriangle size={16} color="#92400E" />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.autoWarningText, { fontWeight: '700' }]}>{ed.fromSettingsTitle}</Text>
+              <Text style={styles.autoWarningText}>{ed.fromSettingsWarning}</Text>
+            </View>
+          </View>
+        )}
+
         {/* ─── Templates ───────────────────────────────── */}
         {isNew && (
           <View style={styles.section}>
@@ -1218,22 +1384,26 @@ export default function RuleBuilderScreen() {
           )}
         </View>
 
-        {/* ─── Priority ────────────────────────────────── */}
+        {/* ─── Priority (hidden for guardrail types — fixed band) ─── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t.schedules.priority}</Text>
-          <View style={styles.chipRow}>
-            {([6, 7, 8] as Priority[]).map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={[styles.chip, form.priority === p && styles.chipActive]}
-                onPress={() => update({ priority: p })}
-              >
-                <Text style={[styles.chipText, form.priority === p && styles.chipTextActive]}>
-                  {p === 6 ? ed.low : p === 7 ? ed.normal : ed.high}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {isGuardrail ? (
+            <Text style={styles.hintText}>{ed.guardrailNote}</Text>
+          ) : (
+            <View style={styles.chipRow}>
+              {([6, 7, 8] as Priority[]).map((p) => (
+                <TouchableOpacity
+                  key={p}
+                  style={[styles.chip, form.priority === p && styles.chipActive]}
+                  onPress={() => update({ priority: p })}
+                >
+                  <Text style={[styles.chipText, form.priority === p && styles.chipTextActive]}>
+                    {p === 6 ? ed.low : p === 7 ? ed.normal : ed.high}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* ─── Action Type ───────────────────────────── */}
@@ -1381,6 +1551,186 @@ export default function RuleBuilderScreen() {
               </View>
             </>
           )}
+
+          {(form.actionType === 'bx' || form.actionType === 'bi') && (
+            <>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{ed.limitKw}</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={form.limitKw}
+                  onChangeText={(v) => update({ limitKw: v.replace(/[^0-9.]/g, '') })}
+                  onBlur={() => clampField('limitKw', 0, siteHth)}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={Colors.textSecondary}
+                />
+                <Text style={styles.hintText}>
+                  {form.actionType === 'bx' ? ed.limitKwHintBx : ed.limitKwHintBi}
+                </Text>
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{ed.firmness}</Text>
+                <SegmentedControl
+                  options={[
+                    { value: 'firm', label: ed.firm },
+                    { value: 'soft', label: ed.soft },
+                  ]}
+                  selected={form.firmness}
+                  onSelect={(v) => update({ firmness: v as Firmness })}
+                />
+                <Text style={styles.hintText}>{ed.firmnessHint}</Text>
+              </View>
+            </>
+          )}
+
+          {form.actionType === 'sc' && (
+            <>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{ed.targetGridKw}</Text>
+                <View style={styles.signedInputRow}>
+                  <TouchableOpacity
+                    style={styles.signToggle}
+                    onPress={() => {
+                      const v = form.targetGridKw;
+                      update({ targetGridKw: v.startsWith('-') ? v.slice(1) : '-' + v });
+                    }}
+                  >
+                    <Text style={styles.signToggleText}>±</Text>
+                  </TouchableOpacity>
+                  <TextInput
+                    style={[styles.textInput, { flex: 1 }]}
+                    value={form.targetGridKw}
+                    onChangeText={(v) => update({ targetGridKw: v.replace(/[^0-9.\-]/g, '') })}
+                    onBlur={() => clampField('targetGridKw', siteLth, siteHth)}
+                    keyboardType="numbers-and-punctuation"
+                    placeholder="0"
+                    placeholderTextColor={Colors.textSecondary}
+                  />
+                </View>
+                <Text style={styles.hintText}>{ed.targetGridHint}</Text>
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{ed.deadBandKw}</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={form.deadBandKw}
+                  onChangeText={(v) => update({ deadBandKw: v.replace(/[^0-9.]/g, '') })}
+                  keyboardType="decimal-pad"
+                  placeholder="1"
+                  placeholderTextColor={Colors.textSecondary}
+                />
+              </View>
+              <View style={styles.rowInputs}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>{ed.scMaxChargeKw}</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={form.scMaxChargeKw}
+                    onChangeText={(v) => update({ scMaxChargeKw: v.replace(/[^0-9.]/g, '') })}
+                    onBlur={() => clampField('scMaxChargeKw', 0, maxCharge)}
+                    keyboardType="decimal-pad"
+                    placeholder={String(maxCharge)}
+                    placeholderTextColor={Colors.textSecondary}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>{ed.scMaxDischargeKw}</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={form.scMaxDischargeKw}
+                    onChangeText={(v) => update({ scMaxDischargeKw: v.replace(/[^0-9.]/g, '') })}
+                    onBlur={() => clampField('scMaxDischargeKw', 0, maxDischarge)}
+                    keyboardType="decimal-pad"
+                    placeholder={String(maxDischarge)}
+                    placeholderTextColor={Colors.textSecondary}
+                  />
+                </View>
+              </View>
+              <View style={styles.switchRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>{ed.absorbOnly}</Text>
+                  <Text style={styles.hintText}>{ed.absorbOnlyHint}</Text>
+                </View>
+                <Switch
+                  value={form.scMaxDischargeKw === '0'}
+                  onValueChange={(v) => update({ scMaxDischargeKw: v ? '0' : '' })}
+                  trackColor={{ false: Colors.border, true: Colors.primaryLight }}
+                  thumbColor={form.scMaxDischargeKw === '0' ? Colors.primary : Colors.textSecondary}
+                />
+              </View>
+              <View style={styles.rowInputs}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>{ed.scSocWindow} min %</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={form.scSocMin}
+                    onChangeText={(v) => update({ scSocMin: v.replace(/[^0-9]/g, '') })}
+                    onBlur={() => clampField('scSocMin', 0, 100)}
+                    keyboardType="number-pad"
+                    placeholder={safety.soc_min.toString()}
+                    placeholderTextColor={Colors.textSecondary}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>{ed.scSocWindow} max %</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={form.scSocMax}
+                    onChangeText={(v) => update({ scSocMax: v.replace(/[^0-9]/g, '') })}
+                    onBlur={() => clampField('scSocMax', 0, 100)}
+                    keyboardType="number-pad"
+                    placeholder={safety.soc_max.toString()}
+                    placeholderTextColor={Colors.textSecondary}
+                  />
+                </View>
+              </View>
+            </>
+          )}
+
+          {form.actionType === 'hs' && (
+            <>
+              <View style={styles.rowInputs}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>{ed.holdSocLow}</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={form.holdSocLow}
+                    onChangeText={(v) => update({ holdSocLow: v.replace(/[^0-9]/g, '') })}
+                    onBlur={() => clampField('holdSocLow', 0, 100)}
+                    keyboardType="number-pad"
+                    placeholder="20"
+                    placeholderTextColor={Colors.textSecondary}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>{ed.holdSocHigh}</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={form.holdSocHigh}
+                    onChangeText={(v) => update({ holdSocHigh: v.replace(/[^0-9]/g, '') })}
+                    onBlur={() => clampField('holdSocHigh', 0, 100)}
+                    keyboardType="number-pad"
+                    placeholder="80"
+                    placeholderTextColor={Colors.textSecondary}
+                  />
+                </View>
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{ed.hysteresisPct}</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={form.hysteresis}
+                  onChangeText={(v) => update({ hysteresis: v.replace(/[^0-9.]/g, '') })}
+                  onBlur={() => clampField('hysteresis', 0, 50)}
+                  keyboardType="decimal-pad"
+                  placeholder="1"
+                  placeholderTextColor={Colors.textSecondary}
+                />
+                <Text style={styles.hintText}>{ed.holdSocHint}</Text>
+              </View>
+            </>
+          )}
         </View>
 
         {/* ─── Time / Date Condition ────────────────────── */}
@@ -1417,37 +1767,79 @@ export default function RuleBuilderScreen() {
                   </Text>
                 </TouchableOpacity>
               </View>
+              <Text style={styles.hintText}>{ed.rcOnceHint}</Text>
             </View>
           )}
 
           {form.scheduleMode === 'recurring' && (
-            <View style={[styles.inputGroup, { marginTop: 16 }]}>
-              <Text style={styles.inputLabel}>{ed.activeDays}</Text>
-              <View style={styles.quickSelectRow}>
-                <TouchableOpacity style={styles.quickChip} onPress={() => update({ selectedDays: [1, 2, 3, 4, 5] })}>
-                  <Text style={styles.quickChipText}>{ed.monFri}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.quickChip} onPress={() => update({ selectedDays: [0, 6] })}>
-                  <Text style={styles.quickChipText}>{ed.satSun}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.quickChip} onPress={() => update({ selectedDays: [0, 1, 2, 3, 4, 5, 6] })}>
-                  <Text style={styles.quickChipText}>{ed.all}</Text>
-                </TouchableOpacity>
+            <>
+              <View style={[styles.inputGroup, { marginTop: 16 }]}>
+                <Text style={styles.inputLabel}>{ed.recurrenceLabel}</Text>
+                <SegmentedControl
+                  options={[
+                    { value: 'daily', label: ed.rcDaily },
+                    { value: 'weekly', label: ed.rcWeekly },
+                    { value: 'monthly', label: ed.rcMonthly },
+                  ]}
+                  selected={form.recurrence}
+                  onSelect={(v) => update({ recurrence: v as Recurrence })}
+                />
               </View>
-              <View style={styles.daysRow}>
-                {WEEKDAY_BUTTONS.map((d: { index: number; label: string }) => (
-                  <TouchableOpacity
-                    key={d.index}
-                    style={[styles.dayBtn, form.selectedDays.includes(d.index) && styles.dayBtnActive]}
-                    onPress={() => toggleDay(d.index)}
-                  >
-                    <Text style={[styles.dayBtnText, form.selectedDays.includes(d.index) && styles.dayBtnTextActive]}>
-                      {d.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+
+              {form.recurrence === 'weekly' && (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>{ed.activeDays}</Text>
+                  <View style={styles.quickSelectRow}>
+                    <TouchableOpacity style={styles.quickChip} onPress={() => update({ selectedDays: [1, 2, 3, 4, 5] })}>
+                      <Text style={styles.quickChipText}>{ed.monFri}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.quickChip} onPress={() => update({ selectedDays: [0, 6] })}>
+                      <Text style={styles.quickChipText}>{ed.satSun}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.quickChip} onPress={() => update({ selectedDays: [0, 1, 2, 3, 4, 5, 6] })}>
+                      <Text style={styles.quickChipText}>{ed.all}</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.daysRow}>
+                    {WEEKDAY_BUTTONS.map((d: { index: number; label: string }) => (
+                      <TouchableOpacity
+                        key={d.index}
+                        style={[styles.dayBtn, form.selectedDays.includes(d.index) && styles.dayBtnActive]}
+                        onPress={() => toggleDay(d.index)}
+                      >
+                        <Text style={[styles.dayBtnText, form.selectedDays.includes(d.index) && styles.dayBtnTextActive]}>
+                          {d.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {form.recurrence === 'monthly' && (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>{ed.monthDays}</Text>
+                  <View style={styles.monthDaysGrid}>
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => {
+                      const selected = form.monthDays.includes(d);
+                      return (
+                        <TouchableOpacity
+                          key={d}
+                          style={[styles.monthDayBtn, selected && styles.dayBtnActive]}
+                          onPress={() => update({
+                            monthDays: selected
+                              ? form.monthDays.filter(x => x !== d)
+                              : [...form.monthDays, d],
+                          })}
+                        >
+                          <Text style={[styles.dayBtnText, selected && styles.dayBtnTextActive]}>{d}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+            </>
           )}
 
           {/* Time pickers (always shown) */}
@@ -1530,15 +1922,18 @@ export default function RuleBuilderScreen() {
           <Text style={styles.sectionTitle}>{ed.gridPowerCondition}</Text>
 
           <View style={styles.switchRow}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.inputLabel}>{ed.enableGridTrigger}</Text>
-              <Text style={styles.hintText}>{ed.gridTriggerHint}</Text>
+              <Text style={styles.hintText}>
+                {polarity.allGridGatesBlocked ? ed.polarityGridBlockedSc : ed.gridTriggerHint}
+              </Text>
             </View>
             <Switch
-              value={form.hasGridCondition}
+              value={form.hasGridCondition && !polarity.allGridGatesBlocked}
+              disabled={polarity.allGridGatesBlocked}
               onValueChange={(v) => update({ hasGridCondition: v })}
               trackColor={{ false: Colors.border, true: Colors.primaryLight }}
-              thumbColor={form.hasGridCondition ? Colors.primary : Colors.textSecondary}
+              thumbColor={form.hasGridCondition && !polarity.allGridGatesBlocked ? Colors.primary : Colors.textSecondary}
             />
           </View>
 
@@ -1554,23 +1949,39 @@ export default function RuleBuilderScreen() {
             dischargingLabel={t.monitor.discharging}
           />
 
-          {form.hasGridCondition && (
+          {form.hasGridCondition && !polarity.allGridGatesBlocked && (
             <>
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{ed.operator}</Text>
                 <View style={styles.chipRow}>
-                  {GRID_OPERATORS.map((op) => (
-                    <TouchableOpacity
-                      key={op.value}
-                      style={[styles.chip, { flex: 1 }, form.gridOperator === op.value && styles.chipActive]}
-                      onPress={() => update({ gridOperator: op.value })}
-                    >
-                      <Text style={[styles.chipText, form.gridOperator === op.value && styles.chipTextActive]}>
-                        {op.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                  {GRID_OPERATORS.map((op) => {
+                    const blocked = polarity.blockedOperators.includes(op.value);
+                    return (
+                      <TouchableOpacity
+                        key={op.value}
+                        style={[
+                          styles.chip,
+                          { flex: 1 },
+                          form.gridOperator === op.value && !blocked && styles.chipActive,
+                          blocked && styles.chipBlocked,
+                        ]}
+                        disabled={blocked}
+                        onPress={() => update({ gridOperator: op.value })}
+                      >
+                        <Text style={[
+                          styles.chipText,
+                          form.gridOperator === op.value && !blocked && styles.chipTextActive,
+                          blocked && styles.chipTextBlocked,
+                        ]}>
+                          {op.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
+                {polarity.blockedOperators.some(op => GRID_OPERATORS.some(g => g.value === op)) && (
+                  <Text style={styles.hintText}>{ed.polarityBlockedOperator}</Text>
+                )}
               </View>
 
               <View style={styles.rowInputs}>
@@ -1627,6 +2038,18 @@ export default function RuleBuilderScreen() {
             </>
           )}
         </View>
+
+        {/* ─── Polarity warnings (warn-level, non-blocking) ───── */}
+        {polarity.warnings.length > 0 && (
+          <View style={styles.section}>
+            {polarity.warnings.map((w) => (
+              <View key={w} style={styles.warningChip}>
+                <AlertTriangle size={14} color="#92400E" />
+                <Text style={styles.warningChipText}>{polarityWarningText[w]}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* ─── Validity Period ───────────────────────── */}
         <View style={styles.section}>
@@ -1813,6 +2236,18 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  chipBlocked: { opacity: 0.35 },
+  chipTextBlocked: { color: Colors.textSecondary },
+  warningChip: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+  },
+  warningChipText: { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 17 },
   chipText: { fontSize: 14, fontWeight: '700', color: Colors.text },
   chipSubtext: { fontSize: 10, color: Colors.textSecondary, marginTop: 2 },
   chipTextActive: { color: '#fff' },
@@ -1849,6 +2284,16 @@ const styles = StyleSheet.create({
   quickChipTextActive: { color: '#fff' },
 
   daysRow: { flexDirection: 'row', gap: 6 },
+  monthDaysGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  monthDayBtn: {
+    width: 40,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+  },
   dayBtn: {
     flex: 1,
     paddingVertical: 10,

@@ -18,6 +18,10 @@ export const ACTION_COLORS: Record<ActionType, string> = {
   sl: '#64748b',
   ct: '#3b82f6',
   dt: '#a855f7',
+  bx: '#ef4444',
+  bi: '#dc2626',
+  sc: '#eab308',
+  hs: '#14b8a6',
 };
 
 /**
