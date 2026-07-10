@@ -11,11 +11,14 @@ import type {
   SchedulesResponse,
   SaveSchedulesResponse,
   ScheduleRuleFormData,
+  ScheduleHistoryQuery,
+  ScheduleHistoryResponse,
   ConfigSectionId,
   ConfigSectionEnvelope,
   DeviceManifest,
   PutSectionResponse,
 } from '@/types';
+import { GUARDRAIL_ACTION_TYPES } from '@/types';
 import { callAwsProxy, callAwsConfigProxy } from '@/lib/edge-proxy';
 
 // ─── API Methods ────────────────────────────────────────────────
@@ -47,10 +50,63 @@ export async function saveSchedules(
   if (!response.ok) {
     const errorText = await response.text();
     console.error('[Schedules] Save error:', response.status, errorText);
+    // 400s carry a human-readable `error` (e.g. rc:once window underivable,
+    // polarity latch rejection) — surface it verbatim.
+    if (response.status === 400) {
+      let serverMessage: string | undefined;
+      try {
+        const parsed = JSON.parse(errorText);
+        if (typeof parsed?.error === 'string') serverMessage = parsed.error;
+      } catch {
+        // not JSON — fall through to the generic error
+      }
+      if (serverMessage) throw new Error(serverMessage);
+    }
     throw new Error(`Failed to save schedules: ${response.status}`);
   }
 
   return response.json();
+}
+
+// ─── Rule History / Audit Trail (v1.1.0) ────────────────────────
+
+/**
+ * GET /schedules/{site_id}/history — read-only audit trail (90-day horizon).
+ * Optional filters: since/until (unix sec), rule_id, limit.
+ */
+export async function getScheduleHistory(
+  siteId: string,
+  query?: ScheduleHistoryQuery,
+): Promise<ScheduleHistoryResponse> {
+  const params = new URLSearchParams();
+  if (query?.since !== undefined) params.set('since', String(query.since));
+  if (query?.until !== undefined) params.set('until', String(query.until));
+  if (query?.rule_id) params.set('rule_id', query.rule_id);
+  if (query?.limit !== undefined) params.set('limit', String(query.limit));
+  const qs = params.toString();
+
+  const response = await callAwsProxy(`/schedules/${siteId}/history${qs ? `?${qs}` : ''}`);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[Schedules] History error:', response.status, errorText);
+    throw new Error(`Failed to fetch schedule history: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return { events: [], ...data };
+}
+
+/** Attribution bucket derived from the history event's updated_by prefix. */
+export type HistoryAttribution = 'app' | 'settings' | 'operator' | 'expiry' | 'other';
+
+export function getHistoryAttribution(event: { updated_by?: string; event?: string }): HistoryAttribution {
+  if (event.event === 'expired') return 'expiry';
+  const by = (event.updated_by || '').toLowerCase();
+  if (by.includes('materializer') || by.includes('behavior')) return 'settings';
+  if (by.includes('operator') || by.includes('override')) return 'operator';
+  if (by.includes('update-schedules') || by.startsWith('compat:') || by.includes('api')) return 'app';
+  return 'other';
 }
 
 // ─── DDB Config-Plane API (per-section; behind use_ddb_config_plane) ──
@@ -183,7 +239,13 @@ export function formDataToOptimizedRule(data: ScheduleRuleFormData): OptimizedSc
   if (data.weekdays && data.weekdays.length > 0 && data.weekdays.length < 7) {
     rule.d = data.weekdays;
   }
+  if (data.monthDays && data.monthDays.length > 0 && data.monthDays.length < 31) {
+    rule.md = data.monthDays;
+  }
+  if (data.recurrence) rule.rc = data.recurrence;
   if (data.validFrom && data.validFrom > 0) rule.vf = data.validFrom;
+  // For rc:'once' the cloud stamps vu from the rule's window (F16) —
+  // only send vu when explicitly set (explicit vu is still respected).
   if (data.validUntil && data.validUntil > 0) rule.vu = data.validUntil;
 
   return rule;
@@ -218,6 +280,26 @@ function buildAction(data: ScheduleRuleFormData): OptimizedAction {
       if (data.minGridPower !== undefined) action.ming = data.minGridPower;
       if (data.strategy) action.str = data.strategy;
       if (data.usePid) action.pid = true;
+      break;
+    case 'bx':
+    case 'bi':
+      // Guardrail: lim = allowed kW in the blocked direction (0 = hard block).
+      if (data.limitKw !== undefined) action.lim = data.limitKw;
+      if (data.firmness && data.firmness !== 'firm') action.fm = data.firmness;
+      break;
+    case 'sc':
+      if (data.targetGridKw !== undefined && data.targetGridKw !== 0) action.tg = data.targetGridKw;
+      if (data.deadBandKw !== undefined) action.db = data.deadBandKw;
+      if (data.scMaxChargeKw !== undefined) action.cmax = data.scMaxChargeKw;
+      if (data.scMaxDischargeKw !== undefined) action.dmax = data.scMaxDischargeKw;
+      if (data.scSocMin !== undefined) action.smn = data.scSocMin;
+      if (data.scSocMax !== undefined) action.smx = data.scSocMax;
+      break;
+    case 'hs':
+      if (data.holdSocLow !== undefined) action.sl_ = data.holdSocLow;
+      if (data.holdSocHigh !== undefined) action.sh_ = data.holdSocHigh;
+      if (data.hysteresis !== undefined) action.hy = data.hysteresis;
+      if (data.maxPower !== undefined) action.maxp = data.maxPower;
       break;
   }
 
@@ -258,6 +340,18 @@ export function optimizedRuleToFormData(
     minGridPower: rule.a.ming,
     strategy: rule.a.str,
 
+    limitKw: rule.a.lim,
+    firmness: rule.a.fm ?? (rule.a.t === 'bx' || rule.a.t === 'bi' ? 'firm' : undefined),
+    targetGridKw: rule.a.tg,
+    deadBandKw: rule.a.db,
+    scMaxChargeKw: rule.a.cmax,
+    scMaxDischargeKw: rule.a.dmax,
+    scSocMin: rule.a.smn,
+    scSocMax: rule.a.smx,
+    holdSocLow: rule.a.sl_,
+    holdSocHigh: rule.a.sh_,
+    hysteresis: rule.a.hy,
+
     timeStart: rule.c?.ts !== undefined ? formatTime(rule.c.ts) : undefined,
     timeEnd: rule.c?.te !== undefined ? formatTime(rule.c.te) : undefined,
     socMin: rule.c?.sm,
@@ -267,6 +361,8 @@ export function optimizedRuleToFormData(
     gridPowerValueMax: rule.c?.gpx,
 
     weekdays: Array.isArray(rule.d) ? rule.d : weekdayShorthandToArray(rule.d),
+    monthDays: rule.md,
+    recurrence: rule.rc,
     validFrom: rule.vf,
     validUntil: rule.vu,
   };
@@ -298,6 +394,47 @@ export function validateRule(rule: OptimizedScheduleRule, priority: number): str
         errors.push('Target SoC must be 0-100');
       }
       break;
+    case 'bx':
+    case 'bi':
+      if (rule.a.lim !== undefined && rule.a.lim < 0) {
+        errors.push('Limit must be >= 0');
+      }
+      break;
+    case 'sc':
+      if (rule.a.smn !== undefined && (rule.a.smn < 0 || rule.a.smn > 100)) {
+        errors.push('SoC min must be 0-100');
+      }
+      if (rule.a.smx !== undefined && (rule.a.smx < 0 || rule.a.smx > 100)) {
+        errors.push('SoC max must be 0-100');
+      }
+      if (rule.a.smn !== undefined && rule.a.smx !== undefined && rule.a.smx < rule.a.smn) {
+        errors.push('SoC max must be >= SoC min');
+      }
+      if (rule.a.cmax !== undefined && rule.a.cmax < 0) errors.push('Max charge must be >= 0');
+      if (rule.a.dmax !== undefined && rule.a.dmax < 0) errors.push('Max discharge must be >= 0');
+      if (rule.a.db !== undefined && rule.a.db < 0) errors.push('Dead band must be >= 0');
+      // The Lambda rejects grid-power gates on sc — the tracking loop would
+      // fight the gate.
+      if (rule.c?.gpo !== undefined) {
+        errors.push('Self-consumption rules cannot have grid power conditions');
+      }
+      break;
+    case 'hs':
+      if (rule.a.sl_ === undefined) {
+        errors.push('SoC low required for hold SoC');
+      } else if (rule.a.sl_ < 0 || rule.a.sl_ > 100) {
+        errors.push('SoC low must be 0-100');
+      }
+      if (rule.a.sh_ !== undefined) {
+        if (rule.a.sh_ < 0 || rule.a.sh_ > 100) errors.push('SoC high must be 0-100');
+        if (rule.a.sl_ !== undefined && rule.a.sh_ < rule.a.sl_) {
+          errors.push('SoC high must be >= SoC low');
+        }
+      }
+      if (rule.a.hy !== undefined && (rule.a.hy < 0 || rule.a.hy > 50)) {
+        errors.push('Hysteresis must be 0-50');
+      }
+      break;
   }
 
   if (rule.c?.sm !== undefined && (rule.c.sm < 0 || rule.c.sm > 100)) {
@@ -310,8 +447,22 @@ export function validateRule(rule: OptimizedScheduleRule, priority: number): str
     errors.push('SoC min must be less than SoC max');
   }
 
+  if (rule.md !== undefined) {
+    if (!Array.isArray(rule.md) || rule.md.some(d => !Number.isInteger(d) || d < 1 || d > 31)) {
+      errors.push('Month days must be integers 1-31');
+    }
+  }
+
   return errors;
 }
+
+/** Guardrail-typed actions (sl/bx/bi) always run in the Guardrails layer;
+ *  the editor hides the priority picker and writes them to the fixed band. */
+export function isGuardrailAction(type: ActionType): boolean {
+  return GUARDRAIL_ACTION_TYPES.has(type);
+}
+
+export const GUARDRAIL_BAND: Priority = 9;
 
 // ─── Display Helpers ────────────────────────────────────────────
 
@@ -359,8 +510,29 @@ export function getActionTypeLabel(type: ActionType): string {
     sl: 'Site Limit',
     ct: 'Charge to Target',
     dt: 'Discharge to Target',
+    bx: 'Block Export',
+    bi: 'Block Import',
+    sc: 'Self-Consumption',
+    hs: 'Hold SoC',
   };
   return labels[type] || type;
+}
+
+/** Accent color per action type (rule cards, calendar blocks). */
+export function getActionTypeColor(type: ActionType): string {
+  const colors: Record<ActionType, string> = {
+    ch: '#22c55e',
+    ct: '#16a34a',
+    dis: '#f59e0b',
+    dt: '#d97706',
+    sb: '#64748b',
+    sl: '#ef4444',
+    bx: '#dc2626',
+    bi: '#b91c1c',
+    sc: '#0ea5e9',
+    hs: '#8b5cf6',
+  };
+  return colors[type] || '#64748b';
 }
 
 export function getPriorityLabel(priority: number): string {
@@ -483,6 +655,16 @@ export interface RuleDetailLabels {
   maxPowerLabel: string;
   targetLabel: string;
   strategies: Record<Strategy, string>;
+  // v1.1.0 vocabulary
+  limitLabel: string;
+  softLabel: string;
+  targetGridLabel: string;
+  socWindowLabel: string;
+  holdLabel: string;
+  hysteresisLabel: string;
+  monthDaysLabel: string;
+  recurrenceLabel: string;
+  recurrences: Record<import('@/types').Recurrence, string>;
 }
 
 export function getRuleDetailLines(
@@ -503,6 +685,22 @@ export function getRuleDetailLines(
     iconKey: 'calendar',
     text: rule.d ? getDaysLabel(rule.d) : labels.everyday,
   });
+
+  // Days of month (md, ANDed with weekdays)
+  if (rule.md && rule.md.length > 0) {
+    lines.push({
+      iconKey: 'calendar',
+      text: `${labels.monthDaysLabel}: ${[...rule.md].sort((a, b) => a - b).join(', ')}`,
+    });
+  }
+
+  // Recurrence tag
+  if (rule.rc) {
+    lines.push({
+      iconKey: 'calendar-check',
+      text: `${labels.recurrenceLabel}: ${labels.recurrences[rule.rc] || rule.rc}`,
+    });
+  }
 
   // Validity window
   const validityText = formatValidity(rule.vf, rule.vu, labels);
@@ -558,6 +756,46 @@ export function getRuleDetailLines(
     lines.push({ iconKey: 'cpu', text: `${labels.strategyLabel}: ${stratLabel}` });
   }
 
+  // Block export / import (bx/bi guardrails)
+  if (rule.a.t === 'bx' || rule.a.t === 'bi') {
+    lines.push({
+      iconKey: 'gauge',
+      text: `${labels.limitLabel} ${rule.a.lim ?? 0} kW${rule.a.fm === 'soft' ? ` (${labels.softLabel})` : ''}`,
+    });
+  }
+
+  // Self-consumption (sc)
+  if (rule.a.t === 'sc') {
+    lines.push({
+      iconKey: 'target',
+      text: `${labels.targetGridLabel} ${rule.a.tg ?? 0} kW ± ${rule.a.db ?? 1} kW`,
+    });
+    if (rule.a.cmax !== undefined || rule.a.dmax !== undefined) {
+      const caps: string[] = [];
+      if (rule.a.cmax !== undefined) caps.push(`↓ ${rule.a.cmax} kW`);
+      if (rule.a.dmax !== undefined) caps.push(`↑ ${rule.a.dmax} kW`);
+      lines.push({ iconKey: 'gauge', text: caps.join(' · ') });
+    }
+    if (rule.a.smn !== undefined || rule.a.smx !== undefined) {
+      lines.push({
+        iconKey: 'battery',
+        text: `${labels.socWindowLabel} ${rule.a.smn ?? 0}% - ${rule.a.smx ?? 100}%`,
+      });
+    }
+  }
+
+  // Hold SoC (hs)
+  if (rule.a.t === 'hs' && rule.a.sl_ !== undefined) {
+    const high = rule.a.sh_ ?? rule.a.sl_;
+    lines.push({
+      iconKey: 'battery',
+      text: `${labels.holdLabel} ${rule.a.sl_}% - ${high}%${rule.a.hy !== undefined ? ` (${labels.hysteresisLabel} ${rule.a.hy}%)` : ''}`,
+    });
+    if (rule.a.maxp !== undefined) {
+      lines.push({ iconKey: 'gauge', text: `${labels.maxPowerLabel} ${rule.a.maxp} kW` });
+    }
+  }
+
   // PID
   if (rule.a.pid) {
     lines.push({ iconKey: 'cpu', text: labels.pidLabel });
@@ -597,6 +835,18 @@ export function getRuleSummary(rule: OptimizedScheduleRule): string {
     case 'dt':
       detail = `to ${rule.a.soc}%`;
       if (rule.a.maxp) detail += `, max ${rule.a.maxp} kW`;
+      break;
+    case 'bx':
+    case 'bi':
+      detail = `limit ${rule.a.lim ?? 0} kW`;
+      if (rule.a.fm === 'soft') detail += ' (soft)';
+      break;
+    case 'sc':
+      detail = `target ${rule.a.tg ?? 0} kW`;
+      if (rule.a.dmax === 0) detail += ', absorb-only';
+      break;
+    case 'hs':
+      detail = `${rule.a.sl_ ?? '?'}%${rule.a.sh_ !== undefined && rule.a.sh_ !== rule.a.sl_ ? ` - ${rule.a.sh_}%` : ''}`;
       break;
   }
 

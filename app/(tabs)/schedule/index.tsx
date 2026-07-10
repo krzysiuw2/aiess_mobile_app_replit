@@ -94,6 +94,15 @@ function buildDetailLabels(t: ReturnType<typeof useSettings>['t']): RuleDetailLa
       agg: ed.aggressive,
       con: ed.conservative,
     } as Record<Strategy, string>,
+    limitLabel: t.schedules.limitLabel,
+    softLabel: t.schedules.softLabel,
+    targetGridLabel: t.schedules.targetGridLabel,
+    socWindowLabel: t.schedules.socWindowLabel,
+    holdLabel: t.schedules.holdLabel,
+    hysteresisLabel: t.schedules.hysteresisLabel,
+    monthDaysLabel: t.schedules.monthDaysLabel,
+    recurrenceLabel: t.schedules.recurrenceLabel,
+    recurrences: t.schedules.recurrences,
   };
 }
 

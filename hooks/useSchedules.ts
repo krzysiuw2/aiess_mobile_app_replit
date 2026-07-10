@@ -32,8 +32,9 @@ interface UseSchedulesReturn {
   isLoading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
-  createRule: (rule: OptimizedScheduleRule, priority: Priority) => Promise<void>;
-  updateRule: (rule: OptimizedScheduleRule, priority: Priority, oldPriority?: Priority) => Promise<void>;
+  /** Resolve to the server's non-fatal `warnings[]` (legacy path), if any. */
+  createRule: (rule: OptimizedScheduleRule, priority: Priority) => Promise<string[] | undefined>;
+  updateRule: (rule: OptimizedScheduleRule, priority: Priority, oldPriority?: Priority) => Promise<string[] | undefined>;
   deleteRule: (ruleId: string, priority: Priority) => Promise<void>;
   toggleRule: (ruleId: string, priority: Priority) => Promise<void>;
   setSafety: (socMin: number, socMax: number) => Promise<void>;
@@ -158,7 +159,7 @@ export function useSchedules(): UseSchedulesReturn {
    * before every PUT. On 412 the section is refetched and the user's edit
    * re-applied once.
    */
-  const writeSchedulesViaDdb = useCallback(async (updatesFor: UpdatesFactory) => {
+  const writeSchedulesViaDdb = useCallback(async (updatesFor: UpdatesFactory): Promise<string[] | undefined> => {
     if (!siteId) throw new Error('No site selected');
 
     const attempt = async () => {
@@ -198,21 +199,24 @@ export function useSchedules(): UseSchedulesReturn {
       }
     }
     await fetchSchedules();
+    // The DDB config plane validates hard; no warnings channel yet.
+    return undefined;
   }, [siteId, fetchSchedules]);
 
   /** Legacy write path: partial whole-priority-array POST to /schedules. */
-  const writeSchedulesLegacy = useCallback(async (updatesFor: UpdatesFactory) => {
+  const writeSchedulesLegacy = useCallback(async (updatesFor: UpdatesFactory): Promise<string[] | undefined> => {
     if (!siteId || !rawSchedules) throw new Error('No site selected');
     const updates = updatesFor(rawSchedules.sch);
-    await saveSchedules(siteId, updates as Record<string, OptimizedScheduleRule[]>);
+    const res = await saveSchedules(siteId, updates as Record<string, OptimizedScheduleRule[]>);
     await fetchSchedules();
+    return Array.isArray(res.warnings) && res.warnings.length > 0 ? res.warnings : undefined;
   }, [siteId, rawSchedules, fetchSchedules]);
 
   const writeSchedules = useDdb ? writeSchedulesViaDdb : writeSchedulesLegacy;
 
   const createRule = useCallback(async (rule: OptimizedScheduleRule, priority: Priority) => {
     const key = `p_${priority}` as SchedulePriorityKey;
-    await writeSchedules((sch) => ({
+    return writeSchedules((sch) => ({
       [key]: [...(sch[key as keyof CloudSch] ?? []), rule],
     }));
   }, [writeSchedules]);
@@ -222,7 +226,7 @@ export function useSchedules(): UseSchedulesReturn {
     priority: Priority,
     oldPriority?: Priority
   ) => {
-    await writeSchedules((sch) => {
+    return writeSchedules((sch) => {
       const updates: Partial<Record<SchedulePriorityKey, OptimizedScheduleRule[]>> = {};
 
       if (oldPriority !== undefined && oldPriority !== priority) {
