@@ -203,6 +203,61 @@ async function runFluxQuery(query: string): Promise<Record<string, string>[]> {
   return parseInfluxCSV(csv);
 }
 
+// Devices screen: freshness + live mini-summary per site.
+export interface DeviceLiveStatus {
+  lastSeen: Date;
+  soc?: number;
+  batteryPower?: number;
+}
+
+/**
+ * Fetch the last telemetry point (timestamp, SoC, battery power) for a set of
+ * sites in a single Flux query. Sites absent from the result had no telemetry
+ * in the lookback window and should be treated as offline.
+ */
+export async function fetchDevicesLastSeen(
+  siteIds: string[]
+): Promise<Record<string, DeviceLiveStatus>> {
+  const result: Record<string, DeviceLiveStatus> = {};
+  if (siteIds.length === 0) return result;
+
+  const siteFilter = siteIds
+    .map(id => `r.site_id == "${id}"`)
+    .join(' or ');
+
+  const query = `
+    from(bucket: "aiess_v1")
+      |> range(start: -24h)
+      |> filter(fn: (r) => r._measurement == "energy_telemetry")
+      |> filter(fn: (r) => ${siteFilter})
+      |> filter(fn: (r) => r._field == "soc" or r._field == "pcs_power")
+      |> group(columns: ["site_id", "_field"])
+      |> last()
+  `;
+
+  try {
+    const rows = await runFluxQuery(query);
+    for (const row of rows) {
+      const siteId = row['site_id']?.trim();
+      const field = row['_field']?.trim();
+      const value = parseFloat(row['_value'] ?? '');
+      const time = Date.parse(row['_time'] ?? '');
+      if (!siteId || !field || isNaN(time)) continue;
+
+      const entry = result[siteId] ?? { lastSeen: new Date(time) };
+      if (time > entry.lastSeen.getTime()) entry.lastSeen = new Date(time);
+      if (!isNaN(value)) {
+        if (field === 'soc') entry.soc = value;
+        else if (field === 'pcs_power') entry.batteryPower = value;
+      }
+      result[siteId] = entry;
+    }
+  } catch (error) {
+    console.error('[InfluxDB] fetchDevicesLastSeen failed:', error);
+  }
+  return result;
+}
+
 /**
  * Fetch live data from InfluxDB for a specific site
  */

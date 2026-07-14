@@ -20,18 +20,36 @@ import Colors from '@/constants/colors';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { Device } from '@/types';
+import { fetchDevicesLastSeen, DeviceLiveStatus } from '@/lib/influxdb';
+import { formatPower } from '@/lib/format';
+
+// Telemetry newer than this counts as online.
+const ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
+const STATUS_REFRESH_MS = 60 * 1000;
+
+function formatLastSeen(lastSeen: Date, t: any): string {
+  const ageMs = Date.now() - lastSeen.getTime();
+  if (ageMs < 60 * 1000) return t.devices.justNow;
+  const minutes = Math.floor(ageMs / (60 * 1000));
+  if (minutes < 60) return t.devices.minutesAgo.replace('{n}', String(minutes));
+  const hours = Math.floor(minutes / 60);
+  return t.devices.hoursAgo.replace('{n}', String(hours));
+}
 
 interface DeviceCardProps {
   device: Device;
+  liveStatus?: DeviceLiveStatus;
   isSelected: boolean;
   onPress: () => void;
 }
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
-function DeviceCard({ device, isSelected, onPress }: DeviceCardProps) {
+function DeviceCard({ device, liveStatus, isSelected, onPress }: DeviceCardProps) {
   const { t } = useSettings();
-  const isActive = device.status === 'active';
+  const isOnline =
+    liveStatus != null &&
+    Date.now() - liveStatus.lastSeen.getTime() < ONLINE_THRESHOLD_MS;
   const pulseAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -90,15 +108,35 @@ function DeviceCard({ device, isSelected, onPress }: DeviceCardProps) {
         </View>
         <View style={[
           styles.statusBadge,
-          isActive ? styles.statusBadgeActive : styles.statusBadgeInactive,
+          isOnline ? styles.statusBadgeActive : styles.statusBadgeInactive,
         ]}>
-          {isActive ? (
+          {isOnline ? (
             <CheckCircle size={16} color={Colors.success} />
           ) : (
             <XCircle size={16} color={Colors.error} />
           )}
-          <Text style={styles.statusText}>{t.devices.status}</Text>
+          <Text style={[styles.statusText, isOnline ? styles.statusTextOnline : styles.statusTextOffline]}>
+            {isOnline ? t.devices.online : t.devices.offline}
+          </Text>
         </View>
+      </View>
+
+      <View style={styles.liveRow}>
+        <Text style={styles.liveText}>
+          {liveStatus
+            ? `${t.devices.lastSeen}: ${formatLastSeen(liveStatus.lastSeen, t)}`
+            : t.devices.noRecentData}
+        </Text>
+        {liveStatus?.soc != null && (
+          <Text style={styles.liveText}>
+            {t.devices.liveSoc}: <Text style={styles.liveValue}>{liveStatus.soc.toFixed(1)}%</Text>
+          </Text>
+        )}
+        {liveStatus?.batteryPower != null && (
+          <Text style={styles.liveText}>
+            {t.devices.livePower}: <Text style={styles.liveValue}>{formatPower(liveStatus.batteryPower)}</Text>
+          </Text>
+        )}
       </View>
 
       <Text style={styles.specLabel}>{t.devices.spec}</Text>
@@ -213,6 +251,25 @@ export default function DevicesScreen() {
   const { t } = useSettings();
   const { devices, isLoading, selectedDeviceId, selectDevice, isError, error, refreshDevices } = useDevices();
   const [scannerVisible, setScannerVisible] = useState(false);
+  const [liveStatuses, setLiveStatuses] = useState<Record<string, DeviceLiveStatus>>({});
+
+  useEffect(() => {
+    if (devices.length === 0) return;
+    let cancelled = false;
+    const siteIds = devices.map(d => d.device_id);
+
+    const load = async () => {
+      const statuses = await fetchDevicesLastSeen(siteIds);
+      if (!cancelled) setLiveStatuses(statuses);
+    };
+
+    load();
+    const interval = setInterval(load, STATUS_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [devices]);
 
   const handleDevicePress = async (device: Device) => {
     console.log('[Devices] Selected device:', device.id);
@@ -317,6 +374,7 @@ export default function DevicesScreen() {
           <DeviceCard
             key={device.id}
             device={device}
+            liveStatus={liveStatuses[device.device_id]}
             isSelected={device.id === selectedDeviceId}
             onPress={() => handleDevicePress(device)}
           />
@@ -488,6 +546,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500' as const,
     color: Colors.textSecondary,
+  },
+  statusTextOnline: {
+    color: Colors.success,
+    fontWeight: '600' as const,
+  },
+  statusTextOffline: {
+    color: Colors.error,
+    fontWeight: '600' as const,
+  },
+  liveRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap' as const,
+    gap: 12,
+    marginTop: -8,
+    marginBottom: 14,
+  },
+  liveText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  liveValue: {
+    fontWeight: '600' as const,
+    color: Colors.text,
   },
   specLabel: {
     fontSize: 12,
