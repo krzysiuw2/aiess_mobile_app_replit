@@ -8,6 +8,7 @@ export default function SettingsLayout() {
       <Stack.Screen name="system" />
       <Stack.Screen name="account" />
       <Stack.Screen name="app-settings" />
+      <Stack.Screen name="notifications" />
     </Stack>
   );
 }

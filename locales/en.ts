@@ -700,6 +700,48 @@ export default {
     appSettingsDesc: 'Language, preferences',
     pushNotifications: 'Push notifications',
     pushNotificationsDesc: 'Alerts about device offline, manual override and system events',
+    notificationsTitle: 'Notifications & Alerts',
+    notificationsMenuDesc: 'Push notifications, alert types and thresholds',
+    alertsSection: 'Alerts',
+    alertsSectionDesc: 'Choose which alerts you receive. Site thresholds apply to everyone and can be edited by owners and admins.',
+    alertSiteEnabled: 'Site alert',
+    alertThreshold: 'Threshold',
+    alertsRoleHint: 'Site thresholds can only be changed by the site owner or admin.',
+    notificationsSaveError: 'Could not save the alert setting. Please try again.',
+    alertTypes: {
+      device_offline: {
+        title: 'Device offline',
+        desc: 'No telemetry for over 10 minutes',
+      },
+      override: {
+        title: 'Manual override',
+        desc: 'Operator override issued or released',
+      },
+      soc_low: {
+        title: 'Battery low',
+        desc: 'State of charge drops below the threshold',
+      },
+      battery_temp_high: {
+        title: 'High battery temperature',
+        desc: 'Max cell temperature exceeds the threshold',
+      },
+      bms_fault: {
+        title: 'BMS fault',
+        desc: 'Battery management system reports an active fault',
+      },
+      grid_import_high: {
+        title: 'High grid import',
+        desc: 'Grid import power exceeds the threshold',
+      },
+      grid_export_high: {
+        title: 'High grid export',
+        desc: 'Grid export power exceeds the threshold',
+      },
+      agent_alerts: {
+        title: 'AI agent alerts',
+        desc: 'Rollback alerts and important agent events',
+      },
+    },
     required: 'Required',
     siteDescription: 'Site Description *',
     siteDescPlaceholder: 'Describe this site, e.g. warehouse with 200kW PV, peak demand 150kW...',

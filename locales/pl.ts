@@ -700,6 +700,48 @@ export default {
     appSettingsDesc: 'Język, preferencje',
     pushNotifications: 'Powiadomienia push',
     pushNotificationsDesc: 'Alerty o urządzeniu offline, sterowaniu ręcznym i zdarzeniach systemowych',
+    notificationsTitle: 'Powiadomienia i alerty',
+    notificationsMenuDesc: 'Powiadomienia push, typy alertów i progi',
+    alertsSection: 'Alerty',
+    alertsSectionDesc: 'Wybierz, które alerty chcesz otrzymywać. Progi lokalizacji dotyczą wszystkich i mogą je zmieniać właściciele i administratorzy.',
+    alertSiteEnabled: 'Alert lokalizacji',
+    alertThreshold: 'Próg',
+    alertsRoleHint: 'Progi lokalizacji może zmieniać tylko właściciel lub administrator.',
+    notificationsSaveError: 'Nie udało się zapisać ustawienia alertu. Spróbuj ponownie.',
+    alertTypes: {
+      device_offline: {
+        title: 'Urządzenie offline',
+        desc: 'Brak telemetrii przez ponad 10 minut',
+      },
+      override: {
+        title: 'Sterowanie ręczne',
+        desc: 'Włączenie lub wyłączenie sterowania ręcznego',
+      },
+      soc_low: {
+        title: 'Niski poziom baterii',
+        desc: 'Stan naładowania spada poniżej progu',
+      },
+      battery_temp_high: {
+        title: 'Wysoka temperatura baterii',
+        desc: 'Maksymalna temperatura ogniwa przekracza próg',
+      },
+      bms_fault: {
+        title: 'Błąd BMS',
+        desc: 'System zarządzania baterią zgłasza aktywny błąd',
+      },
+      grid_import_high: {
+        title: 'Wysoki pobór z sieci',
+        desc: 'Moc pobierana z sieci przekracza próg',
+      },
+      grid_export_high: {
+        title: 'Wysoki eksport do sieci',
+        desc: 'Moc oddawana do sieci przekracza próg',
+      },
+      agent_alerts: {
+        title: 'Alerty agenta AI',
+        desc: 'Alerty o wycofaniu zmian i ważne zdarzenia agenta',
+      },
+    },
     required: 'Wymagane',
     siteDescription: 'Opis lokalizacji *',
     siteDescPlaceholder: 'Opisz lokalizację, np. magazyn z PV 200kW, szczyt zapotrzebowania 150kW...',

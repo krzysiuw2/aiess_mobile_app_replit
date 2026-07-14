@@ -13,6 +13,7 @@ import {
   SlidersHorizontal,
   User,
   Smartphone,
+  Bell,
   DollarSign,
   ChevronRight,
 } from 'lucide-react-native';
@@ -76,6 +77,12 @@ export default function SettingsMenuScreen() {
           title={t.settings.accountSettings}
           description={t.settings.accountSettingsDesc}
           onPress={() => router.push('/(tabs)/settings/account')}
+        />
+        <MenuCard
+          icon={<Bell size={24} color={Colors.warning} />}
+          title={t.settings.notificationsTitle}
+          description={t.settings.notificationsMenuDesc}
+          onPress={() => router.push('/(tabs)/settings/notifications')}
         />
         <MenuCard
           icon={<Smartphone size={24} color={Colors.primary} />}

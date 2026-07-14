@@ -1,47 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { ArrowLeft, ChevronDown } from 'lucide-react-native';
+import { ArrowLeft, ChevronDown, ChevronRight, Bell } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
-import { useAuth } from '@/contexts/AuthContext';
 import { languageOptions } from '@/locales';
 import { Language } from '@/types';
-import {
-  getPushPreference,
-  setPushPreference,
-  registerForPushNotifications,
-  unregisterPushToken,
-} from '@/lib/push-notifications';
 
 export default function AppSettingsScreen() {
   const { t, language, setLanguage } = useSettings();
-  const { user } = useAuth();
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
-  const [pushEnabled, setPushEnabled] = useState(true);
-
-  useEffect(() => {
-    getPushPreference().then(setPushEnabled);
-  }, []);
-
-  const handlePushToggle = async (enabled: boolean) => {
-    setPushEnabled(enabled);
-    await setPushPreference(enabled);
-    if (!user?.id) return;
-    if (enabled) {
-      await registerForPushNotifications(user.id);
-    } else {
-      await unregisterPushToken(user.id);
-    }
-  };
 
   const handleLanguageChange = (lang: Language) => {
     setLanguage(lang);
@@ -98,14 +73,14 @@ export default function AppSettingsScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t.settings.pushNotifications}</Text>
-          <View style={styles.toggleRow}>
-            <Text style={styles.toggleDesc}>{t.settings.pushNotificationsDesc}</Text>
-            <Switch
-              value={pushEnabled}
-              onValueChange={handlePushToggle}
-              trackColor={{ true: Colors.primary }}
-            />
-          </View>
+          <TouchableOpacity
+            style={styles.toggleRow}
+            onPress={() => router.push('/(tabs)/settings/notifications')}
+          >
+            <Bell size={20} color={Colors.primary} />
+            <Text style={styles.toggleDesc}>{t.settings.notificationsMenuDesc}</Text>
+            <ChevronRight size={20} color={Colors.textSecondary} />
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
