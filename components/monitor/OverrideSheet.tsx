@@ -9,6 +9,7 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Keyboard,
 } from 'react-native';
 import { BatteryCharging, Battery, Pause } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -97,7 +98,9 @@ export default function OverrideSheet({
   return (
     <Modal transparent animationType="slide" visible onRequestClose={onClose}>
       <Pressable style={styles.overlay} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => {}}>
+        {/* Tapping anywhere in the sheet (outside an input) closes the iOS
+            number pad, which has no return/done key of its own. */}
+        <Pressable style={styles.sheet} onPress={Keyboard.dismiss}>
           <Text style={styles.title}>{ov.sheetTitle}</Text>
           <Text style={styles.subtitle}>{ov.sheetSubtitle}</Text>
 
