@@ -48,7 +48,13 @@ export default function OverrideSheet({
   const [action, setAction] = useState<IssueAction>('charge');
   const [power, setPower] = useState('50');
   const [ttlSec, setTtlSec] = useState(60 * 60);
+  const [customMinutes, setCustomMinutes] = useState('');
   const [reason, setReason] = useState('');
+
+  // A filled custom-minutes field wins over the preset chips.
+  const effectiveTtlSec = customMinutes.trim() !== ''
+    ? Math.round(parseFloat(customMinutes) * 60)
+    : ttlSec;
 
   if (!visible) return null;
 
@@ -61,11 +67,15 @@ export default function OverrideSheet({
       Alert.alert(t.common.error, ov.invalidPower);
       return;
     }
+    if (isNaN(effectiveTtlSec) || effectiveTtlSec < 60 || effectiveTtlSec > OVERRIDE_TTL_MAX_SEC) {
+      Alert.alert(t.common.error, ov.invalidDuration);
+      return;
+    }
     try {
       await onIssue({
         action,
         powerKw,
-        ttlSec,
+        ttlSec: effectiveTtlSec,
         reason: reason.trim() || undefined,
       });
       onClose();
@@ -129,17 +139,33 @@ export default function OverrideSheet({
           {/* TTL */}
           <Text style={styles.label}>{ov.duration}</Text>
           <View style={styles.actionRow}>
-            {TTL_PRESETS.map(({ sec, key }) => (
-              <TouchableOpacity
-                key={key}
-                style={[styles.ttlChip, ttlSec === sec && styles.actionChipActive]}
-                onPress={() => setTtlSec(sec)}
-              >
-                <Text style={[styles.actionChipText, ttlSec === sec && styles.actionChipTextActive]}>
-                  {ov[key]}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {TTL_PRESETS.map(({ sec, key }) => {
+              const selected = customMinutes.trim() === '' && ttlSec === sec;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={[styles.ttlChip, selected && styles.actionChipActive]}
+                  onPress={() => { setTtlSec(sec); setCustomMinutes(''); }}
+                >
+                  <Text style={[styles.actionChipText, selected && styles.actionChipTextActive]}>
+                    {ov[key]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <View style={styles.customTtlRow}>
+            <Text style={styles.customTtlLabel}>{ov.customDuration}</Text>
+            <TextInput
+              style={[styles.input, styles.customTtlInput, customMinutes.trim() !== '' && styles.customTtlInputActive]}
+              value={customMinutes}
+              onChangeText={(v) => setCustomMinutes(v.replace(/[^0-9]/g, ''))}
+              keyboardType="number-pad"
+              placeholder="90"
+              placeholderTextColor={Colors.textSecondary}
+              maxLength={4}
+            />
+            <Text style={styles.customTtlUnit}>{ov.minutesUnit}</Text>
           </View>
 
           {/* Reason */}
@@ -221,6 +247,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   hint: { fontSize: 11, color: Colors.textSecondary, marginTop: 4 },
+  customTtlRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  customTtlLabel: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  customTtlInput: { flex: 1, paddingVertical: 8 },
+  customTtlInputActive: { borderColor: Colors.primary },
+  customTtlUnit: { fontSize: 13, color: Colors.textSecondary },
   issueButton: {
     backgroundColor: Colors.primary,
     borderRadius: 12,

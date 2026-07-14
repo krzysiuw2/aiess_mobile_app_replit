@@ -655,47 +655,47 @@ export default function ScheduleListScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>
-            {surfaceMode === 'simple' ? t.schedules.simple.title : t.schedules.title}
-          </Text>
-          <Text style={styles.headerSubtitle}>
-            {surfaceMode === 'simple'
-              ? selectedDevice.name
-              : `${selectedDevice.name} - ${scheduleRules.length} ${t.schedules.rules}`}
-          </Text>
+        <Text style={styles.headerTitle}>
+          {surfaceMode === 'simple' ? t.schedules.simple.title : t.schedules.title}
+        </Text>
+        <Text style={styles.headerSubtitle}>
+          {surfaceMode === 'simple'
+            ? selectedDevice.name
+            : `${selectedDevice.name} - ${scheduleRules.length} ${t.schedules.rules}`}
+        </Text>
+      </View>
+
+      {/* Simple/Pro toggle row (own row — long PL title overflowed beside it) */}
+      <View style={styles.modeRow}>
+        <View style={styles.modeToggle}>
+          <TouchableOpacity
+            style={[styles.modeBtn, surfaceMode === 'simple' && styles.modeBtnActive]}
+            onPress={() => switchSurfaceMode('simple')}
+          >
+            <SlidersHorizontal size={13} color={surfaceMode === 'simple' ? '#fff' : Colors.textSecondary} />
+            <Text style={[styles.modeBtnText, surfaceMode === 'simple' && styles.modeBtnTextActive]}>
+              {t.schedules.simple.simpleTab}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeBtn, surfaceMode === 'pro' && styles.modeBtnActive]}
+            onPress={() => switchSurfaceMode('pro')}
+          >
+            <Settings2 size={13} color={surfaceMode === 'pro' ? '#fff' : Colors.textSecondary} />
+            <Text style={[styles.modeBtnText, surfaceMode === 'pro' && styles.modeBtnTextActive]}>
+              {t.schedules.simple.proTab}
+            </Text>
+          </TouchableOpacity>
         </View>
-        <View style={styles.headerRightRow}>
-          {surfaceMode === 'pro' && (
-            <TouchableOpacity
-              style={styles.historyButton}
-              onPress={() => setHistoryVisible(true)}
-              accessibilityLabel={t.schedules.history.title}
-            >
-              <History size={18} color={Colors.primary} />
-            </TouchableOpacity>
-          )}
-          <View style={styles.modeToggle}>
-            <TouchableOpacity
-              style={[styles.modeBtn, surfaceMode === 'simple' && styles.modeBtnActive]}
-              onPress={() => switchSurfaceMode('simple')}
-            >
-              <SlidersHorizontal size={13} color={surfaceMode === 'simple' ? '#fff' : Colors.textSecondary} />
-              <Text style={[styles.modeBtnText, surfaceMode === 'simple' && styles.modeBtnTextActive]}>
-                {t.schedules.simple.simpleTab}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modeBtn, surfaceMode === 'pro' && styles.modeBtnActive]}
-              onPress={() => switchSurfaceMode('pro')}
-            >
-              <Settings2 size={13} color={surfaceMode === 'pro' ? '#fff' : Colors.textSecondary} />
-              <Text style={[styles.modeBtnText, surfaceMode === 'pro' && styles.modeBtnTextActive]}>
-                {t.schedules.simple.proTab}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        {surfaceMode === 'pro' && (
+          <TouchableOpacity
+            style={styles.historyButton}
+            onPress={() => setHistoryVisible(true)}
+            accessibilityLabel={t.schedules.history.title}
+          >
+            <History size={18} color={Colors.primary} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Simple mode: behavior control surface */}
@@ -925,10 +925,10 @@ export default function ScheduleListScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  header: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  header: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 },
   headerTitle: { fontSize: 28, fontWeight: '700', color: Colors.text },
   headerSubtitle: { fontSize: 14, color: Colors.textSecondary, marginTop: 4 },
-  headerRightRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  modeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 },
   historyButton: {
     width: 34,
     height: 34,

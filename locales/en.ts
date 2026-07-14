@@ -156,6 +156,9 @@ export default {
     releaseConfirmBody: 'The manual override will be released immediately and the system resumes its plan.',
     failed: 'Failed to set override',
     invalidPower: 'Power must be 0 or greater',
+    invalidDuration: 'Duration must be between 1 minute and 24 hours',
+    customDuration: 'Custom:',
+    minutesUnit: 'min',
   },
   ai: {
     title: 'AI Chat',

@@ -56,7 +56,9 @@ const ANALYTICS_CONFIG: Record<string, {
     aggregation: '1m',
     fieldSuffix: '_mean',
     rangeStart: '-24h',
-    window: '5m',
+    // Source data is 1m; 2m keeps the daily line dense (~720 pts) without
+    // the render cost of the full 1440.
+    window: '2m',
     hours: 24,
   },
   week: {
@@ -81,7 +83,7 @@ const ANALYTICS_CONFIG: Record<string, {
     aggregation: '1m',
     fieldSuffix: '_mean',
     rangeStart: '-24h',
-    window: '5m',
+    window: '2m',
     hours: 24,
   },
   '7d': {

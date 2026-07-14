@@ -156,6 +156,9 @@ export default {
     releaseConfirmBody: 'Sterowanie ręczne zostanie natychmiast zwolnione, a system wznowi realizację planu.',
     failed: 'Nie udało się ustawić sterowania',
     invalidPower: 'Moc musi być równa 0 lub większa',
+    invalidDuration: 'Czas trwania musi wynosić od 1 minuty do 24 godzin',
+    customDuration: 'Własny:',
+    minutesUnit: 'min',
   },
   ai: {
     title: 'AI Chat',

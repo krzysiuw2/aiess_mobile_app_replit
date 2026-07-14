@@ -51,7 +51,7 @@ function getRange(selectedDate: Date, timeRange: string): {
       start.setHours(0, 0, 0, 0);
       stop.setHours(0, 0, 0, 0);
       stop.setDate(stop.getDate() + 1);
-      intervalMs = 15 * MIN;          // fetch is 5m; 15m smooths minor noise
+      intervalMs = 5 * MIN;           // fetch is 2m; 5m slots (288/day) keep the line dense
       break;
     case '7d':
       start.setHours(0, 0, 0, 0);
@@ -79,7 +79,7 @@ function getRange(selectedDate: Date, timeRange: string): {
       start.setHours(0, 0, 0, 0);
       stop.setHours(0, 0, 0, 0);
       stop.setDate(stop.getDate() + 1);
-      intervalMs = 15 * MIN;
+      intervalMs = 5 * MIN;
   }
 
   const slotCount = Math.max(1, Math.round((stop.getTime() - start.getTime()) / intervalMs));
