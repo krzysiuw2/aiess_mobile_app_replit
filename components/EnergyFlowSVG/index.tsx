@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, useWindowDimensions } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, StyleSheet, useWindowDimensions, LayoutChangeEvent } from 'react-native';
 import Svg from 'react-native-svg';
 import type { EnergyFlowProps, DerivedState, FlowState } from './types';
 
@@ -86,7 +86,12 @@ function deriveState(props: EnergyFlowProps): DerivedState {
   const rawAction = liveData?.activeRuleAction ?? 'sb';
   const aiColor = AI_COLOR_MAP[rawAction] ?? '#64748b';
   const rawRuleId = liveData?.activeRuleId ?? 'local_default_standby';
-  const aiRuleId = rawRuleId === 'local_default_standby' ? t.monitor.standby : rawRuleId;
+  // Synthetic rule ids from the edge decision engine get friendly labels.
+  const aiRuleId =
+    rawRuleId === 'local_default_standby' ? t.monitor.standby :
+    rawRuleId === 'app_override' ? t.monitor.manualOverride :
+    rawRuleId === 'scada_override' ? t.monitor.scadaOverride :
+    rawRuleId;
 
   let aiAction: string;
   if (rawAction === 'ch') aiAction = t.monitor.charge;
@@ -148,8 +153,18 @@ function flowDirFromState(s: FlowState): 1 | -1 | 0 {
 export default function EnergyFlowSVG(props: EnergyFlowProps) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
+  // Measure the space the flex container actually got — the fixed
+  // VERTICAL_CHROME guess breaks when extra rows (override banner, plan
+  // chips) appear above and the oversized diagram overflows on top of them.
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
+  const onContainerLayout = (e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    if (h > 0 && h !== measuredHeight) setMeasuredHeight(h);
+  };
+
+  const availableHeight = measuredHeight ?? (screenHeight - VERTICAL_CHROME);
   const fromScreen = screenWidth - 32;
-  const fromHeight = (screenHeight - VERTICAL_CHROME) * (VIEWBOX_W / VIEWBOX_H);
+  const fromHeight = availableHeight * (VIEWBOX_W / VIEWBOX_H);
   const diagramWidth = Math.min(fromScreen, fromHeight, MAX_WIDTH);
   const diagramHeight = diagramWidth / (VIEWBOX_W / VIEWBOX_H);
 
@@ -296,7 +311,7 @@ export default function EnergyFlowSVG(props: EnergyFlowProps) {
   }, []);
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} onLayout={onContainerLayout}>
       <View style={{ width: diagramWidth, height: diagramHeight }}>
         <Svg
           viewBox={`0 0 ${VIEWBOX_W} ${VIEWBOX_H}`}
@@ -391,5 +406,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
 });

@@ -60,30 +60,28 @@ export default function OverrideBanner({
     ? liveData.activeRulePower
     : undefined;
 
+  // Stacked layout: the long release-button label (esp. PL) squeezed the
+  // title into a one-word-per-line column when everything shared one row.
   return (
     <View style={[styles.banner, styles.bannerApp]}>
-      <View style={styles.iconWrap}>
-        <Hand size={18} color={Colors.primary} />
-      </View>
-      <View style={styles.textWrap}>
-        <Text style={styles.titleApp}>
+      <View style={styles.topRow}>
+        <Hand size={16} color={Colors.primary} />
+        <Text style={styles.titleApp} numberOfLines={1}>
           {ov.bannerTitleApp}
           {active.action ? ` — ${actionLabel}` : ''}
         </Text>
-        <Text style={styles.bodyApp}>
-          {actualKw !== undefined
-            ? `${ov.actualPower}: ${actualKw} kW`
-            : active.requestedPowerKw !== undefined
-              ? `${ov.requestedPower}: ${active.requestedPowerKw} kW`
-              : ''}
-          {active.remainingSec !== undefined
-            ? `${actualKw !== undefined || active.requestedPowerKw !== undefined ? ' · ' : ''}${ov.remaining}: ${formatCountdown(active.remainingSec)}`
-            : ''}
-        </Text>
-        {active.optimistic && (
-          <Text style={styles.pendingText}>{ov.pendingConfirm}</Text>
-        )}
       </View>
+      <Text style={styles.bodyApp}>
+        {actualKw !== undefined
+          ? `${ov.actualPower}: ${actualKw} kW`
+          : active.requestedPowerKw !== undefined
+            ? `${ov.requestedPower}: ${active.requestedPowerKw} kW`
+            : ''}
+        {active.remainingSec !== undefined
+          ? `${actualKw !== undefined || active.requestedPowerKw !== undefined ? ' · ' : ''}${ov.remaining}: ${formatCountdown(active.remainingSec)}`
+          : ''}
+        {active.optimistic ? `  ·  ${ov.pendingConfirm}` : ''}
+      </Text>
       {canRelease && (
         <TouchableOpacity
           style={styles.releaseButton}
@@ -106,14 +104,13 @@ export default function OverrideBanner({
 
 const styles = StyleSheet.create({
   banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
     borderRadius: 12,
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     marginBottom: 12,
-    gap: 10,
     borderWidth: 1,
   },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   bannerApp: {
     backgroundColor: Colors.primaryLight,
     borderColor: Colors.primary + '55',
@@ -121,24 +118,27 @@ const styles = StyleSheet.create({
   bannerScada: {
     backgroundColor: '#FEF3C7',
     borderColor: '#FCD34D',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   iconWrap: { width: 28, alignItems: 'center' },
   textWrap: { flex: 1 },
-  titleApp: { fontSize: 13, fontWeight: '700', color: Colors.primary },
-  bodyApp: { fontSize: 12, color: Colors.text, marginTop: 2 },
-  pendingText: { fontSize: 11, color: Colors.textSecondary, marginTop: 2, fontStyle: 'italic' },
+  titleApp: { flex: 1, fontSize: 13, fontWeight: '700', color: Colors.primary },
+  bodyApp: { fontSize: 12, color: Colors.text, marginTop: 4 },
   titleScada: { fontSize: 13, fontWeight: '700', color: '#92400E' },
   bodyScada: { fontSize: 12, color: '#92400E', marginTop: 2 },
   releaseButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
+    justifyContent: 'center',
+    gap: 6,
     paddingVertical: 8,
     borderRadius: 8,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.primary + '55',
+    marginTop: 8,
   },
   releaseText: { fontSize: 12, fontWeight: '600', color: Colors.primary },
 });

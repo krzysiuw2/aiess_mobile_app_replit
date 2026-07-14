@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -9,25 +9,21 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
-import { CheckCircle, AlertCircle, WifiOff, RefreshCw, Hand } from 'lucide-react-native';
+import { CheckCircle, AlertCircle, WifiOff, RefreshCw } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useDevices, useLiveData } from '@/contexts/DeviceContext';
 import { useSettings } from '@/contexts/SettingsContext';
-import { useSiteConfig } from '@/hooks/useSiteConfig';
 import { useOverride } from '@/hooks/useOverride';
 import EnergyFlowWithFallback from '@/components/EnergyFlowWithFallback';
 import OverrideBanner from '@/components/monitor/OverrideBanner';
-import OverrideSheet from '@/components/monitor/OverrideSheet';
 import PlanChips from '@/components/monitor/PlanChips';
 
 export default function MonitorScreen() {
   const { t } = useSettings();
   const { selectedDevice, canIssueOverride } = useDevices();
-  const { siteConfig } = useSiteConfig();
   const isFocused = useIsFocused();
   const { data: liveData, isLoading, isError, error, refetch } = useLiveData(selectedDevice?.device_id ?? null, isFocused);
   const override = useOverride(selectedDevice?.device_id ?? null, liveData);
-  const [showOverrideSheet, setShowOverrideSheet] = useState(false);
 
   const handleRelease = () => {
     Alert.alert(
@@ -77,17 +73,6 @@ export default function MonitorScreen() {
             <Text style={styles.statusDeviceName}>{selectedDevice.name}</Text>
             <Text style={styles.statusSiteId}>{selectedDevice.device_id}</Text>
           </View>
-          {/* Override entry point — visible to owner/admin only (UI gating,
-              ADR 0009). The banner below stays visible for every role. */}
-          {canIssueOverride && !override.active && (
-            <TouchableOpacity
-              style={styles.overrideButton}
-              onPress={() => setShowOverrideSheet(true)}
-            >
-              <Hand size={14} color={Colors.primary} />
-              <Text style={styles.overrideButtonText}>{t.override.buttonLabel}</Text>
-            </TouchableOpacity>
-          )}
           <View style={[styles.statusBadge, isError && styles.statusBadgeError]}>
             {isError ? (
               <>
@@ -140,17 +125,6 @@ export default function MonitorScreen() {
           <EnergyFlowWithFallback liveData={liveData} t={t} />
         )}
       </View>
-
-      {/* Override bottom sheet */}
-      <OverrideSheet
-        visible={showOverrideSheet}
-        onClose={() => setShowOverrideSheet(false)}
-        isSubmitting={override.isSubmitting}
-        onIssue={override.issue}
-        maxChargeKw={siteConfig?.power_limits?.max_charge_kw}
-        maxDischargeKw={siteConfig?.power_limits?.max_discharge_kw}
-        t={t}
-      />
     </SafeAreaView>
   );
 }
@@ -218,21 +192,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textOnDarkSecondary,
     marginTop: 2,
-  },
-  overrideButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: Colors.primaryLight,
-    marginRight: 8,
-  },
-  overrideButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.primary,
   },
   statusBadge: {
     flexDirection: 'row',

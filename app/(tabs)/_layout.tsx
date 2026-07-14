@@ -3,7 +3,7 @@ import {
   Network,
   Gauge,
   MessageSquare,
-  CalendarClock,
+  SlidersHorizontal,
   BarChart3,
   Settings,
 } from 'lucide-react-native';
@@ -58,7 +58,7 @@ export default function TabLayout() {
         name="schedule"
         options={{
           title: t.tabs.schedule,
-          tabBarIcon: ({ color, size }) => <CalendarClock size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <SlidersHorizontal size={size} color={color} />,
         }}
       />
       <Tabs.Screen

@@ -57,6 +57,8 @@ export interface MonitorTranslations {
   load: string;
   pv: string;
   aiLogic: string;
+  manualOverride: string;
+  scadaOverride: string;
   ruleId: string;
   action: string;
   targetPower: string;

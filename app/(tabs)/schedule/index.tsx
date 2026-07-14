@@ -60,6 +60,7 @@ import { getMonday, formatWeekRange, formatDayLabel } from '@/lib/schedule-calen
 import ScheduleWeekGrid from '@/components/schedule/ScheduleWeekGrid';
 import ScheduleDayGrid from '@/components/schedule/ScheduleDayGrid';
 import BehaviorSettings from '@/components/schedule/BehaviorSettings';
+import OverrideCard from '@/components/schedule/OverrideCard';
 import ScheduleHistorySheet from '@/components/schedule/ScheduleHistorySheet';
 import type { ScheduleRuleWithPriority, ReadOnlyScheduleRule, Strategy } from '@/types';
 import type { RuleFavorite } from '@/lib/rule-favorites';
@@ -664,6 +665,9 @@ export default function ScheduleListScreen() {
             : `${selectedDevice.name} - ${scheduleRules.length} ${t.schedules.rules}`}
         </Text>
       </View>
+
+      {/* Manual override — this tab is the single control surface */}
+      <OverrideCard />
 
       {/* Simple/Pro toggle row (own row — long PL title overflowed beside it) */}
       <View style={styles.modeRow}>
