@@ -48,6 +48,7 @@ import { ForecastView } from '@/components/analytics/ForecastView';
 import { FinancialView } from '@/components/analytics/FinancialView';
 import { MarketDataView } from '@/components/analytics/MarketDataView';
 import { AiLogicView } from '@/components/ai-agent/AiLogicView';
+import { FEATURES } from '@/constants/features';
 
 type AnalyticsTab = 'usage' | 'forecasts' | 'market_data' | 'financial' | 'battery' | 'ai_logic';
 
@@ -367,7 +368,9 @@ export default function AnalyticsScreen() {
               : []),
             { key: 'financial' as AnalyticsTab, icon: DollarSign, label: ft.financial },
             { key: 'battery' as AnalyticsTab, icon: Activity, label: bt.batteryData },
-            { key: 'ai_logic' as AnalyticsTab, icon: BrainCircuit, label: t.aiAgent.logicTab },
+            ...(FEATURES.aiLogicTab
+              ? [{ key: 'ai_logic' as AnalyticsTab, icon: BrainCircuit, label: t.aiAgent.logicTab }]
+              : []),
           ]).map(({ key, icon: Icon, label }) => {
             const isActive = activeTab === key;
             return (
