@@ -15,10 +15,11 @@ import { ArrowLeft, LogOut, User, Trash2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { unregisterPushToken } from '@/lib/push-notifications';
 
 export default function AccountSettingsScreen() {
   const { t } = useSettings();
-  const { logout, deleteAccount, isDeletingAccount } = useAuth();
+  const { user, logout, deleteAccount, isDeletingAccount } = useAuth();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
@@ -34,6 +35,8 @@ export default function AccountSettingsScreen() {
           text: t.settings.logOut,
           style: 'destructive',
           onPress: async () => {
+            // Stop push delivery to this device once the user signs out.
+            if (user?.id) await unregisterPushToken(user.id);
             await logout();
             router.replace('/(auth)/login');
           },
