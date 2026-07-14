@@ -217,7 +217,7 @@ export default {
     quickPvForecast: 'What is the PV production forecast for tomorrow?',
   },
   schedules: {
-    title: 'Schedules',
+    title: 'Control',
     subtitle: 'Active rules',
     ruleBuilder: 'Rule builder',
     addRule: 'Add new rule',

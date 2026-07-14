@@ -217,7 +217,7 @@ export default {
     quickPvForecast: 'Jaka jest prognoza produkcji PV na jutro?',
   },
   schedules: {
-    title: 'Harmonogramy',
+    title: 'Sterowanie',
     subtitle: 'Aktywne reguły',
     ruleBuilder: 'Kreator reguł',
     addRule: 'Dodaj nową regułę',
