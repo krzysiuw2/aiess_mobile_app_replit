@@ -49,6 +49,7 @@ import { FinancialView } from '@/components/analytics/FinancialView';
 import { MarketDataView } from '@/components/analytics/MarketDataView';
 import { AiLogicView } from '@/components/ai-agent/AiLogicView';
 import { FEATURES } from '@/constants/features';
+import { formatPower } from '@/lib/format';
 
 type AnalyticsTab = 'usage' | 'forecasts' | 'market_data' | 'financial' | 'battery' | 'ai_logic';
 
@@ -513,7 +514,7 @@ export default function AnalyticsScreen() {
             <View style={styles.kpiRow}>
               <KPICard
                 title={t.analytics.peakGridDemand}
-                value={`${peakDemand.gridPeak.value.toFixed(1)} kW`}
+                value={formatPower(peakDemand.gridPeak.value)}
                 subtitle={new Date(peakDemand.gridPeak.timestamp).toLocaleTimeString(locale, {
                   hour: '2-digit',
                   minute: '2-digit',
@@ -524,7 +525,7 @@ export default function AnalyticsScreen() {
               />
               <KPICard
                 title={t.analytics.peakFactoryLoad}
-                value={`${peakDemand.factoryPeak.value.toFixed(1)} kW`}
+                value={formatPower(peakDemand.factoryPeak.value)}
                 subtitle={new Date(peakDemand.factoryPeak.timestamp).toLocaleTimeString(locale, {
                   hour: '2-digit',
                   minute: '2-digit',

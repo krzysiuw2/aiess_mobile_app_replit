@@ -5,6 +5,7 @@ import Colors from '@/constants/colors';
 import type { ActiveOverrideState } from '@/hooks/useOverride';
 import type { LiveData } from '@/types';
 import type { TranslationKeys } from '@/locales';
+import { formatPower } from '@/lib/format';
 
 interface OverrideBannerProps {
   active: ActiveOverrideState;
@@ -73,9 +74,9 @@ export default function OverrideBanner({
       </View>
       <Text style={styles.bodyApp}>
         {actualKw !== undefined
-          ? `${ov.actualPower}: ${actualKw} kW`
+          ? `${ov.actualPower}: ${formatPower(actualKw)}`
           : active.requestedPowerKw !== undefined
-            ? `${ov.requestedPower}: ${active.requestedPowerKw} kW`
+            ? `${ov.requestedPower}: ${formatPower(active.requestedPowerKw)}`
             : ''}
         {active.remainingSec !== undefined
           ? `${actualKw !== undefined || active.requestedPowerKw !== undefined ? ' · ' : ''}${ov.remaining}: ${formatCountdown(active.remainingSec)}`

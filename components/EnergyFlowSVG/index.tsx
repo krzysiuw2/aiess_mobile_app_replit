@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, useWindowDimensions, LayoutChangeEvent } from 'react-native';
 import Svg from 'react-native-svg';
 import type { EnergyFlowProps, DerivedState, FlowState } from './types';
+import { formatPower } from '@/lib/format';
 
 import FlowLines from './FlowLines';
 import BatteryNode from './BatteryNode';
@@ -23,6 +24,7 @@ const AI_COLOR_MAP: Record<string, string> = {
   dis: '#f59e0b',
 };
 
+// SoC only — power values use the shared formatPower (MW scaling for 500 kW+ sites).
 const formatValue = (v: number): string =>
   Math.abs(v) < 100 ? v.toFixed(1) : Math.round(v).toString();
 
@@ -55,13 +57,13 @@ function deriveState(props: EnergyFlowProps): DerivedState {
   const statusText = t.monitor[battStatus];
 
   const socValue = `${formatValue(batterySoc)} %`;
-  const battPowerValue = `${formatValue(Math.abs(batteryPower))} kW`;
-  const gridValue = `${formatValue(gridPower)} kW`;
-  const loadValue = `${formatValue(loadPower)} kW`;
-  const pvValue = `${formatValue(pvPower)} kW`;
+  const battPowerValue = formatPower(Math.abs(batteryPower));
+  const gridValue = formatPower(gridPower);
+  const loadValue = formatPower(loadPower);
+  const pvValue = formatPower(pvPower);
 
   const fmtAvg = (v: number | undefined): string | null =>
-    v != null ? `${formatValue(v)} kW` : null;
+    v != null ? formatPower(v) : null;
 
   const gridAvg1m = fmtAvg(liveData?.gridPowerAvg1m);
   const gridAvg5m = fmtAvg(liveData?.gridPowerAvg5m);
@@ -99,7 +101,7 @@ function deriveState(props: EnergyFlowProps): DerivedState {
   else aiAction = t.monitor.standby;
 
   const aiPowerRaw = liveData?.activeRulePower;
-  const aiPower = aiPowerRaw != null ? `${formatValue(aiPowerRaw)} kW` : '—';
+  const aiPower = aiPowerRaw != null ? formatPower(aiPowerRaw) : '—';
   const aiPowerColor = rawAction === 'sb' ? '#64748b' : '#1e293b';
 
   return {
