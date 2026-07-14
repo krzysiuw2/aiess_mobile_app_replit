@@ -11,9 +11,12 @@ import React from 'react';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { DeviceProvider } from '@/contexts/DeviceContext';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 export default function TabLayout() {
   const { t } = useSettings();
+  // Register the device push token once the user is inside the app.
+  usePushNotifications();
 
   return (
     <DeviceProvider>

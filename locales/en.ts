@@ -698,6 +698,8 @@ export default {
     accountSettingsDesc: 'Profile, sign out',
     appSettings: 'App Settings',
     appSettingsDesc: 'Language, preferences',
+    pushNotifications: 'Push notifications',
+    pushNotificationsDesc: 'Alerts about device offline, manual override and system events',
     required: 'Required',
     siteDescription: 'Site Description *',
     siteDescPlaceholder: 'Describe this site, e.g. warehouse with 200kW PV, peak demand 150kW...',

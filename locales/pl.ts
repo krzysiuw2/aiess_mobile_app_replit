@@ -698,6 +698,8 @@ export default {
     accountSettingsDesc: 'Profil, wylogowanie',
     appSettings: 'Ustawienia aplikacji',
     appSettingsDesc: 'Język, preferencje',
+    pushNotifications: 'Powiadomienia push',
+    pushNotificationsDesc: 'Alerty o urządzeniu offline, sterowaniu ręcznym i zdarzeniach systemowych',
     required: 'Wymagane',
     siteDescription: 'Opis lokalizacji *',
     siteDescPlaceholder: 'Opisz lokalizację, np. magazyn z PV 200kW, szczyt zapotrzebowania 150kW...',

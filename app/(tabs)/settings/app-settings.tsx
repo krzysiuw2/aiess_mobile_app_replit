@@ -1,22 +1,47 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ArrowLeft, ChevronDown } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { languageOptions } from '@/locales';
 import { Language } from '@/types';
+import {
+  getPushPreference,
+  setPushPreference,
+  registerForPushNotifications,
+  unregisterPushToken,
+} from '@/lib/push-notifications';
 
 export default function AppSettingsScreen() {
   const { t, language, setLanguage } = useSettings();
+  const { user } = useAuth();
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(true);
+
+  useEffect(() => {
+    getPushPreference().then(setPushEnabled);
+  }, []);
+
+  const handlePushToggle = async (enabled: boolean) => {
+    setPushEnabled(enabled);
+    await setPushPreference(enabled);
+    if (!user?.id) return;
+    if (enabled) {
+      await registerForPushNotifications(user.id);
+    } else {
+      await unregisterPushToken(user.id);
+    }
+  };
 
   const handleLanguageChange = (lang: Language) => {
     setLanguage(lang);
@@ -69,6 +94,18 @@ export default function AppSettingsScreen() {
               ))}
             </View>
           )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t.settings.pushNotifications}</Text>
+          <View style={styles.toggleRow}>
+            <Text style={styles.toggleDesc}>{t.settings.pushNotificationsDesc}</Text>
+            <Switch
+              value={pushEnabled}
+              onValueChange={handlePushToggle}
+              trackColor={{ true: Colors.primary }}
+            />
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -154,5 +191,22 @@ const styles = StyleSheet.create({
   dropdownItemTextActive: {
     color: Colors.primary,
     fontWeight: '500',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  toggleDesc: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 18,
   },
 });
