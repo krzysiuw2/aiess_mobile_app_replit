@@ -1,8 +1,9 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import React, { useEffect } from 'react';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { SettingsProvider, useSettings } from '@/contexts/SettingsContext';
@@ -33,6 +34,19 @@ function AppContent() {
   useEffect(() => {
     if (fontsLoaded) SplashScreen.hideAsync();
   }, [fontsLoaded]);
+
+  // Tie React Query's focus state to the OS app state so interval-based
+  // queries (e.g. the 10s live monitor) stop polling InfluxDB while the app is
+  // backgrounded, instead of running indefinitely and burning query-count.
+  useEffect(() => {
+    const onAppStateChange = (status: AppStateStatus) => {
+      if (Platform.OS !== 'web') {
+        focusManager.setFocused(status === 'active');
+      }
+    };
+    const subscription = AppState.addEventListener('change', onAppStateChange);
+    return () => subscription.remove();
+  }, []);
 
   return (
     <>
