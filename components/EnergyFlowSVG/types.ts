@@ -75,10 +75,14 @@ export interface EnergyFlowTranslations {
   avg5min: string;
 }
 
+export type EnergyFlowNode = 'battery' | 'grid' | 'load' | 'pv';
+
 export interface EnergyFlowProps {
   liveData: LiveData | null | undefined;
   t: {
     monitor: MonitorTranslations;
     energyFlow: EnergyFlowTranslations;
   };
+  /** Tap on a node (battery/grid/load/pv) — e.g. deep-link into analytics. */
+  onNodePress?: (node: EnergyFlowNode) => void;
 }

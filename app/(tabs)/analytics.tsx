@@ -50,6 +50,7 @@ import { MarketDataView } from '@/components/analytics/MarketDataView';
 import { AiLogicView } from '@/components/ai-agent/AiLogicView';
 import { FEATURES } from '@/constants/features';
 import { formatPower } from '@/lib/format';
+import { useLocalSearchParams } from 'expo-router';
 
 type AnalyticsTab = 'usage' | 'forecasts' | 'market_data' | 'financial' | 'battery' | 'ai_logic';
 
@@ -168,6 +169,14 @@ export default function AnalyticsScreen() {
   const locale = language === 'pl' ? 'pl-PL' : 'en-US';
 
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('usage');
+  // Deep-link target from other screens (e.g. tapping a Monitor node).
+  const { view } = useLocalSearchParams<{ view?: string }>();
+  useEffect(() => {
+    const valid: AnalyticsTab[] = ['usage', 'forecasts', 'market_data', 'financial', 'battery', 'ai_logic'];
+    if (view && valid.includes(view as AnalyticsTab)) {
+      setActiveTab(view as AnalyticsTab);
+    }
+  }, [view]);
   const [timeRange, setTimeRange] = useState<string>('24h');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);

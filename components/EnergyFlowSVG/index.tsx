@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, useWindowDimensions, LayoutChangeEvent } from 'react-native';
+import { View, StyleSheet, useWindowDimensions, LayoutChangeEvent, Pressable } from 'react-native';
 import Svg from 'react-native-svg';
-import type { EnergyFlowProps, DerivedState, FlowState } from './types';
+import type { EnergyFlowProps, DerivedState, FlowState, EnergyFlowNode } from './types';
 import { formatPower } from '@/lib/format';
 
 import FlowLines from './FlowLines';
@@ -17,6 +17,14 @@ const VIEWBOX_W = 350;
 const VIEWBOX_H = 550;
 const MAX_WIDTH = 500;
 const VERTICAL_CHROME = 180;
+
+// Tap targets over the SVG nodes, in viewbox coordinates (scaled at render).
+const NODE_HITBOXES: { node: EnergyFlowNode; x: number; y: number; w: number; h: number }[] = [
+  { node: 'battery', x: 10, y: 10, w: 90, h: 130 },
+  { node: 'grid', x: 0, y: 420, w: 110, h: 80 },
+  { node: 'load', x: 122, y: 420, w: 110, h: 80 },
+  { node: 'pv', x: 240, y: 420, w: 110, h: 80 },
+];
 
 const AI_COLOR_MAP: Record<string, string> = {
   ch: '#3b82f6',
@@ -398,6 +406,23 @@ export default function EnergyFlowSVG(props: EnergyFlowProps) {
             estimatedLabel={props.t.monitor.estimated}
           />
         </Svg>
+
+        {props.onNodePress && NODE_HITBOXES.map(({ node, x, y, w, h }) => {
+          const scale = diagramWidth / VIEWBOX_W;
+          return (
+            <Pressable
+              key={node}
+              onPress={() => props.onNodePress?.(node)}
+              style={{
+                position: 'absolute',
+                left: x * scale,
+                top: y * scale,
+                width: w * scale,
+                height: h * scale,
+              }}
+            />
+          );
+        })}
       </View>
     </View>
   );

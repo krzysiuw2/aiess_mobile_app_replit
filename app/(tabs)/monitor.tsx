@@ -14,7 +14,9 @@ import Colors from '@/constants/colors';
 import { useDevices, useLiveData } from '@/contexts/DeviceContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useOverride } from '@/hooks/useOverride';
+import { router } from 'expo-router';
 import EnergyFlowWithFallback from '@/components/EnergyFlowWithFallback';
+import type { EnergyFlowNode } from '@/components/EnergyFlowSVG/types';
 import OverrideBanner from '@/components/monitor/OverrideBanner';
 import PlanChips from '@/components/monitor/PlanChips';
 
@@ -122,7 +124,15 @@ export default function MonitorScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          <EnergyFlowWithFallback liveData={liveData} t={t} />
+          <EnergyFlowWithFallback
+            liveData={liveData}
+            t={t}
+            onNodePress={(node: EnergyFlowNode) => {
+              // Battery opens the battery-detail view; the rest land on usage.
+              const view = node === 'battery' ? 'battery' : 'usage';
+              router.push({ pathname: '/(tabs)/analytics', params: { view } });
+            }}
+          />
         )}
       </View>
     </SafeAreaView>
