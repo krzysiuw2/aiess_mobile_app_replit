@@ -103,6 +103,27 @@ export async function registerForPushNotifications(userId: string): Promise<stri
   }
 }
 
+/**
+ * Fire-and-forget push to every user of a site via the send-push edge
+ * function (authenticated with the caller's JWT). Failures are logged only —
+ * push is never allowed to break the triggering action.
+ */
+export async function notifySitePush(
+  siteId: string,
+  title: string,
+  body: string,
+  data?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const { error } = await supabase.functions.invoke('send-push', {
+      body: { action: 'notify', site_id: siteId, title, body, data },
+    });
+    if (error) console.warn('[Push] notify failed:', error.message);
+  } catch (err) {
+    console.warn('[Push] notify failed:', err);
+  }
+}
+
 /** Remove this device's token from Supabase (preference disabled / logout). */
 export async function unregisterPushToken(userId: string): Promise<void> {
   try {

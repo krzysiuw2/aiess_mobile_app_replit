@@ -10,6 +10,8 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { setOverride, releaseOverride } from '@/lib/aws-override';
+import { notifySitePush } from '@/lib/push-notifications';
+import { formatPower } from '@/lib/format';
 import type { LiveData, OverrideAction, OverrideRequest } from '@/types';
 
 /** How long the optimistic state survives without telemetry confirmation
@@ -179,6 +181,17 @@ export function useOverride(siteId: string | null, liveData: LiveData | undefine
         postedAtMs: Date.now(),
       });
       setNowMs(Date.now());
+
+      // Notify all site users (fire-and-forget, never blocks the action).
+      const detail = req.powerKw !== undefined
+        ? `${req.action} ${formatPower(req.powerKw)}`
+        : req.action;
+      notifySitePush(
+        siteId,
+        'Manual override active',
+        `${siteId}: ${detail} for ${Math.round(req.ttlSec / 60)} min`,
+        { type: 'override_issued', site_id: siteId },
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -190,6 +203,12 @@ export function useOverride(siteId: string | null, liveData: LiveData | undefine
     try {
       await releaseOverride(siteId);
       setOptimistic(null);
+      notifySitePush(
+        siteId,
+        'Back to automatic',
+        `${siteId}: manual override released`,
+        { type: 'override_released', site_id: siteId },
+      );
     } finally {
       setIsSubmitting(false);
     }
