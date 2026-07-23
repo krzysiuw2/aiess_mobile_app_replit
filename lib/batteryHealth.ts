@@ -1,5 +1,6 @@
 import { CHART_COLORS } from '@/constants/chartColors';
 import type { BatteryWorkingMode, CabinetDetail } from '@/types';
+import type { TranslationKeys } from '@/locales';
 
 /** Cabinets with no row newer than this are treated as offline. */
 export const CABINET_OFFLINE_MS = 5 * 60 * 1000;
@@ -101,17 +102,17 @@ export function getOverallBatteryStatus(
   return 'healthy';
 }
 
-const WORKING_MODE_LABELS: Record<number, string> = {
-  0: 'Normal',
-  1: 'Charge Disabled',
-  2: 'Discharge Disabled',
-  3: 'Standby',
-  4: 'Stop',
-  170: 'No Communication',
-};
-
-export function getWorkingModeLabel(mode: BatteryWorkingMode): string {
-  return WORKING_MODE_LABELS[mode] ?? `Unknown (${mode})`;
+export function getWorkingModeLabel(mode: BatteryWorkingMode, t: TranslationKeys): string {
+  const bt = t.analytics.batteryTab;
+  const labels: Record<number, string> = {
+    0: bt.workingModeNormal,
+    1: bt.workingModeChargeDisabled,
+    2: bt.workingModeDischargeDisabled,
+    3: bt.workingModeStandby,
+    4: bt.workingModeStop,
+    170: bt.workingModeNoComm,
+  };
+  return labels[mode] ?? `${bt.workingModeUnknown} (${mode})`;
 }
 
 export function getWorkingModeStatus(mode: BatteryWorkingMode): HealthStatus {
@@ -120,14 +121,13 @@ export function getWorkingModeStatus(mode: BatteryWorkingMode): HealthStatus {
   return 'warning';
 }
 
-const CHARGE_DISCHARGE_LABELS: Record<number, string> = {
-  0: 'Standby',
-  1: 'Charging',
-  2: 'Discharging',
-};
-
-export function getChargeDischargeLabel(status: number): string {
-  return CHARGE_DISCHARGE_LABELS[status] ?? `Status ${status}`;
+export function getChargeDischargeLabel(status: number, t: TranslationKeys): string {
+  const labels: Record<number, string> = {
+    0: t.monitor.standby,
+    1: t.monitor.charging,
+    2: t.monitor.discharging,
+  };
+  return labels[status] ?? `${t.analytics.batteryTab.chargeDischargeUnknown} ${status}`;
 }
 
 /**

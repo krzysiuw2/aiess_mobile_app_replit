@@ -52,7 +52,7 @@ export function ROIProgressCard({
       <Text style={[styles.percentage, { color }]}>{pct.toFixed(1)}%</Text>
 
       <Text style={styles.savingsDetail}>
-        {formatPLN(currentSavings)} PLN {t.financial?.of ?? 'of'} {formatPLN(capex)} PLN
+        {formatPLN(currentSavings)} PLN {t.analytics.financialTab.of} {formatPLN(capex)} PLN
       </Text>
 
       <View style={styles.progressTrack}>
@@ -66,9 +66,9 @@ export function ROIProgressCard({
 
       <Text style={styles.breakEvenText}>
         {paidOff
-          ? (t.financial?.alreadyPaidOff ?? 'Already paid off!')
+          ? t.analytics.financialTab.alreadyPaidOff
           : breakEvenLabel
-            ? `${t.financial?.estimatedBreakEven ?? 'Estimated break-even'}: ${breakEvenLabel}`
+            ? `${t.analytics.financialTab.estimatedBreakEven}: ${breakEvenLabel}`
             : ''}
       </Text>
     </View>

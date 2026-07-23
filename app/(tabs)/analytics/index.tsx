@@ -354,6 +354,16 @@ export default function AnalyticsScreen() {
   const bt = t.analytics.batteryTab;
   const ft = t.analytics.financialTab;
 
+  // Field toggle labels — must come from `t`, not the FIELD_COLORS constant
+  // (which has no access to the active language), so they translate.
+  const fieldLabels: Record<FieldKey, string> = {
+    gridPower: t.analytics.grid,
+    batteryPower: t.analytics.battery,
+    pvPower: t.analytics.pv,
+    compensatedPower: t.monitor.load,
+    soc: t.monitor.soc,
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -470,7 +480,7 @@ export default function AnalyticsScreen() {
                     styles.fieldToggleText,
                     visibleFields[key] && { color: FIELDS[key].color },
                   ]}>
-                    {FIELDS[key].label}
+                    {fieldLabels[key]}
                   </Text>
                   {visibleFields[key] ? (
                     <Eye size={14} color={FIELDS[key].color} />

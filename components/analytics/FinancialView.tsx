@@ -184,9 +184,7 @@ export function FinancialView({ deviceId, t, language }: FinancialViewProps) {
         <View style={styles.projectedBanner}>
           <Info size={14} color={Colors.warning} />
           <Text style={styles.projectedText}>
-            {language === 'pl'
-              ? 'Dane szacunkowe \u2014 rzeczywiste pojawi\u0105 si\u0119 po nocnym obliczeniu'
-              : 'Projected data \u2014 real values will appear after nightly calculation'}
+            {ft.projectedDataNote}
           </Text>
         </View>
       )}

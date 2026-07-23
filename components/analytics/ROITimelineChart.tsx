@@ -72,7 +72,7 @@ export function ROITimelineChart({
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>{t.analytics?.loadingChart ?? 'Loading chart...'}</Text>
+        <Text style={styles.loadingText}>{t.analytics.loadingChart}</Text>
       </View>
     );
   }
@@ -80,7 +80,7 @@ export function ROITimelineChart({
   if (lineData.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>{t.analytics?.noDataAvailable ?? 'No data available'}</Text>
+        <Text style={styles.emptyText}>{t.analytics.noDataAvailable}</Text>
       </View>
     );
   }
@@ -149,7 +149,7 @@ export function ROITimelineChart({
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: color }]} />
           <Text style={styles.legendLabel}>
-            {t.financial?.cumulativeSavings ?? 'Cumulative savings'}
+            {t.analytics.financialTab.cumulativeSavings}
           </Text>
         </View>
         <View style={styles.legendItem}>
@@ -161,7 +161,7 @@ export function ROITimelineChart({
         {breakEvenIndex >= 0 && (
           <View style={styles.legendItem}>
             <Text style={[styles.legendLabel, { color: Colors.success, fontWeight: '600' }]}>
-              Break-even ✓
+              {t.analytics.financialTab.breakEvenReached}
             </Text>
           </View>
         )}

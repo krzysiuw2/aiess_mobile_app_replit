@@ -55,8 +55,8 @@ export function BatteryDetailView({ data, multiCabinet, t }: BatteryDetailViewPr
   const sohColor = getHealthColor(sohStatus);
   const wmStatus = getWorkingModeStatus(data.workingMode);
   const wmColor = getHealthColor(wmStatus);
-  const wmLabel = getWorkingModeLabel(data.workingMode);
-  const cdsLabel = getChargeDischargeLabel(data.chargeDischargeStatus);
+  const wmLabel = getWorkingModeLabel(data.workingMode, t);
+  const cdsLabel = getChargeDischargeLabel(data.chargeDischargeStatus, t);
   const showHeatmaps = !data.isAggregate && data.online && data.cellVoltages.length > 0;
   const showOffline = !data.online && !data.isAggregate;
 
@@ -187,6 +187,7 @@ export function BatteryDetailView({ data, multiCabinet, t }: BatteryDetailViewPr
               values={data.cellVoltages}
               unit="mV"
               getStatus={getCellVoltageStatus}
+              t={t}
             />
           </View>
         </>
@@ -202,6 +203,7 @@ export function BatteryDetailView({ data, multiCabinet, t }: BatteryDetailViewPr
               unit="°C"
               getStatus={getCellTempStatus}
               columnsPerRow={4}
+              t={t}
             />
           </View>
         </>

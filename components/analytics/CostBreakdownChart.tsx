@@ -63,7 +63,7 @@ export function CostBreakdownChart({
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>{t.analytics?.loadingChart ?? 'Loading chart...'}</Text>
+        <Text style={styles.loadingText}>{t.analytics.loadingChart}</Text>
       </View>
     );
   }
@@ -71,7 +71,7 @@ export function CostBreakdownChart({
   if (stackData.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>{t.analytics?.noDataAvailable ?? 'No data available'}</Text>
+        <Text style={styles.emptyText}>{t.analytics.noDataAvailable}</Text>
       </View>
     );
   }
@@ -123,25 +123,25 @@ export function CostBreakdownChart({
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: SEGMENT_COLORS.energy }]} />
           <Text style={styles.legendLabel}>
-            {t.financial?.energyCost ?? 'Energy cost'}
+            {t.analytics.financialTab.energyCost}
           </Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: SEGMENT_COLORS.distribution }]} />
           <Text style={styles.legendLabel}>
-            {t.financial?.distributionCost ?? 'Distribution'}
+            {t.analytics.financialTab.distributionCost}
           </Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: SEGMENT_COLORS.mocZamowiona }]} />
           <Text style={styles.legendLabel}>
-            {t.financial?.mocZamowiona ?? 'Moc zamówiona'}
+            {t.analytics.financialTab.mocZamowiona}
           </Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: SEGMENT_COLORS.fixed }]} />
           <Text style={styles.legendLabel}>
-            {t.financial?.fixedFees ?? 'Fixed fees'}
+            {t.analytics.financialTab.fixedFees}
           </Text>
         </View>
       </View>

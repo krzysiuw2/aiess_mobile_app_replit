@@ -502,20 +502,26 @@ export function localDateStrToUnix(dateStr: string, endOfDay = false): number | 
   return Math.floor(date.getTime() / 1000);
 }
 
-export function getActionTypeLabel(type: ActionType): string {
-  const labels: Record<ActionType, string> = {
-    ch: 'Charge',
-    dis: 'Discharge',
-    sb: 'Standby',
-    sl: 'Site Limit',
-    ct: 'Charge to Target',
-    dt: 'Discharge to Target',
-    bx: 'Block Export',
-    bi: 'Block Import',
-    sc: 'Self-Consumption',
-    hs: 'Hold SoC',
-  };
-  return labels[type] || type;
+const DEFAULT_ACTION_TYPE_LABELS: Record<ActionType, string> = {
+  ch: 'Charge',
+  dis: 'Discharge',
+  sb: 'Standby',
+  sl: 'Site Limit',
+  ct: 'Charge to Target',
+  dt: 'Discharge to Target',
+  bx: 'Block Export',
+  bi: 'Block Import',
+  sc: 'Self-Consumption',
+  hs: 'Hold SoC',
+};
+
+/**
+ * `labels` should come from `t.schedules.editor.actionPrefixes`-adjacent i18n
+ * keys (see `buildDetailLabels().actionTypes` in app/(tabs)/schedule/index.tsx)
+ * so this renders in the active language. Falls back to English when omitted.
+ */
+export function getActionTypeLabel(type: ActionType, labels?: Record<ActionType, string>): string {
+  return (labels ?? DEFAULT_ACTION_TYPE_LABELS)[type] || type;
 }
 
 /** Accent color per action type (rule cards, calendar blocks). */
@@ -573,19 +579,37 @@ export function getGridOperatorLabel(op: GridOperator): string {
   return labels[op] || op;
 }
 
-export function getDaysLabel(d: string | number[] | undefined): string {
-  if (!d) return 'Everyday';
+export interface DaysLabels {
+  dayNames: string[]; // 7 short names, index 0 = Sunday
+  weekdays: string;   // 'Mon-Fri'
+  weekend: string;    // 'Sat-Sun'
+  everyday: string;
+}
+
+const DEFAULT_DAYS_LABELS: DaysLabels = {
+  dayNames: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+  weekdays: 'Mon-Fri',
+  weekend: 'Sat-Sun',
+  everyday: 'Everyday',
+};
+
+/**
+ * `labels` should come from i18n (see `buildDetailLabels().days` in
+ * app/(tabs)/schedule/index.tsx) so this renders in the active language.
+ * Falls back to English when omitted.
+ */
+export function getDaysLabel(d: string | number[] | undefined, labels: DaysLabels = DEFAULT_DAYS_LABELS): string {
+  if (!d) return labels.everyday;
 
   if (Array.isArray(d)) {
-    if (d.length === 0 || d.length === 7) return 'Everyday';
-    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return d.map(i => dayNames[i]).join(', ');
+    if (d.length === 0 || d.length === 7) return labels.everyday;
+    return d.map(i => labels.dayNames[i]).join(', ');
   }
 
   const shorthand: Record<string, string> = {
-    weekdays: 'Mon-Fri', wd: 'Mon-Fri',
-    weekend: 'Sat-Sun', we: 'Sat-Sun',
-    everyday: 'Everyday', ed: 'Everyday', all: 'Everyday',
+    weekdays: labels.weekdays, wd: labels.weekdays,
+    weekend: labels.weekend, we: labels.weekend,
+    everyday: labels.everyday, ed: labels.everyday, all: labels.everyday,
   };
 
   const lower = d.toLowerCase();
@@ -593,8 +617,8 @@ export function getDaysLabel(d: string | number[] | undefined): string {
 
   if (/^[0-7]+$/.test(d)) {
     const dayMap: Record<string, string> = {
-      '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed',
-      '4': 'Thu', '5': 'Fri', '6': 'Sat', '7': 'Sun',
+      '0': labels.dayNames[0], '1': labels.dayNames[1], '2': labels.dayNames[2], '3': labels.dayNames[3],
+      '4': labels.dayNames[4], '5': labels.dayNames[5], '6': labels.dayNames[6], '7': labels.dayNames[0],
     };
     const unique = [...new Set(d.split('').map(ch => dayMap[ch] || ch))];
     return unique.join(', ');
@@ -665,6 +689,13 @@ export interface RuleDetailLabels {
   monthDaysLabel: string;
   recurrenceLabel: string;
   recurrences: Record<import('@/types').Recurrence, string>;
+  // Used by getRuleSummary() for the one-line rule summary text
+  actionTypes: Record<ActionType, string>;
+  days: DaysLabels;
+  toWord: string;
+  maxWord: string;
+  absorbOnlyLabel: string;
+  allDayLabel: string;
 }
 
 export function getRuleDetailLines(
@@ -683,7 +714,7 @@ export function getRuleDetailLines(
   // Weekdays
   lines.push({
     iconKey: 'calendar',
-    text: rule.d ? getDaysLabel(rule.d) : labels.everyday,
+    text: rule.d ? getDaysLabel(rule.d, labels.days) : labels.everyday,
   });
 
   // Days of month (md, ANDed with weekdays)
@@ -818,8 +849,19 @@ function formatValidity(
   return `${fromStr} - ${untilStr}`;
 }
 
-export function getRuleSummary(rule: OptimizedScheduleRule): string {
-  const action = getActionTypeLabel(rule.a.t);
+/**
+ * `labels` should come from i18n (see `buildDetailLabels()` in
+ * app/(tabs)/schedule/index.tsx) so this renders in the active language.
+ * Falls back to English when omitted.
+ */
+export function getRuleSummary(rule: OptimizedScheduleRule, labels?: RuleDetailLabels): string {
+  const action = getActionTypeLabel(rule.a.t, labels?.actionTypes);
+  const toWord = labels?.toWord ?? 'to';
+  const maxWord = labels?.maxWord ?? 'max';
+  const limitWord = labels?.limitLabel ?? 'limit';
+  const softWord = labels?.softLabel ?? 'soft';
+  const targetWord = labels?.targetLabel ?? 'target';
+  const absorbOnlyWord = labels?.absorbOnlyLabel ?? 'absorb-only';
   let detail = '';
 
   switch (rule.a.t) {
@@ -829,21 +871,21 @@ export function getRuleSummary(rule: OptimizedScheduleRule): string {
       if (rule.a.pid) detail += ' (PID)';
       break;
     case 'sl':
-      detail = `${rule.a.lth} to ${rule.a.hth} kW`;
+      detail = `${rule.a.lth} ${toWord} ${rule.a.hth} kW`;
       break;
     case 'ct':
     case 'dt':
-      detail = `to ${rule.a.soc}%`;
-      if (rule.a.maxp) detail += `, max ${rule.a.maxp} kW`;
+      detail = `${toWord} ${rule.a.soc}%`;
+      if (rule.a.maxp) detail += `, ${maxWord} ${rule.a.maxp} kW`;
       break;
     case 'bx':
     case 'bi':
-      detail = `limit ${rule.a.lim ?? 0} kW`;
-      if (rule.a.fm === 'soft') detail += ' (soft)';
+      detail = `${limitWord} ${rule.a.lim ?? 0} kW`;
+      if (rule.a.fm === 'soft') detail += ` (${softWord})`;
       break;
     case 'sc':
-      detail = `target ${rule.a.tg ?? 0} kW`;
-      if (rule.a.dmax === 0) detail += ', absorb-only';
+      detail = `${targetWord} ${rule.a.tg ?? 0} kW`;
+      if (rule.a.dmax === 0) detail += `, ${absorbOnlyWord}`;
       break;
     case 'hs':
       detail = `${rule.a.sl_ ?? '?'}%${rule.a.sh_ !== undefined && rule.a.sh_ !== rule.a.sl_ ? ` - ${rule.a.sh_}%` : ''}`;
@@ -855,7 +897,7 @@ export function getRuleSummary(rule: OptimizedScheduleRule): string {
     time = ` (${formatTime(rule.c.ts)}-${formatTime(rule.c.te)})`;
   }
 
-  const days = rule.d ? `, ${getDaysLabel(rule.d)}` : '';
+  const days = rule.d ? `, ${getDaysLabel(rule.d, labels?.days)}` : '';
 
   return `${action} ${detail}${time}${days}`;
 }

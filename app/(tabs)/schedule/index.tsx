@@ -62,7 +62,7 @@ import ScheduleDayGrid from '@/components/schedule/ScheduleDayGrid';
 import BehaviorSettings from '@/components/schedule/BehaviorSettings';
 import OverrideCard from '@/components/schedule/OverrideCard';
 import ScheduleHistorySheet from '@/components/schedule/ScheduleHistorySheet';
-import type { ScheduleRuleWithPriority, ReadOnlyScheduleRule, Strategy } from '@/types';
+import type { ScheduleRuleWithPriority, ReadOnlyScheduleRule, Strategy, ActionType } from '@/types';
 import type { RuleFavorite } from '@/lib/rule-favorites';
 
 // ─── Helpers ────────────────────────────────────────────────────
@@ -110,6 +110,31 @@ function buildDetailLabels(t: ReturnType<typeof useSettings>['t']): RuleDetailLa
     monthDaysLabel: t.schedules.monthDaysLabel,
     recurrenceLabel: t.schedules.recurrenceLabel,
     recurrences: t.schedules.recurrences,
+    actionTypes: {
+      ch: t.schedules.actionTypes.charge,
+      dis: t.schedules.actionTypes.discharge,
+      sb: t.schedules.actionTypes.standby,
+      sl: t.schedules.actionTypes.siteLimit,
+      ct: t.schedules.actionTypes.chargeToSoc,
+      dt: t.schedules.actionTypes.dischargeToSoc,
+      bx: t.schedules.actionTypes.blockExport,
+      bi: t.schedules.actionTypes.blockImport,
+      sc: t.schedules.actionTypes.selfConsumption,
+      hs: t.schedules.actionTypes.holdSoc,
+    } as Record<ActionType, string>,
+    days: {
+      dayNames: [
+        t.settings.daySun, t.settings.dayMon, t.settings.dayTue, t.settings.dayWed,
+        t.settings.dayThu, t.settings.dayFri, t.settings.daySat,
+      ],
+      weekdays: ed.monFri,
+      weekend: ed.satSun,
+      everyday: t.schedules.everyday,
+    },
+    toWord: t.schedules.toWord,
+    maxWord: t.schedules.maxWord,
+    absorbOnlyLabel: ed.absorbOnly,
+    allDayLabel: t.schedules.allDay,
   };
 }
 
@@ -150,7 +175,7 @@ function RuleCard({ rule, detailLabels, isFavorited, onEdit, onDelete, onToggle,
   const isActive = rule.act !== false;
   const isAI = rule.s === 'ai';
   const isFromSettings = rule.id.toLowerCase().startsWith('set_');
-  const summary = getRuleSummary(rule);
+  const summary = getRuleSummary(rule, detailLabels);
   const detailLines = useMemo(() => getRuleDetailLines(rule, detailLabels), [rule, detailLabels]);
   const [expanded, setExpanded] = useState(false);
   const hasMore = detailLines.length > MAX_COLLAPSED_LINES;
@@ -232,7 +257,7 @@ function RuleCard({ rule, detailLabels, isFavorited, onEdit, onDelete, onToggle,
 function ReadOnlyRuleCard({ rule, detailLabels }: { rule: ReadOnlyScheduleRule; detailLabels: RuleDetailLabels }) {
   const { t } = useSettings();
   const isActive = rule.act !== false;
-  const summary = getRuleSummary(rule);
+  const summary = getRuleSummary(rule, detailLabels);
   const detailLines = useMemo(() => getRuleDetailLines(rule, detailLabels), [rule, detailLabels]);
   const [expanded, setExpanded] = useState(false);
   const hasMore = detailLines.length > MAX_COLLAPSED_LINES;
@@ -279,7 +304,7 @@ interface FavoriteCardProps {
 
 function FavoriteCard({ favorite, detailLabels, onUse, onRename, onRemove }: FavoriteCardProps) {
   const { t } = useSettings();
-  const summary = getRuleSummary(favorite.rule);
+  const summary = getRuleSummary(favorite.rule, detailLabels);
   const detailLines = useMemo(
     () => getRuleDetailLines(favorite.rule, detailLabels),
     [favorite.rule, detailLabels],
@@ -397,7 +422,7 @@ function RulePopup({ rule, detailLabels, onClose, onEdit, onDelete, onDuplicate 
   );
   if (!rule) return null;
 
-  const summary = getRuleSummary(rule);
+  const summary = getRuleSummary(rule, detailLabels);
 
   return (
     <Modal transparent animationType="fade" visible onRequestClose={onClose}>
@@ -887,6 +912,7 @@ export default function ScheduleListScreen() {
           rules={scheduleRules}
           date={selectedDay}
           onRuleTap={setPopupRule}
+          detailLabels={detailLabels}
         />
       )}
 

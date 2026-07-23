@@ -10,7 +10,7 @@ import {
 import Colors from '@/constants/colors';
 import type { ScheduleRuleWithPriority } from '@/types';
 import { mapRulesToBlocksForDay, RuleBlock, ACTION_COLORS } from '@/lib/schedule-calendar';
-import { getActionTypeLabel, formatTime, getRuleSummary } from '@/lib/aws-schedules';
+import { getActionTypeLabel, formatTime, type RuleDetailLabels } from '@/lib/aws-schedules';
 
 const HOUR_HEIGHT = 56;
 const TIME_COL_WIDTH = 42;
@@ -21,9 +21,10 @@ interface ScheduleDayGridProps {
   rules: ScheduleRuleWithPriority[];
   date: Date;
   onRuleTap: (rule: ScheduleRuleWithPriority) => void;
+  detailLabels: RuleDetailLabels;
 }
 
-export default function ScheduleDayGrid({ rules, date, onRuleTap }: ScheduleDayGridProps) {
+export default function ScheduleDayGrid({ rules, date, onRuleTap, detailLabels }: ScheduleDayGridProps) {
   const { width: screenWidth } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const colWidth = screenWidth - TIME_COL_WIDTH - 32;
@@ -49,11 +50,11 @@ export default function ScheduleDayGrid({ rules, date, onRuleTap }: ScheduleDayG
     const isActive = block.rule.act !== false;
     const blockWidth = colWidth / block.overlapCount;
     const left = block.overlapIndex * blockWidth;
-    const actionLabel = getActionTypeLabel(block.rule.a.t);
+    const actionLabel = getActionTypeLabel(block.rule.a.t, detailLabels.actionTypes);
     const hasTime = block.rule.c?.ts !== undefined && block.rule.c?.te !== undefined;
     const timeStr = hasTime
       ? `${formatTime(block.rule.c!.ts!)} - ${formatTime(block.rule.c!.te!)}`
-      : 'All day';
+      : detailLabels.allDayLabel;
 
     return (
       <TouchableOpacity

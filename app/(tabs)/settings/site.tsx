@@ -1064,7 +1064,7 @@ export default function SiteSettingsScreen() {
           </View>
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>{t.settings.seasonalNotes}</Text>
-            <TextInput style={[styles.textInput, styles.textArea]} value={loadSeasonal} onChangeText={setLoadSeasonal} placeholder="Higher load in summer due to cooling" placeholderTextColor={Colors.textSecondary} multiline numberOfLines={3} />
+            <TextInput style={[styles.textInput, styles.textArea]} value={loadSeasonal} onChangeText={setLoadSeasonal} placeholder={t.settings.seasonalNotesPlaceholder} placeholderTextColor={Colors.textSecondary} multiline numberOfLines={3} />
           </View>
           <TouchableOpacity style={styles.saveButton} onPress={handleSaveLoadProfile} disabled={isUpdating}>
             <Text style={styles.saveButtonText}>{t.settings.saveLoadProfile}</Text>
@@ -1105,7 +1105,7 @@ export default function SiteSettingsScreen() {
                   </View>
                 ))}
               </View>
-              <Text style={styles.chartCaption}>Export power (kW) vs. hour of day</Text>
+              <Text style={styles.chartCaption}>{t.settings.sunFollowChartCaption}</Text>
             </View>
 
             <Text style={styles.popupBody}>{t.settings.sunFollowPopupBody}</Text>

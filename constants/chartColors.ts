@@ -78,14 +78,20 @@ export const CHART_COLORS = {
 } as const;
 
 /**
- * Field configurations with labels and colors
+ * Field configurations with colors.
+ *
+ * NOTE: labels are intentionally NOT stored here — this is a plain constants
+ * module with no access to the active language. User-facing labels for these
+ * keys must come from the i18n `t` object (see `FIELD_LABEL_KEYS` below and
+ * its usage in app/(tabs)/analytics/index.tsx) so the field toggles translate
+ * correctly instead of always showing English.
  */
 export const FIELD_COLORS = {
-  gridPower: { label: 'Grid', color: CHART_COLORS.grid.line, unit: 'kW' },
-  batteryPower: { label: 'Battery', color: CHART_COLORS.battery.line, unit: 'kW' },
-  pvPower: { label: 'PV', color: CHART_COLORS.pv.production, unit: 'kW' },
-  compensatedPower: { label: 'Load', color: CHART_COLORS.load.line, unit: 'kW' },
-  soc: { label: 'SoC', color: CHART_COLORS.soc.line, unit: '%', isSecondary: true },
+  gridPower: { color: CHART_COLORS.grid.line, unit: 'kW' },
+  batteryPower: { color: CHART_COLORS.battery.line, unit: 'kW' },
+  pvPower: { color: CHART_COLORS.pv.production, unit: 'kW' },
+  compensatedPower: { color: CHART_COLORS.load.line, unit: 'kW' },
+  soc: { color: CHART_COLORS.soc.line, unit: '%', isSecondary: true },
 } as const;
 
 export type FieldKey = keyof typeof FIELD_COLORS;

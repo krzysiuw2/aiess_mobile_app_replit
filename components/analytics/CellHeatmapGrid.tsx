@@ -3,12 +3,14 @@ import { View, Text, StyleSheet } from 'react-native';
 import Colors from '@/constants/colors';
 import type { HealthStatus } from '@/lib/batteryHealth';
 import { getHealthColor } from '@/lib/batteryHealth';
+import type { TranslationKeys } from '@/locales';
 
 interface CellHeatmapGridProps {
   values: number[];
   unit: string;
   getStatus: (value: number) => HealthStatus;
   columnsPerRow?: number;
+  t: TranslationKeys;
 }
 
 export function CellHeatmapGrid({
@@ -16,6 +18,7 @@ export function CellHeatmapGrid({
   unit,
   getStatus,
   columnsPerRow = 6,
+  t,
 }: CellHeatmapGridProps) {
   const cells = useMemo(() => {
     return values.map((val, idx) => {
@@ -29,7 +32,7 @@ export function CellHeatmapGrid({
   if (values.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No cell data</Text>
+        <Text style={styles.emptyText}>{t.analytics.batteryTab.noCellData}</Text>
       </View>
     );
   }

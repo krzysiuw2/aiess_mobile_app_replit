@@ -336,7 +336,7 @@ export default function AIScreen() {
         },
       );
       updateMessage(assistantId, {
-        text: res.text || (accepted ? 'Action confirmed.' : 'Action rejected.'),
+        text: res.text || (accepted ? t.ai.actionConfirmed : t.ai.actionRejected),
         charts: res.charts,
       });
     } catch (err: any) {
