@@ -1,16 +1,23 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Battery, Activity, Heart } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { CHART_COLORS } from '@/constants/chartColors';
-import type { BatteryDetailData } from '@/types';
+import type { CabinetDetail } from '@/types';
 import type { TranslationKeys } from '@/locales';
-import { getHealthColor, getSohStatus, getCellVoltageStatus, getCellTempStatus, getWorkingModeLabel, getWorkingModeStatus } from '@/lib/batteryHealth';
+import {
+  getHealthColor,
+  getSohStatus,
+  getCellVoltageStatus,
+  getCellTempStatus,
+  getWorkingModeLabel,
+  getWorkingModeStatus,
+  getChargeDischargeLabel,
+} from '@/lib/batteryHealth';
 import { SectionHeader } from './SectionHeader';
 import { CellHeatmapGrid } from './CellHeatmapGrid';
 
 interface BatteryDetailViewProps {
-  data: BatteryDetailData | null;
+  data: CabinetDetail | null;
+  multiCabinet: boolean;
   t: TranslationKeys;
 }
 
@@ -31,7 +38,7 @@ function StackRow({ label, value, unit, color }: {
   );
 }
 
-export function BatteryDetailView({ data, t }: BatteryDetailViewProps) {
+export function BatteryDetailView({ data, multiCabinet, t }: BatteryDetailViewProps) {
   const bt = t.analytics.batteryTab;
 
   if (!data) {
@@ -48,41 +55,130 @@ export function BatteryDetailView({ data, t }: BatteryDetailViewProps) {
   const wmStatus = getWorkingModeStatus(data.workingMode);
   const wmColor = getHealthColor(wmStatus);
   const wmLabel = getWorkingModeLabel(data.workingMode);
+  const cdsLabel = getChargeDischargeLabel(data.chargeDischargeStatus);
+  const showHeatmaps = !data.isAggregate && data.online && data.cellVoltages.length > 0;
+  const showOffline = !data.online && !data.isAggregate;
 
   return (
-    <View>
+    <View style={showOffline ? styles.offlineWrap : undefined}>
       {/* Stack Summary */}
       <SectionHeader title={bt.stackSummary} icon="Battery" />
-      <View style={styles.stackCard}>
-        <View style={styles.stackGrid}>
-          <View style={styles.stackHalf}>
-            <StackRow label={bt.stackVoltage} value={data.stackVoltage.toFixed(1)} unit="V" />
-            <StackRow label={bt.stackCurrent} value={data.stackCurrent.toFixed(1)} unit="A" />
-          </View>
-          <View style={styles.stackDivider} />
-          <View style={styles.stackHalf}>
-            <StackRow label="SoC" value={`${data.stackSoc.toFixed(0)}`} unit="%" />
-            <StackRow
-              label="SoH"
-              value={`${data.stackSoh.toFixed(0)}`}
-              unit="%"
-              color={sohColor}
-            />
-          </View>
+      <View style={[styles.stackCard, showOffline && styles.stackCardOffline]}>
+        <View style={styles.badgeRow}>
+          {data.isAggregate ? (
+            <View style={[styles.statusBadge, { backgroundColor: Colors.primary + '18' }]}>
+              <Text style={[styles.statusBadgeText, { color: Colors.primary }]}>
+                {bt.wholeSite}
+              </Text>
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.statusBadge,
+                {
+                  backgroundColor: data.online
+                    ? getHealthColor('healthy') + '20'
+                    : Colors.textLight + '30',
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.wmDot,
+                  {
+                    backgroundColor: data.online
+                      ? getHealthColor('healthy')
+                      : Colors.textLight,
+                  },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.statusBadgeText,
+                  {
+                    color: data.online
+                      ? getHealthColor('healthy')
+                      : Colors.textSecondary,
+                  },
+                ]}
+              >
+                {data.online ? bt.online : bt.offline}
+              </Text>
+            </View>
+          )}
+          {!data.isAggregate && data.stackId !== null && (
+            <Text style={styles.cabinetLabel}>
+              {bt.cabinet} {data.stackId}
+            </Text>
+          )}
         </View>
-        <View style={styles.cellCountRow}>
-          <View style={[styles.wmBadge, { backgroundColor: wmColor + '20' }]}>
-            <View style={[styles.wmDot, { backgroundColor: wmColor }]} />
-            <Text style={[styles.wmText, { color: wmColor }]}>{wmLabel}</Text>
+
+        {showOffline ? (
+          <View style={styles.offlineBlock}>
+            <Text style={styles.offlineNote}>{bt.cabinetOfflineNote}</Text>
+            <Text style={styles.lastSeen}>
+              {bt.lastSeen}: {data.lastUpdate.toLocaleString()}
+            </Text>
           </View>
-          <Text style={styles.cellCountText}>
-            {data.cellCount} {bt.cells} · {data.ntcCount} NTC
-          </Text>
-        </View>
+        ) : (
+          <>
+            <View style={styles.stackGrid}>
+              <View style={styles.stackHalf}>
+                <StackRow
+                  label={bt.stackVoltage}
+                  value={data.stackVoltage.toFixed(1)}
+                  unit="V"
+                />
+                <StackRow
+                  label={bt.stackCurrent}
+                  value={data.stackCurrent.toFixed(1)}
+                  unit="A"
+                />
+                <StackRow
+                  label={bt.maxCharge}
+                  value={data.maxChargeKw.toFixed(1)}
+                  unit="kW"
+                />
+              </View>
+              <View style={styles.stackDivider} />
+              <View style={styles.stackHalf}>
+                <StackRow label="SoC" value={`${data.stackSoc.toFixed(0)}`} unit="%" />
+                <StackRow
+                  label="SoH"
+                  value={`${data.stackSoh.toFixed(0)}`}
+                  unit="%"
+                  color={sohColor}
+                />
+                <StackRow
+                  label={bt.maxDischarge}
+                  value={data.maxDischargeKw.toFixed(1)}
+                  unit="kW"
+                />
+              </View>
+            </View>
+            <View style={styles.cellCountRow}>
+              <View style={[styles.wmBadge, { backgroundColor: wmColor + '20' }]}>
+                <View style={[styles.wmDot, { backgroundColor: wmColor }]} />
+                <Text style={[styles.wmText, { color: wmColor }]}>{wmLabel}</Text>
+              </View>
+              <View style={styles.cdsBadge}>
+                <Text style={styles.cdsText}>
+                  {bt.chargeStatus}: {cdsLabel}
+                </Text>
+              </View>
+              <Text style={styles.cellCountText}>
+                {data.cellCount} {bt.cells} · {data.ntcCount} NTC
+              </Text>
+            </View>
+            {data.isAggregate && multiCabinet && (
+              <Text style={styles.aggregateNote}>{bt.siteAggregateNote}</Text>
+            )}
+          </>
+        )}
       </View>
 
-      {/* Cell Voltages Heatmap */}
-      {data.cellVoltages.length > 0 && (
+      {/* Cell Voltages Heatmap — cabinet view only */}
+      {showHeatmaps && (
         <>
           <SectionHeader title={bt.cellVoltages} icon="Zap" />
           <View style={styles.heatmapCard}>
@@ -96,7 +192,7 @@ export function BatteryDetailView({ data, t }: BatteryDetailViewProps) {
       )}
 
       {/* Cell Temperatures Heatmap */}
-      {data.cellTemps.length > 0 && (
+      {!showOffline && !data.isAggregate && data.cellTemps.length > 0 && (
         <>
           <SectionHeader title={bt.cellTemperatures} icon="Thermometer" />
           <View style={styles.heatmapCard}>
@@ -114,6 +210,9 @@ export function BatteryDetailView({ data, t }: BatteryDetailViewProps) {
 }
 
 const styles = StyleSheet.create({
+  offlineWrap: {
+    opacity: 0.85,
+  },
   stackCard: {
     backgroundColor: Colors.surface,
     borderRadius: 12,
@@ -121,6 +220,46 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     marginBottom: 4,
+  },
+  stackCardOffline: {
+    borderColor: Colors.textLight + '50',
+    backgroundColor: Colors.surface,
+    opacity: 0.7,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cabinetLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  offlineBlock: {
+    paddingVertical: 8,
+    gap: 6,
+  },
+  offlineNote: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
+  lastSeen: {
+    fontSize: 12,
+    color: Colors.textLight,
   },
   stackGrid: {
     flexDirection: 'row',
@@ -184,9 +323,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  cdsBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  cdsText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
   cellCountText: {
     fontSize: 12,
     color: Colors.textSecondary,
+  },
+  aggregateNote: {
+    marginTop: 10,
+    fontSize: 11,
+    color: Colors.textLight,
+    textAlign: 'center',
   },
   heatmapCard: {
     backgroundColor: Colors.surface,

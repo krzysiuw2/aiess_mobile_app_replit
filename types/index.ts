@@ -595,12 +595,20 @@ export interface BatteryLiveData {
 
 export type BatteryWorkingMode = 0 | 1 | 2 | 3 | 4 | 170;
 
-export interface BatteryDetailData {
+/** Per-cabinet (or site-aggregate) battery detail from battery_detail bucket. */
+export interface CabinetDetail {
+  /** Cabinet index; null when this is a whole-site aggregate. */
+  stackId: number | null;
+  isAggregate: boolean;
+  online: boolean;
   stackVoltage: number;
   stackCurrent: number;
   stackSoc: number;
   stackSoh: number;
   workingMode: BatteryWorkingMode;
+  chargeDischargeStatus: number;
+  maxChargeKw: number;
+  maxDischargeKw: number;
   cellCount: number;
   cellVoltageMin: number;
   cellVoltageMax: number;
@@ -610,7 +618,32 @@ export interface BatteryDetailData {
   cellTempMin: number;
   cellTempMax: number;
   cellTemps: number[];
+  alarmCount: number;
+  alarmCodes: number[];
+  faultCount: number;
+  faultCodes: number[];
   lastUpdate: Date;
+}
+
+/** @deprecated Prefer CabinetDetail — kept as alias for gradual migration. */
+export type BatteryDetailData = CabinetDetail;
+
+export type AlarmKind = 'alarm' | 'fault';
+
+export interface AlarmEpisode {
+  stackId: number;
+  code: number;
+  kind: AlarmKind;
+  start: Date;
+  /** null = still ongoing (last sample within ~3 min of now). */
+  end: Date | null;
+  durationMs: number;
+}
+
+export interface LiveAlarmItem {
+  stackId: number;
+  code: number;
+  kind: AlarmKind;
 }
 
 // ─── Financial Types (re-export) ─────────────────────────────────

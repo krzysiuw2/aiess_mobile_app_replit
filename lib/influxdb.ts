@@ -5,8 +5,9 @@
  * Uses HTTP API with Flux queries.
  */
 
-import { LiveData, SimulationDataPoint, BatteryLiveData, BatteryDetailData } from '@/types';
-import { parseCsvToNumbers } from '@/lib/batteryHealth';
+import { LiveData, SimulationDataPoint, BatteryLiveData, CabinetDetail, AlarmEpisode, AlarmKind } from '@/types';
+import { parseCsvToNumbers, CABINET_OFFLINE_MS } from '@/lib/batteryHealth';
+import { parseAlarmCodesCsv } from '@/lib/alarmCodes';
 import { callInfluxProxy } from '@/lib/edge-proxy';
 
 // Analytics Types
@@ -787,9 +788,68 @@ export async function fetchBatteryLiveData(siteId: string): Promise<BatteryLiveD
   }
 }
 
-// ─── Battery Detail Data (Tier 2 — 60s detail) ─────────────────
+// ─── Battery Detail Data (Tier 2 — 60s per-cabinet) ─────────────
 
-export async function fetchBatteryDetail(siteId: string): Promise<BatteryDetailData | null> {
+function parseNum(raw: string | undefined): number | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  const n = parseFloat(raw);
+  return isNaN(n) ? undefined : n;
+}
+
+function rowToCabinet(row: Record<string, string>, nowMs: number): CabinetDetail | null {
+  const stackIdRaw = parseNum(row['stack_id']);
+  if (stackIdRaw === undefined) return null;
+
+  const timeMs = Date.parse(row['_time'] ?? '');
+  const lastUpdate = isNaN(timeMs) ? new Date() : new Date(timeMs);
+  const onlineField = parseNum(row['online']);
+  const fresh = !isNaN(timeMs) && nowMs - timeMs <= CABINET_OFFLINE_MS;
+  const online = onlineField !== 0 && fresh;
+
+  const alarmCodes = parseAlarmCodesCsv(row['alarms_csv']);
+  const faultCodes = parseAlarmCodesCsv(row['faults_csv']);
+  const alarmCount = parseNum(row['alarm_count']) ?? alarmCodes.length;
+  const faultCount = parseNum(row['fault_count']) ?? faultCodes.length;
+
+  const workingModeRaw =
+    parseNum(row['stack_working_mode']) ?? parseNum(row['stack_wm']) ?? 0;
+
+  return {
+    stackId: Math.round(stackIdRaw),
+    isAggregate: false,
+    online,
+    stackVoltage: parseNum(row['stack_voltage_v']) ?? 0,
+    stackCurrent: parseNum(row['stack_current_a']) ?? 0,
+    stackSoc: parseNum(row['stack_soc_percent']) ?? 0,
+    stackSoh: parseNum(row['stack_soh_percent']) ?? 0,
+    workingMode: workingModeRaw as import('@/types').BatteryWorkingMode,
+    chargeDischargeStatus: parseNum(row['stack_charge_discharge_status']) ?? 0,
+    maxChargeKw: parseNum(row['stack_max_charge_kw']) ?? 0,
+    maxDischargeKw: parseNum(row['stack_max_discharge_kw']) ?? 0,
+    cellCount: parseNum(row['cell_count']) ?? 0,
+    cellVoltageMin: parseNum(row['cell_voltage_min']) ?? 0,
+    cellVoltageMax: parseNum(row['cell_voltage_max']) ?? 0,
+    cellVoltageDelta: parseNum(row['cell_voltage_delta']) ?? 0,
+    cellVoltages: parseCsvToNumbers(row['cell_voltage_csv'] || ''),
+    ntcCount: parseNum(row['ntc_count']) ?? 0,
+    cellTempMin: parseNum(row['cell_temp_min']) ?? 0,
+    cellTempMax: parseNum(row['cell_temp_max']) ?? 0,
+    cellTemps: parseCsvToNumbers(row['cell_temp_csv'] || ''),
+    alarmCount,
+    alarmCodes,
+    faultCount,
+    faultCodes,
+    lastUpdate,
+  };
+}
+
+/**
+ * Fetch latest per-cabinet battery detail rows from battery_detail.
+ * stack_id is a numeric FIELD — pivot then group client-side.
+ * Ignores leftover pipeline test site alarmtest_1 via site_id filter.
+ */
+export async function fetchBatteryCabinets(siteId: string): Promise<CabinetDetail[]> {
+  if (siteId === 'alarmtest_1') return [];
 
   const query = `
     from(bucket: "battery_detail")
@@ -797,11 +857,17 @@ export async function fetchBatteryDetail(siteId: string): Promise<BatteryDetailD
       |> filter(fn: (r) => r._measurement == "energy_telemetry")
       |> filter(fn: (r) => r.site_id == "${siteId}")
       |> filter(fn: (r) =>
+           r._field == "stack_id" or
+           r._field == "online" or
            r._field == "stack_voltage_v" or
            r._field == "stack_current_a" or
            r._field == "stack_soc_percent" or
            r._field == "stack_soh_percent" or
+           r._field == "stack_working_mode" or
            r._field == "stack_wm" or
+           r._field == "stack_charge_discharge_status" or
+           r._field == "stack_max_charge_kw" or
+           r._field == "stack_max_discharge_kw" or
            r._field == "cell_count" or
            r._field == "cell_voltage_min" or
            r._field == "cell_voltage_max" or
@@ -810,62 +876,167 @@ export async function fetchBatteryDetail(siteId: string): Promise<BatteryDetailD
            r._field == "ntc_count" or
            r._field == "cell_temp_min" or
            r._field == "cell_temp_max" or
-           r._field == "cell_temp_csv"
+           r._field == "cell_temp_csv" or
+           r._field == "alarm_count" or
+           r._field == "alarms_csv" or
+           r._field == "fault_count" or
+           r._field == "faults_csv"
       )
-      |> last()
+      |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+      |> sort(columns: ["_time"], desc: true)
   `;
 
   try {
     const rows = await runFluxQuery(query);
     if (rows.length === 0) {
-      console.warn('[BatteryDetail] No data from battery_detail bucket (token may lack read access — check bucket permissions)');
-      return null;
+      console.warn('[BatteryCabinets] No data from battery_detail for', siteId);
+      return [];
     }
 
-    const STRING_FIELDS = new Set(['cell_voltage_csv', 'cell_temp_csv', 'active_faults']);
-    const numValues: Record<string, number> = {};
-    const strValues: Record<string, string> = {};
+    const nowMs = Date.now();
+    const latestByStack = new Map<number, CabinetDetail>();
+
     for (const row of rows) {
-      const field = row['_field']?.trim();
-      const raw = row['_value']?.trim();
-      if (!field || !raw) continue;
-      if (STRING_FIELDS.has(field)) {
-        strValues[field] = raw;
-      } else {
-        const num = parseFloat(raw);
-        if (!isNaN(num)) {
-          numValues[field] = num;
-        } else {
-          strValues[field] = raw;
-        }
+      const cabinet = rowToCabinet(row, nowMs);
+      if (!cabinet || cabinet.stackId === null) continue;
+      if (!latestByStack.has(cabinet.stackId)) {
+        latestByStack.set(cabinet.stackId, cabinet);
       }
     }
 
-    return {
-      stackVoltage: numValues['stack_voltage_v'] ?? 0,
-      stackCurrent: numValues['stack_current_a'] ?? 0,
-      stackSoc: numValues['stack_soc_percent'] ?? 0,
-      stackSoh: numValues['stack_soh_percent'] ?? 0,
-      workingMode: (numValues['stack_wm'] ?? 0) as import('@/types').BatteryWorkingMode,
-      cellCount: numValues['cell_count'] ?? 0,
-      cellVoltageMin: numValues['cell_voltage_min'] ?? 0,
-      cellVoltageMax: numValues['cell_voltage_max'] ?? 0,
-      cellVoltageDelta: numValues['cell_voltage_delta'] ?? 0,
-      cellVoltages: parseCsvToNumbers(strValues['cell_voltage_csv'] || ''),
-      ntcCount: numValues['ntc_count'] ?? 0,
-      cellTempMin: numValues['cell_temp_min'] ?? 0,
-      cellTempMax: numValues['cell_temp_max'] ?? 0,
-      cellTemps: parseCsvToNumbers(strValues['cell_temp_csv'] || ''),
-      lastUpdate: new Date(),
-    };
+    return Array.from(latestByStack.values()).sort(
+      (a, b) => (a.stackId ?? 0) - (b.stackId ?? 0),
+    );
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     if (msg.includes('404')) {
-      console.error('[BatteryDetail] 404 — app token lacks read access to battery_detail bucket. Update token permissions in InfluxDB Cloud UI.');
+      console.error('[BatteryCabinets] 404 — token lacks read access to battery_detail');
     } else {
-      console.error('[BatteryDetail] Error:', msg);
+      console.error('[BatteryCabinets] Error:', msg);
     }
-    return null;
+    return [];
+  }
+}
+
+/** @deprecated Prefer fetchBatteryCabinets — returns first cabinet or null. */
+export async function fetchBatteryDetail(siteId: string): Promise<CabinetDetail | null> {
+  const cabinets = await fetchBatteryCabinets(siteId);
+  return cabinets[0] ?? null;
+}
+
+// ─── Alarm History (battery_alarms, 365 d) ──────────────────────
+
+const ALARM_EPISODE_GAP_MS = 3 * 60 * 1000;
+
+interface AlarmSample {
+  time: number;
+  stackId: number;
+  code: number;
+  kind: AlarmKind;
+}
+
+function reconstructEpisodes(samples: AlarmSample[], nowMs: number): AlarmEpisode[] {
+  // Group by (stackId, code, kind)
+  const groups = new Map<string, AlarmSample[]>();
+  for (const s of samples) {
+    const key = `${s.stackId}|${s.kind}|${s.code}`;
+    const list = groups.get(key) ?? [];
+    list.push(s);
+    groups.set(key, list);
+  }
+
+  const episodes: AlarmEpisode[] = [];
+
+  for (const list of groups.values()) {
+    list.sort((a, b) => a.time - b.time);
+    let epStart = list[0].time;
+    let epEnd = list[0].time;
+
+    const flush = (start: number, end: number) => {
+      const ongoing = nowMs - end <= ALARM_EPISODE_GAP_MS;
+      episodes.push({
+        stackId: list[0].stackId,
+        code: list[0].code,
+        kind: list[0].kind,
+        start: new Date(start),
+        end: ongoing ? null : new Date(end),
+        durationMs: (ongoing ? nowMs : end) - start,
+      });
+    };
+
+    for (let i = 1; i < list.length; i++) {
+      const s = list[i];
+      if (s.time - epEnd > ALARM_EPISODE_GAP_MS) {
+        flush(epStart, epEnd);
+        epStart = s.time;
+      }
+      epEnd = s.time;
+    }
+    flush(epStart, epEnd);
+  }
+
+  return episodes.sort((a, b) => b.start.getTime() - a.start.getTime());
+}
+
+/**
+ * Fetch alarm/fault history from battery_alarms and reconstruct episodes.
+ * Rows exist only while alarms are active; a >3 min gap means cleared.
+ */
+export async function fetchAlarmHistory(
+  siteId: string,
+  start: Date,
+  stop: Date = new Date(),
+): Promise<AlarmEpisode[]> {
+  if (siteId === 'alarmtest_1') return [];
+
+  const query = `
+    from(bucket: "battery_alarms")
+      |> range(start: ${start.toISOString()}, stop: ${stop.toISOString()})
+      |> filter(fn: (r) => r._measurement == "battery_alarm")
+      |> filter(fn: (r) => r.site_id == "${siteId}")
+      |> filter(fn: (r) =>
+           r._field == "stack_id" or
+           r._field == "alarm_count" or
+           r._field == "alarms_csv" or
+           r._field == "fault_count" or
+           r._field == "faults_csv"
+      )
+      |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+      |> sort(columns: ["_time"])
+  `;
+
+  try {
+    const rows = await runFluxQuery(query);
+    const samples: AlarmSample[] = [];
+
+    for (const row of rows) {
+      if ((row['site_id'] ?? '').trim() === 'alarmtest_1') continue;
+      const timeMs = Date.parse(row['_time'] ?? '');
+      const stackId = parseNum(row['stack_id']);
+      if (isNaN(timeMs) || stackId === undefined) continue;
+
+      for (const code of parseAlarmCodesCsv(row['alarms_csv'])) {
+        samples.push({
+          time: timeMs,
+          stackId: Math.round(stackId),
+          code,
+          kind: 'alarm',
+        });
+      }
+      for (const code of parseAlarmCodesCsv(row['faults_csv'])) {
+        samples.push({
+          time: timeMs,
+          stackId: Math.round(stackId),
+          code,
+          kind: 'fault',
+        });
+      }
+    }
+
+    return reconstructEpisodes(samples, Date.now());
+  } catch (error) {
+    console.error('[AlarmHistory] Error:', error);
+    throw error;
   }
 }
 

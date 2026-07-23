@@ -1,49 +1,84 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { AlertTriangle, CheckCircle } from 'lucide-react-native';
+import React, { useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { AlertTriangle, CheckCircle, History } from 'lucide-react-native';
+import { useRouter, type Href } from 'expo-router';
 import Colors from '@/constants/colors';
 import { CHART_COLORS } from '@/constants/chartColors';
-import type { BatteryLiveData } from '@/types';
+import type { CabinetDetail, LiveAlarmItem } from '@/types';
 import type { TranslationKeys } from '@/locales';
+import { getBessProducer } from '@/constants/bessProducers';
+import { getAlarmLabel } from '@/lib/alarmCodes';
 
 interface BatteryAlarmsProps {
-  data: BatteryLiveData | null;
+  cabinets: CabinetDetail[];
+  /** null = whole site */
+  selection: number | null;
+  siteId: string;
   t: TranslationKeys;
 }
 
-export function BatteryAlarms({ data, t }: BatteryAlarmsProps) {
+export function BatteryAlarms({ cabinets, selection, siteId, t }: BatteryAlarmsProps) {
   const bt = t.analytics.batteryTab;
+  const router = useRouter();
+  const producer = getBessProducer(siteId);
 
-  if (!data) return null;
+  const items = useMemo((): LiveAlarmItem[] => {
+    const source =
+      selection === null
+        ? cabinets.filter(c => c.online)
+        : cabinets.filter(c => c.stackId === selection);
 
-  const hasFaults = data.activeFaultCount > 0 && data.activeFaults.length > 0;
-  const faultValues = hasFaults
-    ? data.activeFaults.split(',').map(v => v.trim()).filter(Boolean)
-    : [];
+    const out: LiveAlarmItem[] = [];
+    for (const c of source) {
+      if (c.stackId === null) continue;
+      for (const code of c.alarmCodes) {
+        out.push({ stackId: c.stackId, code, kind: 'alarm' });
+      }
+      for (const code of c.faultCodes) {
+        out.push({ stackId: c.stackId, code, kind: 'fault' });
+      }
+    }
+    return out;
+  }, [cabinets, selection]);
+
+  const hasAlarms = items.length > 0;
+  const showCabinetTag = selection === null && cabinets.length > 1;
 
   return (
-    <View style={[styles.container, hasFaults ? styles.containerAlert : styles.containerOk]}>
+    <View style={[styles.container, hasAlarms ? styles.containerAlert : styles.containerOk]}>
       <View style={styles.header}>
-        {hasFaults ? (
+        {hasAlarms ? (
           <AlertTriangle size={18} color={CHART_COLORS.error} />
         ) : (
           <CheckCircle size={18} color={CHART_COLORS.success} />
         )}
-        <Text style={[styles.title, { color: hasFaults ? CHART_COLORS.error : CHART_COLORS.success }]}>
-          {hasFaults
-            ? `${bt.alarms} (${data.activeFaultCount})`
-            : bt.noAlarms}
+        <Text style={[styles.title, { color: hasAlarms ? CHART_COLORS.error : CHART_COLORS.success }]}>
+          {hasAlarms ? `${bt.alarms} (${items.length})` : bt.noAlarms}
         </Text>
       </View>
-      {hasFaults && (
+
+      {hasAlarms && (
         <View style={styles.faultList}>
-          {faultValues.map((fault, i) => (
-            <View key={i} style={styles.faultBadge}>
-              <Text style={styles.faultText}>REG {fault}</Text>
+          {items.map((item, i) => (
+            <View key={`${item.stackId}-${item.kind}-${item.code}-${i}`} style={styles.faultBadge}>
+              <Text style={styles.faultText}>
+                {showCabinetTag ? `${bt.cabinet} ${item.stackId}: ` : ''}
+                {getAlarmLabel(producer, item.code, item.kind)}
+              </Text>
+              <Text style={styles.codeText}>#{item.code}</Text>
             </View>
           ))}
         </View>
       )}
+
+      <TouchableOpacity
+        style={styles.historyLink}
+        onPress={() => router.push('/(tabs)/analytics/alarm-history' as Href)}
+        accessibilityRole="button"
+      >
+        <History size={14} color={Colors.primary} />
+        <Text style={styles.historyText}>{bt.viewAlarmHistory}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -73,21 +108,44 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   faultList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
     marginTop: 10,
   },
   faultBadge: {
     backgroundColor: CHART_COLORS.error + '20',
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 6,
     borderRadius: 6,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
   },
   faultText: {
     fontSize: 12,
     fontWeight: '600',
     color: CHART_COLORS.error,
+    flex: 1,
+  },
+  codeText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: CHART_COLORS.error,
+    opacity: 0.7,
     fontVariant: ['tabular-nums'],
+  },
+  historyLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border + '80',
+  },
+  historyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.primary,
   },
 });

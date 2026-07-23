@@ -1,9 +1,17 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
+  TouchableOpacity,
+} from 'react-native';
 import Colors from '@/constants/colors';
-import type { BatteryLiveData, BatteryDetailData } from '@/types';
+import type { BatteryLiveData, CabinetDetail } from '@/types';
 import type { TranslationKeys } from '@/locales';
-import { fetchBatteryLiveData, fetchBatteryDetail } from '@/lib/influxdb';
+import { fetchBatteryLiveData, fetchBatteryCabinets } from '@/lib/influxdb';
+import { aggregateSite } from '@/lib/batteryHealth';
 import { SectionHeader } from './SectionHeader';
 import { BatteryLiveSummary } from './BatteryLiveSummary';
 import { BatteryAlarms } from './BatteryAlarms';
@@ -15,6 +23,9 @@ interface BatteryDataViewProps {
   t: TranslationKeys;
 }
 
+/** null = whole site; number = cabinet stack_id */
+type CabinetSelection = null | number;
+
 const LIVE_POLL_MS = 5_000;
 const DETAIL_POLL_MS = 60_000;
 
@@ -22,7 +33,8 @@ export function BatteryDataView({ deviceId, isActive, t }: BatteryDataViewProps)
   const bt = t.analytics.batteryTab;
 
   const [liveData, setLiveData] = useState<BatteryLiveData | null>(null);
-  const [detailData, setDetailData] = useState<BatteryDetailData | null>(null);
+  const [cabinets, setCabinets] = useState<CabinetDetail[]>([]);
+  const [selection, setSelection] = useState<CabinetSelection>(null);
   const [liveLoading, setLiveLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(true);
   const [liveError, setLiveError] = useState<string | null>(null);
@@ -48,11 +60,14 @@ export function BatteryDataView({ deviceId, isActive, t }: BatteryDataViewProps)
   const fetchDetail = useCallback(async () => {
     if (!deviceId) return;
     try {
-      const data = await fetchBatteryDetail(deviceId);
-      if (data) {
-        console.log(`[BatteryDetail] OK — stack ${data.stackVoltage.toFixed(1)}V, ${data.cellVoltages.length} cells, ${data.cellTemps.length} NTCs`);
+      const data = await fetchBatteryCabinets(deviceId);
+      if (data.length > 0) {
+        console.log(
+          `[BatteryCabinets] OK — ${data.length} cabinet(s): ` +
+            data.map(c => `#${c.stackId}${c.online ? '' : ' offline'}`).join(', '),
+        );
       }
-      setDetailData(data);
+      setCabinets(data);
       setDetailError(null);
     } catch (e) {
       console.error('[BatteryDataView] Detail fetch error:', e);
@@ -73,6 +88,7 @@ export function BatteryDataView({ deviceId, isActive, t }: BatteryDataViewProps)
 
     setLiveLoading(true);
     setDetailLoading(true);
+    setSelection(null);
     fetchLive();
     fetchDetail();
 
@@ -85,6 +101,54 @@ export function BatteryDataView({ deviceId, isActive, t }: BatteryDataViewProps)
     };
   }, [isActive, deviceId, fetchLive, fetchDetail]);
 
+  // Drop selection if the cabinet disappears
+  useEffect(() => {
+    if (selection === null) return;
+    if (!cabinets.some(c => c.stackId === selection)) {
+      setSelection(null);
+    }
+  }, [cabinets, selection]);
+
+  const multiCabinet = cabinets.length > 1;
+
+  const selectedDetail = useMemo((): CabinetDetail | null => {
+    if (cabinets.length === 0) return null;
+    if (selection === null) {
+      if (multiCabinet) return aggregateSite(cabinets);
+      return cabinets[0];
+    }
+    return cabinets.find(c => c.stackId === selection) ?? null;
+  }, [cabinets, selection, multiCabinet]);
+
+  // Live summary: prefer selected cabinet extremes when available
+  const liveSummaryData = useMemo((): BatteryLiveData | null => {
+    if (selectedDetail && !selectedDetail.isAggregate) {
+      return {
+        minCellVoltage: selectedDetail.cellVoltageMin,
+        maxCellVoltage: selectedDetail.cellVoltageMax,
+        voltageDelta: selectedDetail.cellVoltageDelta,
+        minCellTemp: selectedDetail.cellTempMin,
+        maxCellTemp: selectedDetail.cellTempMax,
+        activeFaults: selectedDetail.faultCodes.join(','),
+        activeFaultCount: selectedDetail.faultCount,
+        lastUpdate: selectedDetail.lastUpdate,
+      };
+    }
+    if (selectedDetail?.isAggregate) {
+      return {
+        minCellVoltage: selectedDetail.cellVoltageMin,
+        maxCellVoltage: selectedDetail.cellVoltageMax,
+        voltageDelta: selectedDetail.cellVoltageDelta,
+        minCellTemp: selectedDetail.cellTempMin,
+        maxCellTemp: selectedDetail.cellTempMax,
+        activeFaults: selectedDetail.faultCodes.join(','),
+        activeFaultCount: selectedDetail.faultCount,
+        lastUpdate: selectedDetail.lastUpdate,
+      };
+    }
+    return liveData;
+  }, [selectedDetail, liveData]);
+
   if (!deviceId) {
     return (
       <View style={styles.centerContainer}>
@@ -95,33 +159,92 @@ export function BatteryDataView({ deviceId, isActive, t }: BatteryDataViewProps)
 
   return (
     <View style={styles.container}>
-      {/* Section: Live Battery Summary (5s) */}
+      {/* Cabinet selector — only for multi-stack sites */}
+      {multiCabinet && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.selectorScroll}
+          contentContainerStyle={styles.selectorRow}
+        >
+          <TouchableOpacity
+            style={[styles.chip, selection === null && styles.chipActive]}
+            onPress={() => setSelection(null)}
+          >
+            <Text style={[styles.chipText, selection === null && styles.chipTextActive]}>
+              {bt.wholeSite}
+            </Text>
+          </TouchableOpacity>
+          {cabinets.map(c => {
+            const stackId = c.stackId;
+            if (stackId === null) return null;
+            const active = selection === stackId;
+            return (
+              <TouchableOpacity
+                key={stackId}
+                style={[
+                  styles.chip,
+                  active && styles.chipActive,
+                  !c.online && styles.chipOffline,
+                ]}
+                onPress={() => setSelection(stackId)}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    active && styles.chipTextActive,
+                    !c.online && styles.chipTextOffline,
+                  ]}
+                >
+                  {bt.cabinet} {stackId}
+                  {!c.online ? ` · ${bt.offline}` : ''}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      {/* Section: Live Battery Summary */}
       <SectionHeader title={bt.liveSummary} icon="Activity" />
-      {liveLoading && !liveData ? (
+      {liveLoading && !liveSummaryData ? (
         <View style={styles.loadingRow}>
           <ActivityIndicator size="small" color={Colors.primary} />
           <Text style={styles.loadingText}>{t.common.loading}</Text>
         </View>
-      ) : liveError && !liveData ? (
+      ) : liveError && !liveSummaryData ? (
         <View style={styles.errorCard}>
           <Text style={styles.errorText}>{liveError}</Text>
         </View>
       ) : (
-        <BatteryLiveSummary data={liveData} t={t} />
+        <BatteryLiveSummary data={liveSummaryData} t={t} />
       )}
 
-      {/* Section: Alarms (from 5s live data) */}
+      {/* Section: Alarms from battery_detail */}
       <SectionHeader title={bt.alarms} icon="AlertTriangle" />
-      <BatteryAlarms data={liveData} t={t} />
+      <BatteryAlarms
+        cabinets={cabinets}
+        selection={selection}
+        siteId={deviceId}
+        t={t}
+      />
 
-      {/* Section: Battery Detail — stack summary + heatmaps (60s) */}
-      {detailLoading && !detailData ? (
+      {/* Section: Battery Detail */}
+      {detailLoading && cabinets.length === 0 ? (
         <View style={[styles.loadingRow, { marginTop: 24 }]}>
           <ActivityIndicator size="small" color={Colors.primary} />
           <Text style={styles.loadingText}>{bt.loadingDetail}</Text>
         </View>
+      ) : detailError && cabinets.length === 0 ? (
+        <View style={styles.errorCard}>
+          <Text style={styles.errorText}>{detailError}</Text>
+        </View>
       ) : (
-        <BatteryDetailView data={detailData} t={t} />
+        <BatteryDetailView
+          data={selectedDetail}
+          multiCabinet={multiCabinet}
+          t={t}
+        />
       )}
 
       {/* Timestamps */}
@@ -131,9 +254,9 @@ export function BatteryDataView({ deviceId, isActive, t }: BatteryDataViewProps)
             {bt.liveUpdate}: {liveData.lastUpdate.toLocaleTimeString()}
           </Text>
         )}
-        {detailData && (
+        {selectedDetail && (
           <Text style={styles.timestamp}>
-            {bt.detailUpdate}: {detailData.lastUpdate.toLocaleTimeString()}
+            {bt.detailUpdate}: {selectedDetail.lastUpdate.toLocaleTimeString()}
           </Text>
         )}
       </View>
@@ -150,6 +273,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 40,
+  },
+  selectorScroll: {
+    marginBottom: 12,
+    maxHeight: 44,
+  },
+  selectorRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  chipActive: {
+    backgroundColor: Colors.primary + '18',
+    borderColor: Colors.primary,
+  },
+  chipOffline: {
+    opacity: 0.55,
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Colors.textSecondary,
+  },
+  chipTextActive: {
+    color: Colors.primary,
+    fontWeight: '700',
+  },
+  chipTextOffline: {
+    color: Colors.textLight,
   },
   loadingRow: {
     flexDirection: 'row',
