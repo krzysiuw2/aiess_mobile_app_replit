@@ -644,6 +644,8 @@ export interface LiveAlarmItem {
   stackId: number;
   code: number;
   kind: AlarmKind;
+  /** When this alarm/fault episode started (from battery_alarms history), if known. */
+  since?: Date;
 }
 
 // ─── Financial Types (re-export) ─────────────────────────────────

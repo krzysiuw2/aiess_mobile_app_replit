@@ -1040,6 +1040,38 @@ export async function fetchAlarmHistory(
   }
 }
 
+/**
+ * Key for looking up an alarm's start time: matches AlarmEpisode / LiveAlarmItem.
+ */
+export function alarmStartKey(stackId: number, kind: AlarmKind, code: number): string {
+  return `${stackId}|${kind}|${code}`;
+}
+
+/**
+ * Fetch "active since" timestamps for currently-ongoing alarm/fault episodes,
+ * so live badges can show when each one started (not just that it's active).
+ * Looks back far enough to find the true start of long-running episodes;
+ * cheap because battery_alarms only has rows while something is active.
+ */
+export async function fetchOngoingAlarmStarts(
+  siteId: string,
+  lookbackDays: number = 30,
+): Promise<Map<string, Date>> {
+  const map = new Map<string, Date>();
+  try {
+    const stop = new Date();
+    const start = new Date(stop.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+    const episodes = await fetchAlarmHistory(siteId, start, stop);
+    for (const ep of episodes) {
+      if (ep.end !== null) continue; // only currently-ongoing episodes
+      map.set(alarmStartKey(ep.stackId, ep.kind, ep.code), ep.start);
+    }
+  } catch (error) {
+    console.error('[AlarmStarts] Error:', error);
+  }
+  return map;
+}
+
 // TGE Price types
 export interface TgePricePoint {
   // Stored "Warsaw-as-Z" timestamp: its UTC fields equal the Warsaw wall clock

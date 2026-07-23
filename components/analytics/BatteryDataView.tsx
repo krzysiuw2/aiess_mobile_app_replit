@@ -8,9 +8,9 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import Colors from '@/constants/colors';
-import type { BatteryLiveData, CabinetDetail } from '@/types';
+import type { BatteryLiveData, CabinetDetail, Language } from '@/types';
 import type { TranslationKeys } from '@/locales';
-import { fetchBatteryLiveData, fetchBatteryCabinets } from '@/lib/influxdb';
+import { fetchBatteryLiveData, fetchBatteryCabinets, fetchOngoingAlarmStarts } from '@/lib/influxdb';
 import { aggregateSite } from '@/lib/batteryHealth';
 import { SectionHeader } from './SectionHeader';
 import { BatteryLiveSummary } from './BatteryLiveSummary';
@@ -21,6 +21,7 @@ interface BatteryDataViewProps {
   deviceId: string | undefined;
   isActive: boolean;
   t: TranslationKeys;
+  language: Language;
 }
 
 /** null = whole site; number = cabinet stack_id */
@@ -29,11 +30,12 @@ type CabinetSelection = null | number;
 const LIVE_POLL_MS = 5_000;
 const DETAIL_POLL_MS = 60_000;
 
-export function BatteryDataView({ deviceId, isActive, t }: BatteryDataViewProps) {
+export function BatteryDataView({ deviceId, isActive, t, language }: BatteryDataViewProps) {
   const bt = t.analytics.batteryTab;
 
   const [liveData, setLiveData] = useState<BatteryLiveData | null>(null);
   const [cabinets, setCabinets] = useState<CabinetDetail[]>([]);
+  const [alarmStarts, setAlarmStarts] = useState<Map<string, Date>>(new Map());
   const [selection, setSelection] = useState<CabinetSelection>(null);
   const [liveLoading, setLiveLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(true);
@@ -60,7 +62,10 @@ export function BatteryDataView({ deviceId, isActive, t }: BatteryDataViewProps)
   const fetchDetail = useCallback(async () => {
     if (!deviceId) return;
     try {
-      const data = await fetchBatteryCabinets(deviceId);
+      const [data, starts] = await Promise.all([
+        fetchBatteryCabinets(deviceId),
+        fetchOngoingAlarmStarts(deviceId),
+      ]);
       if (data.length > 0) {
         console.log(
           `[BatteryCabinets] OK — ${data.length} cabinet(s): ` +
@@ -68,6 +73,7 @@ export function BatteryDataView({ deviceId, isActive, t }: BatteryDataViewProps)
         );
       }
       setCabinets(data);
+      setAlarmStarts(starts);
       setDetailError(null);
     } catch (e) {
       console.error('[BatteryDataView] Detail fetch error:', e);
@@ -225,7 +231,9 @@ export function BatteryDataView({ deviceId, isActive, t }: BatteryDataViewProps)
       <BatteryAlarms
         cabinets={cabinets}
         selection={selection}
+        alarmStarts={alarmStarts}
         siteId={deviceId}
+        language={language}
         t={t}
       />
 

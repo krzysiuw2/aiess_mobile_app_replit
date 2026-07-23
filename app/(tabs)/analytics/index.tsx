@@ -593,6 +593,7 @@ export default function AnalyticsScreen() {
             deviceId={selectedDevice?.device_id}
             isActive={activeTab === 'battery'}
             t={t}
+            language={language}
           />
         )}
       </ScrollView>

@@ -616,6 +616,8 @@ export default {
       alarms: 'Alarms',
       noAlarms: 'No Active Alarms',
       viewAlarmHistory: 'View alarm history',
+      activeSince: 'Active since',
+      justDetected: 'Just detected',
       stackSummary: 'Stack Summary',
       stackVoltage: 'Voltage',
       stackCurrent: 'Current',

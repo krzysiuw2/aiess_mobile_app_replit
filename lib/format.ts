@@ -26,3 +26,18 @@ export function formatPowerValue(kw: number): { value: string; unit: 'kW' | 'MW'
   if (abs >= 100) return { value: Math.round(kw).toString(), unit: 'kW' };
   return { value: kw.toFixed(1), unit: 'kW' };
 }
+
+/**
+ * Format a millisecond duration compactly: "42m", "3h 15m", "2d 4h".
+ * Used for alarm "active since" / episode duration displays.
+ */
+export function formatDuration(ms: number): string {
+  const totalMin = Math.max(0, Math.round(ms / 60_000));
+  if (totalMin < 60) return `${totalMin}m`;
+  const hours = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (hours < 48) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const remH = hours % 24;
+  return remH > 0 ? `${days}d ${remH}h` : `${days}d`;
+}

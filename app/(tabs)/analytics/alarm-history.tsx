@@ -17,6 +17,7 @@ import { useDevices } from '@/contexts/DeviceContext';
 import { fetchAlarmHistory } from '@/lib/influxdb';
 import { getBessProducer } from '@/constants/bessProducers';
 import { getAlarmLabel } from '@/lib/alarmCodes';
+import { formatDuration } from '@/lib/format';
 import type { AlarmEpisode } from '@/types';
 
 type HistoryRange = '24h' | '7d' | '30d' | '90d' | '365d';
@@ -29,23 +30,12 @@ const RANGE_MS: Record<HistoryRange, number> = {
   '365d': 365 * 24 * 60 * 60 * 1000,
 };
 
-function formatDuration(ms: number): string {
-  const totalMin = Math.max(0, Math.round(ms / 60_000));
-  if (totalMin < 60) return `${totalMin}m`;
-  const hours = Math.floor(totalMin / 60);
-  const mins = totalMin % 60;
-  if (hours < 48) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-  const days = Math.floor(hours / 24);
-  const remH = hours % 24;
-  return remH > 0 ? `${days}d ${remH}h` : `${days}d`;
-}
-
 function dayKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export default function AlarmHistoryScreen() {
-  const { t } = useSettings();
+  const { t, language } = useSettings();
   const bt = t.analytics.batteryTab;
   const router = useRouter();
   const { selectedDevice } = useDevices();
@@ -116,7 +106,7 @@ export default function AlarmHistoryScreen() {
             color={ongoing ? CHART_COLORS.error : Colors.textSecondary}
           />
           <Text style={styles.cardTitle} numberOfLines={2}>
-            {getAlarmLabel(producer, ep.code, ep.kind)}
+            {getAlarmLabel(producer, ep.code, ep.kind, language)}
           </Text>
         </View>
         <View style={styles.metaRow}>
