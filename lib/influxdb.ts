@@ -1027,6 +1027,11 @@ function reconstructEpisodes(samples: AlarmSample[], nowMs: number): AlarmEpisod
 /**
  * Fetch alarm/fault history from battery_alarms and reconstruct episodes.
  * Rows exist only while alarms are active; a >3 min gap means cleared.
+ *
+ * NOTE: the measurement in this bucket is `energy_telemetry` (same name the
+ * forwarder uses everywhere), not `battery_alarm` — a stale earlier filter
+ * used the wrong name and made this query return zero rows forever,
+ * regardless of range, hiding even currently-active alarms from history.
  */
 export async function fetchAlarmHistory(
   siteId: string,
@@ -1038,7 +1043,7 @@ export async function fetchAlarmHistory(
   const query = `
     from(bucket: "battery_alarms")
       |> range(start: ${start.toISOString()}, stop: ${stop.toISOString()})
-      |> filter(fn: (r) => r._measurement == "battery_alarm")
+      |> filter(fn: (r) => r._measurement == "energy_telemetry")
       |> filter(fn: (r) => r.site_id == "${siteId}")
       |> filter(fn: (r) =>
            r._field == "stack_id" or
