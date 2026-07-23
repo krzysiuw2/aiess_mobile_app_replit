@@ -11,6 +11,7 @@ import {
   getWorkingModeLabel,
   getWorkingModeStatus,
   getChargeDischargeLabel,
+  cabinetDisplayNumber,
 } from '@/lib/batteryHealth';
 import { SectionHeader } from './SectionHeader';
 import { CellHeatmapGrid } from './CellHeatmapGrid';
@@ -108,7 +109,7 @@ export function BatteryDetailView({ data, multiCabinet, t }: BatteryDetailViewPr
           )}
           {!data.isAggregate && data.stackId !== null && (
             <Text style={styles.cabinetLabel}>
-              {bt.cabinet} {data.stackId}
+              {bt.cabinet} {cabinetDisplayNumber(data.stackId)}
             </Text>
           )}
         </View>

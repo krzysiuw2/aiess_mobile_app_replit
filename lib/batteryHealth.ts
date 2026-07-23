@@ -4,6 +4,16 @@ import type { BatteryWorkingMode, CabinetDetail } from '@/types';
 /** Cabinets with no row newer than this are treated as offline. */
 export const CABINET_OFFLINE_MS = 5 * 60 * 1000;
 
+/**
+ * The device's `stack_id` field is 0-indexed (0, 1, 2, ...). Every place the
+ * cabinet number is shown to a user should display it 1-indexed ("Cabinet 1",
+ * not "Cabinet 0") — use this helper instead of the raw stackId so the
+ * convention stays consistent everywhere.
+ */
+export function cabinetDisplayNumber(stackId: number): number {
+  return stackId + 1;
+}
+
 export type HealthStatus = 'healthy' | 'warning' | 'critical';
 
 const STATUS_COLORS: Record<HealthStatus, string> = {

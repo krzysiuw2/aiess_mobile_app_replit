@@ -11,7 +11,7 @@ import Colors from '@/constants/colors';
 import type { BatteryLiveData, CabinetDetail, Language } from '@/types';
 import type { TranslationKeys } from '@/locales';
 import { fetchBatteryLiveData, fetchBatteryCabinets, fetchOngoingAlarmStarts } from '@/lib/influxdb';
-import { aggregateSite } from '@/lib/batteryHealth';
+import { aggregateSite, cabinetDisplayNumber } from '@/lib/batteryHealth';
 import { SectionHeader } from './SectionHeader';
 import { BatteryLiveSummary } from './BatteryLiveSummary';
 import { BatteryAlarms } from './BatteryAlarms';
@@ -202,7 +202,7 @@ export function BatteryDataView({ deviceId, isActive, t, language }: BatteryData
                     !c.online && styles.chipTextOffline,
                   ]}
                 >
-                  {bt.cabinet} {stackId}
+                  {bt.cabinet} {cabinetDisplayNumber(stackId)}
                   {!c.online ? ` · ${bt.offline}` : ''}
                 </Text>
               </TouchableOpacity>

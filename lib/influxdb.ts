@@ -161,9 +161,16 @@ function splitCsvLine(line: string): string[] {
  * first block, which can make entire series (e.g. a battery cabinet) vanish
  * from the parsed result. Re-read the header after every annotation run /
  * blank-line separator instead.
+ *
+ * IMPORTANT: the real HTTP response uses CRLF (`\r\n`) line endings.
+ * Splitting on `\n` alone leaves a trailing `\r` on every line, which turns
+ * blank separator lines into the non-empty string `"\r"` (breaking block
+ * detection) and appends a stray `\r` to the last column of every header /
+ * data row (breaking key lookups like `row['stack_working_mode']`). Split on
+ * `\r?\n` so this works regardless of line-ending style.
  */
 function parseInfluxCSV(csv: string): Record<string, string>[] {
-  const lines = csv.trim().split('\n');
+  const lines = csv.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
 
   const results: Record<string, string>[] = [];

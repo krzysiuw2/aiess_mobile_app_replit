@@ -18,6 +18,7 @@ import { fetchAlarmHistory } from '@/lib/influxdb';
 import { getBessProducer } from '@/constants/bessProducers';
 import { getAlarmLabel } from '@/lib/alarmCodes';
 import { formatDuration } from '@/lib/format';
+import { cabinetDisplayNumber } from '@/lib/batteryHealth';
 import type { AlarmEpisode } from '@/types';
 
 type HistoryRange = '24h' | '7d' | '30d' | '90d' | '365d';
@@ -111,7 +112,7 @@ export default function AlarmHistoryScreen() {
         </View>
         <View style={styles.metaRow}>
           <Text style={styles.meta}>
-            {bt.cabinet} {ep.stackId}
+            {bt.cabinet} {cabinetDisplayNumber(ep.stackId)}
           </Text>
           <Text style={styles.meta}>
             {bt.code} #{ep.code}

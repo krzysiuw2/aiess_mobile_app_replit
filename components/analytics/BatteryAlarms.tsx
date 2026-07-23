@@ -10,6 +10,7 @@ import { getBessProducer } from '@/constants/bessProducers';
 import { getAlarmLabel } from '@/lib/alarmCodes';
 import { alarmStartKey } from '@/lib/influxdb';
 import { formatDuration } from '@/lib/format';
+import { cabinetDisplayNumber } from '@/lib/batteryHealth';
 
 interface BatteryAlarmsProps {
   cabinets: CabinetDetail[];
@@ -86,7 +87,7 @@ export function BatteryAlarms({
             <View key={`${item.stackId}-${item.kind}-${item.code}-${i}`} style={styles.faultBadge}>
               <View style={styles.faultTextCol}>
                 <Text style={styles.faultText}>
-                  {showCabinetTag ? `${bt.cabinet} ${item.stackId}: ` : ''}
+                  {showCabinetTag ? `${bt.cabinet} ${cabinetDisplayNumber(item.stackId)}: ` : ''}
                   {getAlarmLabel(producer, item.code, item.kind, language)}
                 </Text>
                 <Text style={styles.sinceText}>
