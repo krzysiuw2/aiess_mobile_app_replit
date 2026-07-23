@@ -149,7 +149,18 @@ function splitCsvLine(line: string): string[] {
 }
 
 /**
- * Parse InfluxDB CSV response into key-value pairs
+ * Parse InfluxDB annotated CSV into key-value pairs.
+ *
+ * A single Flux response can contain MULTIPLE result blocks, each with its
+ * own `#datatype`/`#group`/`#default` annotation lines followed by its own
+ * header row — Influx starts a new block whenever a table's column set
+ * differs from the previous one (e.g. one series has a sparse field like
+ * `alarms_csv` present and another doesn't at that timestamp). Blocks are
+ * also separated by a blank line. Only reading the header once and reusing
+ * it for the whole response silently misaligns/corrupts every row after the
+ * first block, which can make entire series (e.g. a battery cabinet) vanish
+ * from the parsed result. Re-read the header after every annotation run /
+ * blank-line separator instead.
  */
 function parseInfluxCSV(csv: string): Record<string, string>[] {
   const lines = csv.trim().split('\n');
@@ -157,14 +168,25 @@ function parseInfluxCSV(csv: string): Record<string, string>[] {
 
   const results: Record<string, string>[] = [];
   let headers: string[] = [];
+  let expectHeader = true;
 
   for (const line of lines) {
-    if (!line || line.startsWith('#')) continue;
+    if (line.startsWith('#')) {
+      // Annotation line: a new result block (and thus a new header) follows.
+      expectHeader = true;
+      continue;
+    }
+    if (!line) {
+      // Blank line: also separates result blocks.
+      expectHeader = true;
+      continue;
+    }
 
     const values = splitCsvLine(line);
 
-    if (headers.length === 0) {
+    if (expectHeader) {
       headers = values;
+      expectHeader = false;
       continue;
     }
 
@@ -844,8 +866,22 @@ function rowToCabinet(row: Record<string, string>, nowMs: number): CabinetDetail
 }
 
 /**
+ * How far back to look when discovering cabinets. Wider than the 5-minute
+ * "online" freshness threshold on purpose: a cabinet that hit the daemon's
+ * comms backoff (ADR 0011 — 3 failures -> 10-poll backoff) or a brand-new
+ * cabinet that only just started reporting must still show up in the
+ * selector (greyed out via CABINET_OFFLINE_MS in rowToCabinet), not vanish.
+ * Kept modest (not e.g. hours) because this query includes the heavy
+ * cell_voltage_csv/cell_temp_csv string fields — widening it multiplies how
+ * much battery_detail data gets scanned on every 60s poll.
+ */
+const CABINET_DISCOVERY_RANGE = '-15m';
+
+/**
  * Fetch latest per-cabinet battery detail rows from battery_detail.
- * stack_id is a numeric FIELD — pivot then group client-side.
+ * stack_id is a numeric FIELD — pivot, then group/sort/limit server-side so
+ * exactly one (the latest) row per cabinet comes back regardless of how wide
+ * the discovery range is.
  * Ignores leftover pipeline test site alarmtest_1 via site_id filter.
  */
 export async function fetchBatteryCabinets(siteId: string): Promise<CabinetDetail[]> {
@@ -853,7 +889,7 @@ export async function fetchBatteryCabinets(siteId: string): Promise<CabinetDetai
 
   const query = `
     from(bucket: "battery_detail")
-      |> range(start: -5m)
+      |> range(start: ${CABINET_DISCOVERY_RANGE})
       |> filter(fn: (r) => r._measurement == "energy_telemetry")
       |> filter(fn: (r) => r.site_id == "${siteId}")
       |> filter(fn: (r) =>
@@ -883,7 +919,10 @@ export async function fetchBatteryCabinets(siteId: string): Promise<CabinetDetai
            r._field == "faults_csv"
       )
       |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+      |> filter(fn: (r) => exists r.stack_id)
+      |> group(columns: ["stack_id"])
       |> sort(columns: ["_time"], desc: true)
+      |> limit(n: 1)
   `;
 
   try {
