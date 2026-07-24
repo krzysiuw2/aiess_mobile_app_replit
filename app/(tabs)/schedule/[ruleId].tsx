@@ -35,6 +35,7 @@ import {
 import { evaluatePolarity, type PolarityWarning } from '@/lib/rule-polarity';
 import { getFavoriteById } from '@/lib/rule-favorites';
 import ScheduleHistorySheet from '@/components/schedule/ScheduleHistorySheet';
+import TimePicker, { pickerStyles } from '@/components/common/TimePicker';
 import type {
   ActionType,
   Priority,
@@ -46,85 +47,9 @@ import type {
   ScheduleRuleFormData,
 } from '@/types';
 
-// ─── Time Picker ────────────────────────────────────────────────
-
-interface TimePickerProps {
-  visible: boolean;
-  onClose: () => void;
-  onSelect: (time: string) => void;
-  initialTime?: string;
-  title: string;
-  doneLabel: string;
-  hourLabel: string;
-  minuteLabel: string;
-}
-
-const HOURS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
-const MINUTES = Array.from({ length: 12 }, (_, i) => (i * 5).toString().padStart(2, '0'));
-
-function TimePicker({ visible, onClose, onSelect, initialTime, title, doneLabel, hourLabel, minuteLabel }: TimePickerProps) {
-  const [hour, setHour] = useState(initialTime?.split(':')[0] || '12');
-  const [minute, setMinute] = useState(initialTime?.split(':')[1] || '00');
-
-  const handleConfirm = () => {
-    onSelect(`${hour}:${minute}`);
-    onClose();
-  };
-
-  if (!visible) return null;
-
-  return (
-    <Modal transparent animationType="slide">
-      <View style={pickerStyles.overlay}>
-        <View style={pickerStyles.container}>
-          <View style={pickerStyles.header}>
-            <Text style={pickerStyles.title}>{title}</Text>
-            <TouchableOpacity onPress={handleConfirm}>
-              <Text style={pickerStyles.doneButton}>{doneLabel}</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={pickerStyles.pickerRow}>
-            <View style={pickerStyles.column}>
-              <Text style={pickerStyles.columnLabel}>{hourLabel}</Text>
-              <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
-                {HOURS.map((h) => (
-                  <TouchableOpacity
-                    key={h}
-                    style={[pickerStyles.item, hour === h && pickerStyles.itemSelected]}
-                    onPress={() => setHour(h)}
-                  >
-                    <Text style={[pickerStyles.itemText, hour === h && pickerStyles.itemTextSelected]}>
-                      {h}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-            <Text style={pickerStyles.separator}>:</Text>
-            <View style={pickerStyles.column}>
-              <Text style={pickerStyles.columnLabel}>{minuteLabel}</Text>
-              <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
-                {MINUTES.map((m) => (
-                  <TouchableOpacity
-                    key={m}
-                    style={[pickerStyles.item, minute === m && pickerStyles.itemSelected]}
-                    onPress={() => setMinute(m)}
-                  >
-                    <Text style={[pickerStyles.itemText, minute === m && pickerStyles.itemTextSelected]}>
-                      {m}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
 // ─── Date Picker ────────────────────────────────────────────────
+// (TimePicker was extracted to components/common/TimePicker.tsx and is
+// imported above together with the shared pickerStyles.)
 
 interface DatePickerProps {
   visible: boolean;
@@ -220,23 +145,6 @@ function DatePicker({ visible, onClose, onSelect, initialDate, title, doneLabel,
   );
 }
 
-const pickerStyles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  container: { backgroundColor: Colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 30 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  title: { fontSize: 18, fontWeight: '600', color: Colors.text },
-  doneButton: { fontSize: 16, fontWeight: '600', color: Colors.primary },
-  pickerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10 },
-  column: { alignItems: 'center', marginHorizontal: 8 },
-  columnLabel: { fontSize: 12, color: Colors.textSecondary, marginBottom: 8 },
-  scrollView: { height: 180, width: 70 },
-  item: { paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', borderRadius: 8 },
-  itemSelected: { backgroundColor: Colors.primaryLight },
-  itemText: { fontSize: 20, color: Colors.text },
-  itemTextSelected: { color: Colors.primary, fontWeight: '700' },
-  separator: { fontSize: 28, fontWeight: '700', color: Colors.text, marginHorizontal: 4 },
-});
-
 // ─── Power Slider ───────────────────────────────────────────────
 
 interface PowerSliderProps {
@@ -248,20 +156,55 @@ interface PowerSliderProps {
 }
 
 function PowerSlider({ value, min, max, onValueChange, label }: PowerSliderProps) {
+  const trackRef = useRef<View>(null);
   const trackWidth = useRef(0);
+  const trackPageX = useRef(0);
   const fraction = max > min ? Math.max(0, Math.min(1, (value - min) / (max - min))) : 0;
+
+  // PanResponder is created once below, so read live min/max/onValueChange
+  // from refs to avoid a stale closure over the first render's props (e.g.
+  // switching charge/discharge changes `max` without remounting).
+  const minRef = useRef(min);
+  const maxRef = useRef(max);
+  const onValueChangeRef = useRef(onValueChange);
+  minRef.current = min;
+  maxRef.current = max;
+  onValueChangeRef.current = onValueChange;
+
+  const measureTrack = useCallback(() => {
+    // Absolute (page) coordinates, not layout width alone — needed so drag
+    // math below is anchored to the screen, independent of scroll position.
+    trackRef.current?.measureInWindow((x, _y, width) => {
+      trackPageX.current = x;
+      trackWidth.current = width;
+    });
+  }, []);
+
+  const updateFromPageX = useCallback((pageX: number) => {
+    if (trackWidth.current <= 0) return;
+    const lo = minRef.current;
+    const hi = maxRef.current;
+    // Use pageX (absolute screen position) rather than locationX: locationX
+    // is reported relative to whichever nested view is under the touch, and
+    // the 24px thumb overlapping the track made it jump to the edges whenever
+    // the drag started on/over the thumb itself.
+    const x = pageX - trackPageX.current;
+    const frac = Math.max(0, Math.min(1, x / trackWidth.current));
+    const stepped = Math.round((frac * (hi - lo) + lo) / 5) * 5;
+    onValueChangeRef.current(Math.max(lo, Math.min(hi, stepped)));
+  }, []);
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (_e: GestureResponderEvent, _gs: PanResponderGestureState) => {},
+      onPanResponderGrant: (e: GestureResponderEvent) => {
+        // Re-measure in case the track scrolled since the last onLayout.
+        measureTrack();
+        updateFromPageX(e.nativeEvent.pageX);
+      },
       onPanResponderMove: (e: GestureResponderEvent, _gs: PanResponderGestureState) => {
-        if (trackWidth.current <= 0) return;
-        const x = e.nativeEvent.locationX;
-        const frac = Math.max(0, Math.min(1, x / trackWidth.current));
-        const stepped = Math.round((frac * (max - min) + min) / 5) * 5;
-        onValueChange(Math.max(min, Math.min(max, stepped)));
+        updateFromPageX(e.nativeEvent.pageX);
       },
       onPanResponderRelease: () => {},
     })
@@ -274,14 +217,18 @@ function PowerSlider({ value, min, max, onValueChange, label }: PowerSliderProps
         <Text style={sliderStyles.maxLabel}>Max: {max} kW</Text>
       </View>
       <View
+        ref={trackRef}
         style={sliderStyles.trackContainer}
-        onLayout={(e: LayoutChangeEvent) => { trackWidth.current = e.nativeEvent.layout.width; }}
+        onLayout={(e: LayoutChangeEvent) => {
+          trackWidth.current = e.nativeEvent.layout.width;
+          measureTrack();
+        }}
         {...panResponder.panHandlers}
       >
-        <View style={sliderStyles.track}>
+        <View style={sliderStyles.track} pointerEvents="none">
           <View style={[sliderStyles.trackFill, { width: `${fraction * 100}%` }]} />
         </View>
-        <View style={[sliderStyles.thumb, { left: `${fraction * 100}%` }]} />
+        <View style={[sliderStyles.thumb, { left: `${fraction * 100}%` }]} pointerEvents="none" />
       </View>
     </View>
   );
@@ -794,6 +741,22 @@ export default function RuleBuilderScreen() {
       }));
     }
   }, [form.scheduleMode, form.oneTimeDate]);
+
+  // Switching to recurring mode should default "Okres ważności" to Stała
+  // (permanent) rather than leaving it on the leftover one-time date set by
+  // the effect above. Only clears when the dates still look auto-filled
+  // (both equal oneTimeDate), so an intentionally-set validity window on an
+  // existing rule is left untouched.
+  useEffect(() => {
+    if (
+      form.scheduleMode === 'recurring' &&
+      form.validFromDate !== '' &&
+      form.validFromDate === form.oneTimeDate &&
+      form.validUntilDate === form.oneTimeDate
+    ) {
+      setForm(prev => ({ ...prev, validFromDate: '', validUntilDate: '' }));
+    }
+  }, [form.scheduleMode, form.validFromDate, form.validUntilDate, form.oneTimeDate]);
 
   const buildFormStateFromRule = useCallback((
     rule: OptimizedScheduleRule,
