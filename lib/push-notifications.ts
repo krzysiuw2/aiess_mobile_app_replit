@@ -46,6 +46,21 @@ export async function setPushPreference(enabled: boolean): Promise<void> {
 }
 
 /**
+ * OS-level notification permission. Used to detect the mismatch where the
+ * in-app preference is on but the user revoked permission in system settings
+ * (pushes then fail silently). Simulators report 'granted' to avoid noise.
+ */
+export async function getOsPermissionStatus(): Promise<'granted' | 'denied' | 'undetermined'> {
+  if (!Device.isDevice) return 'granted';
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    return status as 'granted' | 'denied' | 'undetermined';
+  } catch {
+    return 'granted';
+  }
+}
+
+/**
  * Request permission, obtain the Expo push token and store it in Supabase.
  * Returns the token, or null if unavailable (simulator, permission denied,
  * Expo Go on iOS, or not logged in).

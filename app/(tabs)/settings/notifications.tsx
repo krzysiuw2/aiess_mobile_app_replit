@@ -9,30 +9,45 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { ArrowLeft, Bell, BellOff } from 'lucide-react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { ArrowLeft, Bell, BellOff, Moon, AlertTriangle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDevices } from '@/contexts/DeviceContext';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
+import TimePicker from '@/components/common/TimePicker';
 import {
   getPushPreference,
   setPushPreference,
   registerForPushNotifications,
   unregisterPushToken,
+  getOsPermissionStatus,
 } from '@/lib/push-notifications';
 import {
   ALERT_CATALOG,
   AlertType,
   AlertRule,
+  NotificationPrefs,
+  DEFAULT_NOTIFICATION_PREFS,
   fetchAlertRules,
   fetchAlertPrefs,
   saveAlertRule,
   saveAlertPref,
+  fetchNotificationPrefs,
+  saveNotificationPrefs,
 } from '@/lib/alerts';
+
+const minToHHMM = (min: number): string =>
+  `${Math.floor(min / 60).toString().padStart(2, '0')}:${(min % 60).toString().padStart(2, '0')}`;
+
+const hhmmToMin = (hhmm: string): number => {
+  const [h, m] = hhmm.split(':').map((v) => parseInt(v, 10));
+  return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+};
 
 export default function NotificationsSettingsScreen() {
   const { t } = useSettings();
@@ -51,20 +66,28 @@ export default function NotificationsSettingsScreen() {
   const [prefs, setPrefs] = useState<Map<AlertType, boolean>>(new Map());
   const [rules, setRules] = useState<Map<AlertType, AlertRule>>(new Map());
   const [thresholdDrafts, setThresholdDrafts] = useState<Record<string, string>>({});
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs>({ ...DEFAULT_NOTIFICATION_PREFS });
+  const [showQuietStartPicker, setShowQuietStartPicker] = useState(false);
+  const [showQuietEndPicker, setShowQuietEndPicker] = useState(false);
+  const [osPermissionDenied, setOsPermissionDenied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [push, userPrefs, siteRules] = await Promise.all([
+        const [push, userPrefs, siteRules, quietPrefs] = await Promise.all([
           getPushPreference(),
           user?.id ? fetchAlertPrefs(user.id) : Promise.resolve(new Map<AlertType, boolean>()),
           siteId ? fetchAlertRules(siteId) : Promise.resolve(new Map<AlertType, AlertRule>()),
+          user?.id
+            ? fetchNotificationPrefs(user.id)
+            : Promise.resolve({ ...DEFAULT_NOTIFICATION_PREFS }),
         ]);
         if (cancelled) return;
         setPushEnabled(push);
         setPrefs(userPrefs);
         setRules(siteRules);
+        setNotifPrefs(quietPrefs);
       } catch (err) {
         console.warn('[Notifications] load failed:', err);
       } finally {
@@ -75,6 +98,21 @@ export default function NotificationsSettingsScreen() {
       cancelled = true;
     };
   }, [user?.id, siteId]);
+
+  // Re-check the OS permission whenever the screen gains focus, so the
+  // warning banner updates after the user returns from system settings.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        const status = await getOsPermissionStatus();
+        if (!cancelled) setOsPermissionDenied(status === 'denied');
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
 
   const handlePushToggle = async (enabled: boolean) => {
     setPushEnabled(enabled);
@@ -98,6 +136,30 @@ export default function NotificationsSettingsScreen() {
     }
   };
 
+  const persistQuietPrefs = async (next: NotificationPrefs, prev: NotificationPrefs) => {
+    if (!user?.id) return;
+    setNotifPrefs(next);
+    try {
+      await saveNotificationPrefs(user.id, next);
+    } catch (err) {
+      console.warn('[Notifications] quiet hours save failed:', err);
+      setNotifPrefs(prev);
+      Alert.alert(t.common.error, t.settings.notificationsSaveError);
+    }
+  };
+
+  const handleQuietToggle = (enabled: boolean) => {
+    // Capture the device timezone on save so the server evaluates the window
+    // in the user's local time.
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    persistQuietPrefs({ ...notifPrefs, quiet_hours_enabled: enabled, timezone }, notifPrefs);
+  };
+
+  const handleQuietTimeSelect = (field: 'quiet_start_min' | 'quiet_end_min', hhmm: string) => {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    persistQuietPrefs({ ...notifPrefs, [field]: hhmmToMin(hhmm), timezone }, notifPrefs);
+  };
+
   const ruleFor = useCallback(
     (type: AlertType): { enabled: boolean; threshold: number | null } => {
       const rule = rules.get(type);
@@ -110,6 +172,20 @@ export default function NotificationsSettingsScreen() {
         siteConfig?.grid_connection?.import_limit_kw
       ) {
         threshold = siteConfig.grid_connection.import_limit_kw;
+      }
+      // Seed the grid export threshold from the site's P9 export limit.
+      if (
+        type === 'grid_export_high' &&
+        threshold === null &&
+        siteConfig?.grid_connection?.export_limit_kw
+      ) {
+        threshold = Math.abs(siteConfig.grid_connection.export_limit_kw);
+      }
+      // Seed the contracted demand power threshold from financial settings.
+      if (type === 'moc_zamowiona_high' && threshold === null) {
+        const fin = siteConfig?.financial;
+        const moc = fin?.moc_zamowiona_after_bess_kw ?? fin?.moc_zamowiona_before_bess_kw;
+        if (moc && moc > 0) threshold = moc;
       }
       return { enabled: rule ? rule.enabled : cat.defaultEnabled, threshold };
     },
@@ -182,6 +258,16 @@ export default function NotificationsSettingsScreen() {
         </View>
       ) : (
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          {/* OS permission mismatch: preference is on but the system permission
+              was revoked, so pushes would silently fail on this device. */}
+          {pushEnabled && osPermissionDenied && (
+            <TouchableOpacity style={styles.permissionBanner} onPress={() => Linking.openSettings()}>
+              <AlertTriangle size={20} color={Colors.warning} />
+              <Text style={styles.permissionBannerText}>{t.settings.pushPermissionWarning}</Text>
+              <Text style={styles.permissionBannerAction}>{t.settings.openSettings}</Text>
+            </TouchableOpacity>
+          )}
+
           {/* Master toggle */}
           <View style={styles.section}>
             <View style={styles.masterRow}>
@@ -200,6 +286,46 @@ export default function NotificationsSettingsScreen() {
                 trackColor={{ true: Colors.primary }}
               />
             </View>
+          </View>
+
+          {/* Quiet hours */}
+          <View style={[styles.section, !pushEnabled && styles.sectionDisabled]}>
+            <View style={styles.masterRow}>
+              <Moon
+                size={22}
+                color={notifPrefs.quiet_hours_enabled ? Colors.primary : Colors.textSecondary}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.masterTitle}>{t.settings.quietHours}</Text>
+                <Text style={styles.masterDesc}>{t.settings.quietHoursDesc}</Text>
+              </View>
+              <Switch
+                value={notifPrefs.quiet_hours_enabled}
+                onValueChange={handleQuietToggle}
+                disabled={!pushEnabled}
+                trackColor={{ true: Colors.primary }}
+              />
+            </View>
+            {notifPrefs.quiet_hours_enabled && (
+              <View style={styles.quietTimesRow}>
+                <TouchableOpacity
+                  style={styles.quietTimeBox}
+                  onPress={() => setShowQuietStartPicker(true)}
+                  disabled={!pushEnabled}
+                >
+                  <Text style={styles.quietTimeLabel}>{t.settings.quietFrom}</Text>
+                  <Text style={styles.quietTimeValue}>{minToHHMM(notifPrefs.quiet_start_min)}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quietTimeBox}
+                  onPress={() => setShowQuietEndPicker(true)}
+                  disabled={!pushEnabled}
+                >
+                  <Text style={styles.quietTimeLabel}>{t.settings.quietUntil}</Text>
+                  <Text style={styles.quietTimeValue}>{minToHHMM(notifPrefs.quiet_end_min)}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
           {/* Per-alert-type preferences */}
@@ -275,6 +401,27 @@ export default function NotificationsSettingsScreen() {
           </View>
         </ScrollView>
       )}
+
+      <TimePicker
+        visible={showQuietStartPicker}
+        onClose={() => setShowQuietStartPicker(false)}
+        onSelect={(time) => handleQuietTimeSelect('quiet_start_min', time)}
+        initialTime={minToHHMM(notifPrefs.quiet_start_min)}
+        title={t.settings.quietFrom}
+        doneLabel={t.common.done}
+        hourLabel={t.schedules.editor.hour}
+        minuteLabel={t.schedules.editor.minute}
+      />
+      <TimePicker
+        visible={showQuietEndPicker}
+        onClose={() => setShowQuietEndPicker(false)}
+        onSelect={(time) => handleQuietTimeSelect('quiet_end_min', time)}
+        initialTime={minToHHMM(notifPrefs.quiet_end_min)}
+        title={t.settings.quietUntil}
+        doneLabel={t.common.done}
+        hourLabel={t.schedules.editor.hour}
+        minuteLabel={t.schedules.editor.minute}
+      />
     </SafeAreaView>
   );
 }
@@ -433,5 +580,53 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontStyle: 'italic',
     marginTop: 4,
+  },
+  permissionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.warning,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 20,
+  },
+  permissionBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.text,
+    lineHeight: 18,
+  },
+  permissionBannerAction: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  quietTimesRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  quietTimeBox: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  quietTimeLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  quietTimeValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text,
+    marginTop: 2,
   },
 });

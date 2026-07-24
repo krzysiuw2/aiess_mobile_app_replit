@@ -18,12 +18,15 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
  *
  *   { action: "alert_check" }
  *     Telemetry alert engine: evaluates soc_low, battery_temp_high, bms_fault,
- *     grid_import_high, grid_export_high against per-site alert_rules with
+ *     grid_import_high, grid_export_high, moc_zamowiona_high against per-site alert_rules with
  *     hysteresis; fires pushes only on state transitions (public.alert_state)
  *     with a re-fire cooldown. Cron-secret only.
  *
  * Auth: either header `x-push-secret: <PUSH_FN_SECRET>` (cron / triggers)
  * or a valid Supabase user JWT in Authorization (app-originated notify).
+ *
+ * All paths funnel through tokensForSite(), which also skips users currently
+ * inside their quiet-hours window (public.notification_prefs).
  */
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -127,6 +130,17 @@ const ALERT_DEFS: Record<string, AlertDef> = {
       return { active, value: exportKw };
     },
   },
+  // Contracted demand power (moc zamówiona) — exceeding it triggers penalty
+  // tariffs in Poland. Threshold seeded from financial settings by the app.
+  moc_zamowiona_high: {
+    defaultThreshold: null,
+    defaultEnabled: true,
+    evaluate: (f, th, was) => {
+      if (f.grid_power === undefined || th === null || th <= 0) return null;
+      const active = was ? f.grid_power > th * 0.9 : f.grid_power > th;
+      return { active, value: f.grid_power };
+    },
+  },
 };
 
 /** Map push data.type values to alert_prefs alert_type for mute filtering. */
@@ -147,7 +161,48 @@ const DATA_TYPE_TO_ALERT_TYPE: Record<string, string> = {
   grid_import_normal: "grid_import_high",
   grid_export_high: "grid_export_high",
   grid_export_normal: "grid_export_high",
+  moc_zamowiona_high: "moc_zamowiona_high",
+  moc_zamowiona_normal: "moc_zamowiona_high",
 };
+
+// ---------------------------------------------------------------------------
+// Quiet hours (per-user do-not-disturb window from public.notification_prefs)
+// ---------------------------------------------------------------------------
+
+interface QuietHoursPrefs {
+  user_id: string;
+  quiet_hours_enabled: boolean;
+  quiet_start_min: number;
+  quiet_end_min: number;
+  timezone: string;
+}
+
+/** Minutes since midnight in the given IANA timezone (falls back to UTC). */
+function minutesOfDayIn(timezone: string, at: Date): number {
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(at);
+    const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+    const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+    return (hour % 24) * 60 + minute;
+  } catch {
+    return at.getUTCHours() * 60 + at.getUTCMinutes();
+  }
+}
+
+/** True when `at` falls inside the user's quiet window (handles overnight wrap). */
+function isInQuietHours(prefs: QuietHoursPrefs, at: Date): boolean {
+  if (!prefs.quiet_hours_enabled) return false;
+  const start = prefs.quiet_start_min;
+  const end = prefs.quiet_end_min;
+  if (start === end) return false; // degenerate window: never quiet
+  const now = minutesOfDayIn(prefs.timezone, at);
+  return start < end ? now >= start && now < end : now >= start || now < end;
+}
 
 // ---------------------------------------------------------------------------
 // Token resolution + Expo send
@@ -181,6 +236,23 @@ async function tokensForSite(siteId: string, alertType?: string): Promise<string
       .in("user_id", userIds);
     const mutedSet = new Set((muted ?? []).map((m: { user_id: string }) => m.user_id));
     userIds = userIds.filter((id) => !mutedSet.has(id));
+    if (userIds.length === 0) return [];
+  }
+
+  // Quiet hours: drop users currently inside their do-not-disturb window.
+  const { data: quietPrefs } = await admin
+    .from("notification_prefs")
+    .select("user_id, quiet_hours_enabled, quiet_start_min, quiet_end_min, timezone")
+    .in("user_id", userIds)
+    .eq("quiet_hours_enabled", true);
+  if (quietPrefs && quietPrefs.length > 0) {
+    const now = new Date();
+    const quietSet = new Set(
+      (quietPrefs as QuietHoursPrefs[])
+        .filter((p) => isInQuietHours(p, now))
+        .map((p) => p.user_id),
+    );
+    userIds = userIds.filter((id: string) => !quietSet.has(id));
     if (userIds.length === 0) return [];
   }
 
@@ -381,6 +453,7 @@ function fmtValue(type: string, value: number | null): string {
       return `${value.toFixed(0)} fault(s)`;
     case "grid_import_high":
     case "grid_export_high":
+    case "moc_zamowiona_high":
       return Math.abs(value) >= 1000
         ? `${(value / 1000).toFixed(2)} MW`
         : `${value.toFixed(1)} kW`;
@@ -417,6 +490,10 @@ function alertMessages(
       return active
         ? { title: `${deviceName}: high grid export`, body: `Grid export is ${v}.`, dataType: "grid_export_high" }
         : { title: `${deviceName}: grid export normal`, body: `Grid export is back at ${v}.`, dataType: "grid_export_normal" };
+    case "moc_zamowiona_high":
+      return active
+        ? { title: `${deviceName}: contracted power exceeded`, body: `Grid import is ${v} — above contracted demand power, penalty tariffs may apply.`, dataType: "moc_zamowiona_high" }
+        : { title: `${deviceName}: contracted power OK`, body: `Grid import is back at ${v}, below the contracted demand power.`, dataType: "moc_zamowiona_normal" };
     default:
       return { title: deviceName, body: v, dataType: type };
   }

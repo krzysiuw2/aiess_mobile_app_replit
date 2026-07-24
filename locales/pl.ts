@@ -749,6 +749,12 @@ export default {
     alertSiteEnabled: 'Alert lokalizacji',
     alertThreshold: 'Próg',
     alertsRoleHint: 'Progi lokalizacji może zmieniać tylko właściciel lub administrator.',
+    quietHours: 'Godziny ciszy',
+    quietHoursDesc: 'Wstrzymaj powiadomienia push w wybranych godzinach (dotyczy Twojego konta na wszystkich urządzeniach)',
+    quietFrom: 'Od',
+    quietUntil: 'Do',
+    pushPermissionWarning: 'Powiadomienia są wyłączone w ustawieniach telefonu, więc alerty nie dotrą na to urządzenie.',
+    openSettings: 'Otwórz ustawienia',
     notificationsSaveError: 'Nie udało się zapisać ustawienia alertu. Spróbuj ponownie.',
     alertTypes: {
       device_offline: {
@@ -778,6 +784,10 @@ export default {
       grid_export_high: {
         title: 'Wysoki eksport do sieci',
         desc: 'Moc oddawana do sieci przekracza próg',
+      },
+      moc_zamowiona_high: {
+        title: 'Przekroczenie mocy zamówionej',
+        desc: 'Pobór z sieci przekracza moc zamówioną (ryzyko kar taryfowych)',
       },
       agent_alerts: {
         title: 'Alerty agenta AI',

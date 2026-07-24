@@ -21,6 +21,7 @@ export type AlertType =
   | 'bms_fault'
   | 'grid_import_high'
   | 'grid_export_high'
+  | 'moc_zamowiona_high'
   | 'agent_alerts';
 
 export interface AlertCatalogEntry {
@@ -64,6 +65,14 @@ export const ALERT_CATALOG: AlertCatalogEntry[] = [
     type: 'grid_export_high',
     threshold: { unit: 'kW', default: null, min: 1, max: 100000 },
     defaultEnabled: false,
+    telemetry: true,
+  },
+  {
+    // Contracted demand power (moc zamówiona) — exceeding it triggers
+    // penalty tariffs in Poland. Threshold is seeded from financial settings.
+    type: 'moc_zamowiona_high',
+    threshold: { unit: 'kW', default: null, min: 1, max: 100000 },
+    defaultEnabled: true,
     telemetry: true,
   },
   { type: 'agent_alerts', threshold: null, defaultEnabled: true, telemetry: false },
@@ -128,6 +137,45 @@ export async function saveAlertPref(
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'user_id,alert_type' },
+  );
+  if (error) throw error;
+}
+
+/**
+ * Per-user quiet hours (do-not-disturb window), enforced server-side by the
+ * send-push edge function. Times are minutes since midnight in `timezone`.
+ */
+export interface NotificationPrefs {
+  quiet_hours_enabled: boolean;
+  quiet_start_min: number;
+  quiet_end_min: number;
+  timezone: string;
+}
+
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
+  quiet_hours_enabled: false,
+  quiet_start_min: 22 * 60, // 22:00
+  quiet_end_min: 7 * 60, // 07:00
+  timezone: 'UTC',
+};
+
+export async function fetchNotificationPrefs(userId: string): Promise<NotificationPrefs> {
+  const { data, error } = await supabase
+    .from('notification_prefs')
+    .select('quiet_hours_enabled, quiet_start_min, quiet_end_min, timezone')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as NotificationPrefs | null) ?? { ...DEFAULT_NOTIFICATION_PREFS };
+}
+
+export async function saveNotificationPrefs(
+  userId: string,
+  prefs: NotificationPrefs,
+): Promise<void> {
+  const { error } = await supabase.from('notification_prefs').upsert(
+    { user_id: userId, ...prefs, updated_at: new Date().toISOString() },
+    { onConflict: 'user_id' },
   );
   if (error) throw error;
 }

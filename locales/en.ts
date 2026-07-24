@@ -750,6 +750,12 @@ export default {
     alertThreshold: 'Threshold',
     alertsRoleHint: 'Site thresholds can only be changed by the site owner or admin.',
     notificationsSaveError: 'Could not save the alert setting. Please try again.',
+    quietHours: 'Quiet hours',
+    quietHoursDesc: 'Pause push notifications during a daily time window (applies to your account on all devices)',
+    quietFrom: 'From',
+    quietUntil: 'Until',
+    pushPermissionWarning: 'Notifications are turned off in your phone settings, so alerts will not reach this device.',
+    openSettings: 'Open Settings',
     alertTypes: {
       device_offline: {
         title: 'Device offline',
@@ -778,6 +784,10 @@ export default {
       grid_export_high: {
         title: 'High grid export',
         desc: 'Grid export power exceeds the threshold',
+      },
+      moc_zamowiona_high: {
+        title: 'Contracted power exceeded',
+        desc: 'Grid import exceeds the contracted demand power (penalty tariff risk)',
       },
       agent_alerts: {
         title: 'AI agent alerts',
